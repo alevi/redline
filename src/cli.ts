@@ -35,6 +35,9 @@ if (args[0] === "resolve") {
     process.exit(1);
   }
 
+  const contextFlag = args.indexOf("--context");
+  const context = contextFlag !== -1 ? args[contextFlag + 1] : undefined;
+
   const resultFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".result");
 
   async function writeResult(payload: Record<string, unknown>) {
@@ -46,7 +49,7 @@ if (args[0] === "resolve") {
     }
   }
 
-  const app = createServer(resolved);
+  const app = createServer(resolved, { context });
   const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
   const url = `http://localhost:${server.port}`;
   const bar = "─".repeat(60);

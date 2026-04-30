@@ -10,13 +10,14 @@ import {
   type Comment,
 } from "./sidecar";
 
-export function createServer(filePath: string) {
+export function createServer(filePath: string, opts: { context?: string } = {}) {
   const app = new Hono();
   const fileName = path.basename(filePath);
 
   // On startup, ensure there is always an open round to receive comments
   (async () => {
     const sidecar = await loadSidecar(filePath);
+    let changed = false;
     const hasOpen = sidecar.rounds.some((r: any) => r.resolved_at === null);
     if (!hasOpen) {
       sidecar.rounds.push({
@@ -27,8 +28,13 @@ export function createServer(filePath: string) {
         resolved_at: null,
         comments: [],
       });
-      await saveSidecar(filePath, sidecar);
+      changed = true;
     }
+    if (opts.context && !sidecar.context) {
+      sidecar.context = opts.context;
+      changed = true;
+    }
+    if (changed) await saveSidecar(filePath, sidecar);
   })();
 
   // ── SSE broadcast ────────────────────────────────────────────────────
@@ -107,7 +113,7 @@ export function createServer(filePath: string) {
     const agentRepliedAt = latestRound?.agent_replied_at ?? null;
     const roundNumber = latestRound?.round ?? 1;
     const totalRounds = sidecar.rounds.length;
-    return c.html(pageTemplate(fileName, html, comments, roundResolved, agentRepliedAt, roundNumber, totalRounds));
+    return c.html(pageTemplate(fileName, html, comments, roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context));
   });
 
   // Add a comment to the active round
@@ -360,6 +366,7 @@ export function createServer(filePath: string) {
       roundData.agent_replied_at ?? null,
       n,
       sidecar.rounds.length,
+      sidecar.context,
       true    // readOnly
     ));
   });
@@ -497,6 +504,7 @@ function pageTemplate(
   agentRepliedAt: string | null,
   roundNumber: number,
   totalRounds: number,
+  context?: string,
   readOnly = false
 ): string {
   const commentsJson = JSON.stringify(comments);
@@ -1158,6 +1166,85 @@ function pageTemplate(
       color: var(--text);
     }
     .btn-diff-feedback:hover { background: var(--thread-bg); }
+
+    /* ── Revision banner ── */
+    .revision-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      font-size: 13.5px;
+      color: #1e40af;
+    }
+    .revision-banner-text { flex: 1; }
+    .revision-banner-link {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #1d4ed8;
+      font-size: 13.5px;
+      font-weight: 500;
+      padding: 0;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .revision-banner-link:hover { color: #1e40af; }
+    .revision-banner-dismiss {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #60a5fa;
+      font-size: 13px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      line-height: 1;
+      opacity: 0.7;
+      flex-shrink: 0;
+    }
+    .revision-banner-dismiss:hover { opacity: 1; background: rgba(96,165,250,0.15); }
+
+    /* ── Context banner ── */
+    .context-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 14px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      font-size: 13.5px;
+      color: #78350f;
+      line-height: 1.5;
+    }
+    .context-label {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 10.5px;
+      color: #b45309;
+      white-space: nowrap;
+      padding-top: 2px;
+      flex-shrink: 0;
+    }
+    .context-text { flex: 1; }
+    .context-dismiss {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #b45309;
+      font-size: 13px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      line-height: 1;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+    .context-dismiss:hover { opacity: 1; background: rgba(180,83,9,0.1); }
   </style>
 </head>
 <body>
@@ -1186,6 +1273,11 @@ function pageTemplate(
           }
         </div>
       </div>
+      ${context ? `<div class="context-banner" id="context-banner">
+        <span class="context-label">Context</span>
+        <span class="context-text">${escapeHtml(context)}</span>
+        <button class="context-dismiss" onclick="dismissContextBanner()" aria-label="Dismiss">✕</button>
+      </div>` : ''}
       <article class="prose" id="prose">
         ${content}
       </article>
@@ -1777,8 +1869,14 @@ function pageTemplate(
 
     function toggleReplyForm(id) {
       const form = document.getElementById('reply-' + id);
+      const card = document.getElementById('card-' + id);
       form.classList.toggle('open');
-      if (form.classList.contains('open')) form.querySelector('.reply-input').focus();
+      if (form.classList.contains('open')) {
+        form.querySelector('.reply-input').focus();
+        if (card) card.style.zIndex = '1';
+      } else {
+        if (card) card.style.zIndex = '';
+      }
     }
 
     async function submitReply(id, message) {
@@ -1818,6 +1916,7 @@ function pageTemplate(
           positionCards();
           updateNav();
           applyRoundState();
+          if (data.allResolved) window.scrollTo({ top: 0, behavior: 'smooth' });
         } else {
           showError(data.error || 'Failed to resolve comment');
         }
@@ -1932,6 +2031,24 @@ function pageTemplate(
       }
     });
 
+    // ── Revision banner ──────────────────────────────────────────────
+    function showRevisionBanner() {
+      if (document.getElementById('revision-banner')) return;
+      const banner = document.createElement('div');
+      banner.id = 'revision-banner';
+      banner.className = 'revision-banner';
+      banner.innerHTML = '<span class="revision-banner-text">Document revised.</span>' +
+        '<button class="revision-banner-link" id="revision-banner-diff">See what changed →</button>' +
+        '<button class="revision-banner-dismiss" aria-label="Dismiss">✕</button>';
+      banner.querySelector('#revision-banner-diff').addEventListener('click', () => {
+        banner.remove();
+        showDiffOverlay();
+      });
+      banner.querySelector('.revision-banner-dismiss').addEventListener('click', () => banner.remove());
+      const prose = document.getElementById('prose');
+      prose.parentNode.insertBefore(banner, prose);
+    }
+
     // ── Diff overlay ─────────────────────────────────────────────────
     async function showDiffOverlay() {
       const res = await fetch('/api/diff');
@@ -1971,6 +2088,20 @@ function pageTemplate(
       document.addEventListener('click', () => { roundPicker.style.display = 'none'; });
     }
 
+    // ── Context banner ───────────────────────────────────────────────
+    function dismissContextBanner() {
+      const banner = document.getElementById('context-banner');
+      if (banner) banner.remove();
+      try { localStorage.setItem('rl-ctx-dismissed-' + ${JSON.stringify(title)}, '1'); } catch {}
+    }
+    (function() {
+      const banner = document.getElementById('context-banner');
+      if (!banner) return;
+      try {
+        if (localStorage.getItem('rl-ctx-dismissed-' + ${JSON.stringify(title)})) banner.remove();
+      } catch {}
+    })();
+
     // ── Init ─────────────────────────────────────────────────────────
     renderComments();
     applyHighlights();
@@ -1979,7 +2110,7 @@ function pageTemplate(
     applyRoundState();
     if (sessionStorage.getItem('just-revised')) {
       sessionStorage.removeItem('just-revised');
-      showDiffOverlay();
+      showRevisionBanner();
     }
     window.addEventListener('scroll', positionCards, { passive: true });
     window.addEventListener('resize', positionCards, { passive: true });
