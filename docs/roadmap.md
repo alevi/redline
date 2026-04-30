@@ -22,13 +22,7 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 - **Status:** reached
 - **Retro:** [docs/retros/m3-retro.md](retros/m3-retro.md)
 
-### M4: Typed comment actions
-
-- **Done when:** The comment grammar supports typed actions (`[expand]`, `[challenge]`, `[cut]`, …) derived from the natural taxonomy that emerged from real usage in M1/M2. Free text remains supported.
-- **Status:** planned (waiting on real usage to inform the taxonomy)
-- **Retro:**
-
-### M5: UX polish
+### M4: UX polish
 
 - **Done when:** The review experience feels fluid and intentional end-to-end. No jarring transitions, no scroll jumps, micro-interactions feel considered.
 - **Status:** planned
@@ -37,6 +31,12 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
   - Post-revision state: after a revision lands, the user should be reading the *new* version of the doc fresh (no inherited comments), with the prior round + its comments accessible as history, and a clear "new version ready — accept or comment" affordance. Current flow auto-opens a diff overlay that demands a verdict before reading; that's not the right shape. Consider inlining the diff highlights into the doc rather than a modal.
   - Handoff from outer agent into the browser is jarring. Context the outer agent provided in chat (why this doc needs review, what to look for) doesn't make it into the browser, so a user who isn't watching the prompt opens the tab cold. Surface a one-liner from the outer agent at the top of the reader.
   - Reply box renders behind the next comment card down. Z-index / stacking context bug in the right rail.
+- **Retro:**
+
+### M5: Typed comment actions
+
+- **Done when:** The comment grammar supports typed actions (`[expand]`, `[challenge]`, `[cut]`, …) derived from the natural taxonomy that emerged from real usage in M1–M4. Free text remains supported.
+- **Status:** planned (waiting on real usage to inform the taxonomy)
 - **Retro:**
 
 ## Now
