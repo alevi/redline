@@ -24,10 +24,10 @@ This project is a Levi Studio spin-off. Studio-wide guidance lives in `~/Project
 | 07-launch-checklist.md | …calling something "ready to ship" or planning a public release. |
 | 08-decision-rules.md | …you're stuck between two reasonable options and need a tie-breaker. |
 | 09-product-ui-defaults.md | …building product UI, admin surfaces, or operational tools (palette, type, spacing, interaction defaults). |
-| 10-shared-tools.md | …reaching for a utility that might already exist studio-wide. |
+| 10-shared-tools.md | …reaching for a utility that might already exist studio-wide, or building one that another project would plausibly want. |
 | 11-debugging-principles.md | …chasing a bug whose cause isn't obvious within ~15 minutes. |
 | 12-ai-workflow-patterns.md | …designing any surface where an AI agent participates in real time. |
-| 13-retro-process.md | …closing a milestone, finishing notable work, hitting a surprise worth recording, or proposing a canon change. |
+| 13-retro-process.md | …closing a milestone, finishing notable work, hitting a surprise worth recording, or proposing a canon change or shared-tool lift. |
 | 14-spinoff-procedure.md | …a sub-project inside this repo starts feeling like its own thing. |
 
 ## Project-specific notes
