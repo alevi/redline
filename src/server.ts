@@ -33,29 +33,59 @@ export function createServer(filePath: string) {
 
   // ── SSE broadcast ────────────────────────────────────────────────────
   const sseClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  const browserClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
   const enc = new TextEncoder();
+
+  // Abandonment detection: if no browser is connected for ABANDON_GRACE_MS after
+  // the first one ever connected, fire onAbandonCallback so the CLI can exit.
+  const ABANDON_GRACE_MS = process.env.REDLINE_ABANDON_MS
+    ? parseInt(process.env.REDLINE_ABANDON_MS, 10)
+    : 2 * 60 * 1000; // default 2 minutes
+  let hadBrowser = false;
+  let abandonTimer: ReturnType<typeof setTimeout> | null = null;
+  let onAbandonCallback: (() => void) | undefined;
+  let onFinishedCallback: ((payload: { totalRounds: number; totalComments: number }) => void) | undefined;
+
+  function checkBrowserPresence() {
+    if (browserClients.size > 0) {
+      hadBrowser = true;
+      if (abandonTimer) { clearTimeout(abandonTimer); abandonTimer = null; }
+    } else if (hadBrowser && !abandonTimer) {
+      abandonTimer = setTimeout(() => {
+        console.log(`\n[redline] No browser connected for ${ABANDON_GRACE_MS / 1000}s — assuming abandoned.`);
+        onAbandonCallback?.();
+      }, ABANDON_GRACE_MS);
+    }
+  }
 
   function broadcast(event: string, data: Record<string, unknown> = {}) {
     const msg = enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     for (const ctrl of sseClients) {
-      try { ctrl.enqueue(msg); } catch { sseClients.delete(ctrl); }
+      try { ctrl.enqueue(msg); } catch { sseClients.delete(ctrl); browserClients.delete(ctrl); }
     }
   }
 
   app.get("/api/events", (c) => {
+    const isBrowser = new URL(c.req.url).searchParams.get("client") === "browser";
     let ctrl: ReadableStreamDefaultController<Uint8Array>;
     let keepaliveTimer: ReturnType<typeof setInterval>;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         ctrl = controller;
         sseClients.add(controller);
+        if (isBrowser) { browserClients.add(controller); checkBrowserPresence(); }
         controller.enqueue(enc.encode(": connected\n\n"));
         keepaliveTimer = setInterval(() => {
           try { controller.enqueue(enc.encode(": ping\n\n")); }
-          catch { clearInterval(keepaliveTimer); sseClients.delete(controller); }
+          catch { clearInterval(keepaliveTimer); sseClients.delete(controller); browserClients.delete(controller); checkBrowserPresence(); }
         }, 8000);
       },
-      cancel() { clearInterval(keepaliveTimer); sseClients.delete(ctrl); },
+      cancel() {
+        clearInterval(keepaliveTimer);
+        sseClients.delete(ctrl);
+        browserClients.delete(ctrl);
+        checkBrowserPresence();
+      },
     });
     return new Response(stream, {
       headers: {
@@ -180,17 +210,8 @@ export function createServer(filePath: string) {
 
     const totalRounds = sidecar.rounds.filter((r: any) => r.resolved_at).length;
     const totalComments = sidecar.rounds.reduce((n: number, r: any) => n + (r.comments?.length ?? 0), 0);
-    const line = "─".repeat(60);
-    console.log(`\n${line}`);
-    console.log(`✓  Review complete — ${path.basename(filePath)}`);
-    console.log(`   ${totalRounds} round${totalRounds !== 1 ? "s" : ""} · ${totalComments} comment${totalComments !== 1 ? "s" : ""} addressed`);
-    console.log(`   Revised document: ${filePath}`);
-    console.log(`${line}`);
-    // Machine-greppable result line for a calling agent. Keep this stable.
-    console.log(`REDLINE_RESULT: approved file=${filePath} rounds=${totalRounds} comments=${totalComments}`);
-    console.log("");
-
-    setTimeout(() => process.exit(0), 500);
+    // Let the CLI handle the summary printout, result-file writing, and process exit.
+    setTimeout(() => onFinishedCallback?.({ totalRounds, totalComments }), 500);
     return c.json({ ok: true });
   });
 
@@ -366,7 +387,13 @@ export function createServer(filePath: string) {
     return c.json({ ok: true, html });
   });
 
-  return app;
+  return {
+    fetch: app.fetch.bind(app),
+    onAbandon(cb: () => void) { onAbandonCallback = cb; },
+    onFinished(cb: (payload: { totalRounds: number; totalComments: number }) => void) {
+      onFinishedCallback = cb;
+    },
+  };
 }
 
 function escapeHtml(s: string): string {
@@ -1973,7 +2000,7 @@ function pageTemplate(
     }
 
     (function connectEvents() {
-      const es = new EventSource('/api/events');
+      const es = new EventSource('/api/events?client=browser');
       es.addEventListener('comment-thinking', (e) => {
         try { thinkingCommentIds.add(JSON.parse(e.data).commentId); } catch {}
         renderComments();

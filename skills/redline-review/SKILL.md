@@ -9,25 +9,45 @@ When you've produced a markdown document that the human needs to read, comment o
 
 ## How to invoke it
 
-Run `redline <path-to-file.md>` via the Bash tool with a long timeout (10 minutes is the Bash tool max — that's the cap on how long the human has). **This call blocks** — it does not return until the human clicks Done in the browser (or abandons the session). That blocking behavior is the point: it's how you wait for the review.
+**Short reviews (≤10 min):** Run `redline <path-to-file.md>` via the Bash tool with `timeout: 600000`. This call blocks until the human clicks Done or abandons. The blocking behavior is the point — you wait here.
 
-If `redline` is not on PATH, the fallback is `bun /Users/alonlevi/Projects/redline/src/cli.ts <path-to-file.md>` (or wherever the redline repo is checked out).
+**Long reviews (>10 min):** Use the polling pattern so the Bash timeout doesn't cut you off:
+
+```bash
+# Start Redline in the background
+redline /abs/path/to/file.md &
+# Poll the result file until the review is done
+RESULT_FILE="/abs/path/to/.review/file.md.result"
+until [ -f "$RESULT_FILE" ]; do sleep 30; done
+cat "$RESULT_FILE"
+```
+
+The result file is written at `.review/<basename>.result` (next to the file) when the session ends for any reason. On startup, Redline prints the result file path in its URL banner.
+
+If `redline` is not on PATH, run `bun link` once from the redline repo root to install it globally, then retry.
 
 Tell the human what you're doing in one short sentence before running it, e.g. "Opening this in Redline for review — I'll continue once you click Done." Redline prints the URL on startup. Surface that URL to the human in your text output too, so they can re-open the tab if they accidentally close it.
 
 ## How to interpret the result
 
-When the Bash call returns, look at the exit code and the last `REDLINE_RESULT:` line in stdout:
+**Blocking mode:** When the Bash call returns, look at the exit code and the last `REDLINE_RESULT:` line in stdout.
 
-- **Exit 0 + `REDLINE_RESULT: approved file=... rounds=N comments=N`** — Approved. Re-read the file from disk; it may have been revised through the review rounds. Continue with the work that needed the approval.
-- **Exit 2 + `REDLINE_RESULT: abandoned`** — Human gave up (Ctrl+C or killed the process). The doc is in whatever state it was last revised to, but it has not been signed off. Do not proceed as if it were approved. Ask the human what they want to do.
-- **Exit 1 or other** — Redline crashed. Check `.review/errors.log` next to the file. Surface the error to the human.
+**Polling mode:** When the result file appears, read it. It's JSON:
 
-The result line is stable contract — you can grep for `^REDLINE_RESULT:` in the captured stdout.
+```json
+{ "status": "approved", "file": "/abs/path/to/file.md", "rounds": 2, "comments": 5 }
+```
+
+In both modes, the statuses are:
+
+- **`approved`** — Human signed off. Re-read the file from disk (it may have been revised through multiple rounds). Continue with the work that needed approval.
+- **`abandoned`** — Human closed the tab or Ctrl+C'd without clicking Done. The doc is in whatever state it was last revised to, but has not been signed off. Ask the human what they want to do.
+- **`error`** — Redline crashed. Check `.review/errors.log` next to the file. Surface the error to the human.
+
+The blocking mode also prints `REDLINE_RESULT: approved file=... rounds=N comments=N` to stdout; you can grep for `^REDLINE_RESULT:` in captured stdout.
 
 ## What you do not need to do
 
-- You do not need to wait, poll, or check the sidecar yourself. The Bash call blocks for you.
 - You do not need to reply to comments. Redline spawns its own agent subprocess that handles inline replies during the review.
 - You do not need to invoke `redline resolve` separately. Revisions happen inside the session when the human accepts.
 

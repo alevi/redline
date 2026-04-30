@@ -4,6 +4,8 @@ import { loadSidecar, saveSidecar } from "./sidecar";
 import type { Round } from "./sidecar";
 import { pickRevisionModel } from "./pickModel";
 
+const serverBase = () => `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
+
 export async function resolve(filePath: string, options: { model?: string } = {}) {
   const model = options.model ?? null;
   const sidecar = await loadSidecar(filePath);
@@ -30,7 +32,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   if (settled.length === 0) {
     console.log("No settled comments — no revision needed.");
     await openNextRound(sidecar, filePath);
-    try { await fetch("http://localhost:3000/api/reload", { method: "POST" }); } catch { /* non-fatal */ }
+    try { await fetch(`${serverBase()}/api/reload`, { method: "POST" }); } catch { /* non-fatal */ }
     return;
   }
 
@@ -107,7 +109,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   let buffer = "";
   const reader = proc.stdout.getReader();
   const broadcastChunk = (text: string, kind: "thinking" | "text") => {
-    fetch("http://localhost:3000/api/revision-chunk", {
+    fetch(`${serverBase()}/api/revision-chunk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, kind }),
@@ -175,7 +177,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   if (trimmed === docText.trim()) {
     console.log("No changes — output identical to input. Skipping file write.");
     await openNextRound(sidecar, filePath);
-    try { await fetch("http://localhost:3000/api/revision-no-changes", { method: "POST" }); } catch { /* non-fatal */ }
+    try { await fetch(`${serverBase()}/api/revision-no-changes`, { method: "POST" }); } catch { /* non-fatal */ }
     return;
   }
 
@@ -190,7 +192,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
 
   // Notify browser to reload
   try {
-    await fetch("http://localhost:3000/api/reload", { method: "POST" });
+    await fetch(`${serverBase()}/api/reload`, { method: "POST" });
   } catch { /* server may not be running — non-fatal */ }
 }
 

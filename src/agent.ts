@@ -1,5 +1,5 @@
 import path from "path";
-import { readFile } from "fs/promises";
+import { appendFile, mkdir, readFile } from "fs/promises";
 import { resolve } from "./resolve";
 import { pickReplyModel } from "./pickModel";
 
@@ -9,7 +9,26 @@ if (!filePath) {
   process.exit(1);
 }
 
-const BASE_URL = "http://localhost:3000";
+const BASE_URL = `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
+
+async function logReplyFailure(commentId: string, err: unknown) {
+  const logDir = path.join(path.dirname(path.resolve(filePath)), ".review");
+  await mkdir(logDir, { recursive: true });
+  const logPath = path.join(logDir, "errors.log");
+  const msg = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error && err.stack ? `\n${err.stack}` : "";
+  const entry =
+    `\n=== ${new Date().toISOString()} — reply failure — comment ${commentId} ===\n` +
+    `file:    ${path.resolve(filePath)}\n` +
+    `reason:  ${msg}${stack}\n` +
+    `===\n`;
+  try {
+    await appendFile(logPath, entry, "utf-8");
+    console.error(`[agent] Logged reply failure → .review/errors.log`);
+  } catch {
+    // best-effort — don't mask the original error
+  }
+}
 
 const REPLY_SYSTEM_PROMPT =
   "You are an AI writing assistant responding to inline review comments on a Markdown document. " +
@@ -90,9 +109,14 @@ async function handleComment(commentId: string) {
 
     const trimmed = reply.trim();
     if (trimmed) await postReply(commentId, trimmed);
+  } catch (err) {
+    await logReplyFailure(commentId, err);
+    throw err;
   } finally {
     inProgress.delete(commentId);
-    if (inProgress.size === 0) await postAgentReplied();
+    if (inProgress.size === 0) {
+      postAgentReplied().catch((e) => console.error("[agent] postAgentReplied failed:", e));
+    }
   }
 }
 

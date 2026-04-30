@@ -19,12 +19,8 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 ### M3: Resiliency pass
 
 - **Done when:** A session can be started and completed without silent failures or stuck states. All error paths surface visibly in the UI. No session-ending bugs on the happy path. Long reviews and abandoned sessions both have a defined story.
-- **Status:** planned
-- **Carry-ins from M2:**
-  - Tab-close abandonment isn't detected. SIGINT works, but a closed browser tab leaves the server running indefinitely — and blocks the outer agent until the 10-minute Bash timeout fires.
-  - Review duration is capped at 10 minutes by the calling agent's Bash timeout. Likely needs a result-file handoff (`.review/<file>.result`) so the outer agent can `until [ -f result ]` instead of waiting on a subprocess.
-  - Error logging exists on the resolve path. Comment-reply failures still die quietly.
-- **Retro:**
+- **Status:** reached
+- **Retro:** [docs/retros/m3-retro.md](retros/m3-retro.md)
 
 ### M4: Typed comment actions
 

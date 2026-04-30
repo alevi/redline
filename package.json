@@ -1,10 +1,12 @@
 {
   "name": "redline",
   "version": "0.1.0",
-  "private": true,
+  "bin": {
+    "redline": "src/cli.ts"
+  },
   "scripts": {
     "start": "bun src/cli.ts",
-    "test": "bun test"
+    "test": "bun test tests/"
   },
   "dependencies": {
     "hono": "^4.7.0",
