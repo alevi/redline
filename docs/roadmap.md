@@ -14,7 +14,7 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 
 - **Done when:** A review can span multiple rounds. Comments persist across rounds with status (open / resolved / superseded), the agent sees prior rounds when responding, the human can sign off explicitly, and an outer agent can launch a review and continue once the human is done.
 - **Status:** reached
-- **Retro:** [docs/retros/m2-retro.md](retros/m2-retro.md) — closed by dogfooding the redline-review skill on its own retro.
+- **Retro:** [docs/retros/m2-multi-round-revision.md](retros/m2-multi-round-revision.md) — closed by dogfooding the redline-review skill on its own retro.
 
 ### M3: Resiliency pass
 
