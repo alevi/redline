@@ -32,7 +32,7 @@ Fix: signal handlers that must write files before exiting should use synchronous
 
 **Why universal.** Any studio project that has a human-in-the-loop step exposed as a CLI subprocess will hit this pattern — the Bash tool timeout is a real ceiling. The blocking-or-polling choice gives callers flexibility without requiring the subprocess to know in advance how long the human will take.
 
-**Status.** Proposed
+**Status.** Accepted — merged in [levi-studio#7](https://github.com/alevi/levi-studio/pull/7) (2026-04-30).
 
 ---
 
