@@ -1,6 +1,6 @@
 # Studio Context
 
-> Canon source: `~/Projects/LeviStudio/canon/docs/`. Last synced: 2026-04-29.
+> Canon source: `~/Projects/LeviStudio/canon/docs/`. Last synced: 2026-04-30.
 >
 > The section above `## Project-specific notes` is a synced index into Levi Studio canon. `LeviStudio/tools/refresh-canon.py` rewrites it on each sync — do not edit it here; local edits are overwritten. If something feels missing or wrong, log a `Canon proposal` entry in `docs/retro.md` (see `canon/docs/13-retro-process.md`).
 >
@@ -27,7 +27,7 @@ This project is a Levi Studio spin-off. Studio-wide guidance lives in `~/Project
 | 10-shared-tools.md | …reaching for a utility that might already exist studio-wide. |
 | 11-debugging-principles.md | …chasing a bug whose cause isn't obvious within ~15 minutes. |
 | 12-ai-workflow-patterns.md | …designing any surface where an AI agent participates in real time. |
-| 13-retro-process.md | …finishing notable work, hitting a surprise worth recording, or proposing a canon change. |
+| 13-retro-process.md | …closing a milestone, finishing notable work, hitting a surprise worth recording, or proposing a canon change. |
 | 14-spinoff-procedure.md | …a sub-project inside this repo starts feeling like its own thing. |
 
 ## Project-specific notes
