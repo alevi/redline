@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+dist/
+.DS_Store
+
+# Review sidecars — gitignore these if you don't want reviews in the repo
+# (remove this line if you want to commit review files)
+.review/
