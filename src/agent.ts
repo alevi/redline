@@ -1,4 +1,5 @@
 import path from "path";
+import { readFile } from "fs/promises";
 import { resolve } from "./resolve";
 import { pickReplyModel } from "./pickModel";
 
@@ -57,14 +58,14 @@ async function handleComment(commentId: string) {
 
     await postThinking(commentId);
 
+    const docText = await readFile(path.resolve(filePath), "utf-8");
     const threadText = thread
       .map((e: any) => `${e.role === "human" ? "Reviewer" : "Agent"}: ${e.message}`)
       .join("\n");
 
     const userMessage =
-      `Quoted passage: "${comment.quote}"\n` +
-      `Context before: "${comment.context_before}"\n` +
-      `Context after: "${comment.context_after}"\n\n` +
+      `## Document\n\n${docText}\n\n---\n\n` +
+      `## Comment\n\nQuoted passage: "${comment.quote}"\n\n` +
       `Thread:\n${threadText}`;
 
     const lastMessage = thread[thread.length - 1].message as string;
@@ -97,7 +98,19 @@ async function handleComment(commentId: string) {
 
 async function handleAccepted() {
   console.log("[agent] accepted — running revision...");
-  await resolve(path.resolve(filePath));
+  try {
+    await resolve(path.resolve(filePath));
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    console.error("[agent] revision failed:", msg);
+    try {
+      await fetch(`${BASE_URL}/api/revision-error`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+    } catch { /* server may be down — non-fatal */ }
+  }
 }
 
 async function handleEvent(type: string, payload: any) {

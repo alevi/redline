@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "fs/promises";
+import { appendFile, copyFile, mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { loadSidecar, saveSidecar } from "./sidecar";
 import type { Round } from "./sidecar";
@@ -11,8 +11,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   // Find the most recently accepted round
   const resolvedRounds = sidecar.rounds.filter((r) => r.resolved_at != null);
   if (resolvedRounds.length === 0) {
-    console.error("No accepted round found — human must click 'Accept & revise' first.");
-    process.exit(1);
+    throw new Error("No accepted round found — human must click 'Accept & revise' first");
   }
   const round: Round = resolvedRounds[resolvedRounds.length - 1];
   const settled = round.comments.filter((c) => c.resolved);
@@ -45,6 +44,24 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     })
     .join("\n\n");
 
+  // Summarise what was agreed in earlier rounds so the model doesn't undo them
+  const priorRounds = resolvedRounds.slice(0, -1);
+  let priorChangesBlock = "";
+  if (priorRounds.length > 0) {
+    const lines = priorRounds.flatMap((r) =>
+      r.comments
+        .filter((c) => c.resolved)
+        .map((c) => {
+          const lastAgent = [...c.thread].reverse().find((e) => e.role === "agent");
+          return `- Round ${r.round}: "${c.quote}" → ${lastAgent?.message ?? "(resolved)"}`;
+        })
+    );
+    if (lines.length > 0) {
+      priorChangesBlock =
+        "\n\n---\n\n## Previously agreed changes (do not undo)\n\n" + lines.join("\n");
+    }
+  }
+
   const systemPrompt =
     "You are revising a Markdown document based on settled reviewer comments.\n" +
     "For each comment, edit the relevant passage to reflect what was agreed.\n" +
@@ -52,7 +69,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     "Do not add commentary or explanation. Return only the revised Markdown document.";
 
   const userMessage =
-    `## Document\n\n${docText}\n\n---\n\n## Settled comments\n\n${commentsBlock}`;
+    `## Document\n\n${docText}\n\n---\n\n## Settled comments\n\n${commentsBlock}${priorChangesBlock}`;
 
   // Call the claude CLI (inherits auth from the user's Claude Code session — no API key needed)
   console.log(`Revising with ${chosenModel}...\n`);
@@ -60,44 +77,106 @@ export async function resolve(filePath: string, options: { model?: string } = {}
 
   const cliBin = process.env.CLAUDE_CODE_EXECPATH ?? "claude";
   const proc = Bun.spawn(
-    [cliBin, "-p", "--system-prompt", systemPrompt, "--model", chosenModel],
+    [cliBin, "-p", "--system-prompt", systemPrompt, "--model", chosenModel,
+     "--output-format", "stream-json", "--include-partial-messages", "--verbose"],
     {
       stdin: "pipe",
       stdout: "pipe",
-      stderr: "inherit",
+      stderr: "pipe",
     }
   );
 
   proc.stdin.write(userMessage);
   proc.stdin.end();
 
+  // Drain stderr concurrently so we can include it in any error report
+  let stderrText = "";
+  (async () => {
+    const r = proc.stderr.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await r.read();
+      if (done) break;
+      const chunk = dec.decode(value);
+      stderrText += chunk;
+      process.stderr.write(chunk);
+    }
+  })();
+
   let revised = "";
+  let buffer = "";
   const reader = proc.stdout.getReader();
+  const broadcastChunk = (text: string, kind: "thinking" | "text") => {
+    fetch("http://localhost:3000/api/revision-chunk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, kind }),
+    }).catch(() => {});
+  };
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const chunk = new TextDecoder().decode(value);
-    process.stdout.write(chunk);
-    revised += chunk;
+    buffer += new TextDecoder().decode(value);
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "stream_event" && obj.event?.type === "content_block_delta") {
+          const delta = obj.event.delta;
+          if (delta?.type === "text_delta" && delta.text) {
+            revised += delta.text;
+            process.stdout.write(delta.text);
+            broadcastChunk(delta.text, "text");
+          } else if (delta?.type === "thinking_delta" && delta.thinking) {
+            broadcastChunk(delta.thinking, "thinking");
+          }
+        }
+      } catch { /* malformed JSON line, skip */ }
+    }
   }
 
   const exitCode = await proc.exited;
   console.log("\n" + "─".repeat(60) + "\n");
 
+  const fail = async (reason: string) => {
+    await logRevisionFailure(filePath, {
+      reason,
+      model: chosenModel,
+      exitCode,
+      stderr: stderrText.trim(),
+      stdoutSample: revised.slice(0, 2000),
+      stdoutLength: revised.length,
+    });
+    throw new Error(reason);
+  };
+
   if (exitCode !== 0) {
-    console.error(`claude CLI exited with code ${exitCode} — aborting. Original file untouched.`);
-    process.exit(1);
+    await fail(`claude CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`);
   }
 
-  // Validate output
-  const trimmed = revised.trim().replace(/^```(?:markdown)?\n([\s\S]*)\n```$/, "$1").trim();
+  // Validate output. Strip a wrapping code fence if present, and a preamble before the first heading.
+  let trimmed = revised.trim().replace(/^```(?:markdown)?\n([\s\S]*)\n```$/, "$1").trim();
   if (!trimmed) {
-    console.error("Agent returned empty output — aborting. Original file untouched.");
-    process.exit(1);
+    await fail("Agent returned empty output (no text deltas streamed)");
   }
   if (!trimmed.startsWith("#")) {
-    console.error("Output doesn't start with a Markdown heading — aborting. Original file untouched.");
-    process.exit(1);
+    const firstHeadingIdx = trimmed.search(/^# /m);
+    if (firstHeadingIdx > 0) {
+      console.log("Stripping preamble before first heading.");
+      trimmed = trimmed.slice(firstHeadingIdx).trim();
+    } else {
+      await fail("Output contains no Markdown heading — model returned non-document content");
+    }
+  }
+
+  // If the model made no changes, skip the write and signal the browser
+  if (trimmed === docText.trim()) {
+    console.log("No changes — output identical to input. Skipping file write.");
+    await openNextRound(sidecar, filePath);
+    try { await fetch("http://localhost:3000/api/revision-no-changes", { method: "POST" }); } catch { /* non-fatal */ }
+    return;
   }
 
   // Write revised document
@@ -113,6 +192,30 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   try {
     await fetch("http://localhost:3000/api/reload", { method: "POST" });
   } catch { /* server may not be running — non-fatal */ }
+}
+
+async function logRevisionFailure(
+  filePath: string,
+  details: { reason: string; model: string; exitCode: number; stderr: string; stdoutSample: string; stdoutLength: number }
+) {
+  const logDir = path.join(path.dirname(filePath), ".review");
+  await mkdir(logDir, { recursive: true });
+  const logPath = path.join(logDir, "errors.log");
+  const entry =
+    `\n=== ${new Date().toISOString()} — ${path.basename(filePath)} ===\n` +
+    `reason:       ${details.reason}\n` +
+    `model:        ${details.model}\n` +
+    `exitCode:     ${details.exitCode}\n` +
+    `stdoutLength: ${details.stdoutLength}\n` +
+    (details.stderr ? `stderr:\n${details.stderr}\n` : "") +
+    (details.stdoutSample ? `stdoutSample (first 2000 chars):\n${details.stdoutSample}\n` : "") +
+    `===\n`;
+  try {
+    await appendFile(logPath, entry, "utf-8");
+    console.error(`Logged failure → .review/errors.log`);
+  } catch (e) {
+    console.error("Failed to write error log:", e);
+  }
 }
 
 function printChangeSummary(oldText: string, newText: string, filePath: string) {

@@ -53,7 +53,7 @@ export function createServer(filePath: string) {
         keepaliveTimer = setInterval(() => {
           try { controller.enqueue(enc.encode(": ping\n\n")); }
           catch { clearInterval(keepaliveTimer); sseClients.delete(controller); }
-        }, 15000);
+        }, 8000);
       },
       cancel() { clearInterval(keepaliveTimer); sseClients.delete(ctrl); },
     });
@@ -185,7 +185,10 @@ export function createServer(filePath: string) {
     console.log(`✓  Review complete — ${path.basename(filePath)}`);
     console.log(`   ${totalRounds} round${totalRounds !== 1 ? "s" : ""} · ${totalComments} comment${totalComments !== 1 ? "s" : ""} addressed`);
     console.log(`   Revised document: ${filePath}`);
-    console.log(`${line}\n`);
+    console.log(`${line}`);
+    // Machine-greppable result line for a calling agent. Keep this stable.
+    console.log(`REDLINE_RESULT: approved file=${filePath} rounds=${totalRounds} comments=${totalComments}`);
+    console.log("");
 
     setTimeout(() => process.exit(0), 500);
     return c.json({ ok: true });
@@ -194,6 +197,33 @@ export function createServer(filePath: string) {
   // Called by redline resolve after writing the revised document
   app.post("/api/reload", (c) => {
     broadcast("reload", {});
+    return c.json({ ok: true });
+  });
+
+  // Called by redline resolve when the model returned no changes
+  app.post("/api/revision-no-changes", (c) => {
+    broadcast("revision-no-changes", {});
+    return c.json({ ok: true });
+  });
+
+  // Called by redline resolve for each stdout chunk (streaming progress to browser)
+  app.post("/api/revision-chunk", async (c) => {
+    const { text, kind } = await c.req.json();
+    broadcast("revision-chunk", { text, kind });
+    return c.json({ ok: true });
+  });
+
+  // Called by the agent when the revision flow throws — un-resolves the latest
+  // round so the human can retry by clicking "Revise document" again
+  app.post("/api/revision-error", async (c) => {
+    const { message } = await c.req.json();
+    const sidecar = await loadSidecar(filePath);
+    const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
+    if (lastResolved) {
+      lastResolved.resolved_at = null;
+      await saveSidecar(filePath, sidecar);
+    }
+    broadcast("revision-error", { message });
     return c.json({ ok: true });
   });
 
@@ -958,7 +988,34 @@ function pageTemplate(
       background: #fff3e0;
       border-bottom-color: #ffb74d;
       color: #e65100;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
     }
+    #sidebar-status-banner.error {
+      background: #fdecea;
+      border-bottom-color: #f5c2c0;
+      color: #a01818;
+    }
+    .revising-header { display: flex; align-items: center; gap: 8px; }
+    #revision-stream {
+      display: none;
+      margin-top: 8px;
+      width: 100%;
+      max-height: 220px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.05);
+      border-radius: 4px;
+      padding: 7px 9px;
+      font-family: 'Menlo','Monaco',monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.5;
+      box-sizing: border-box;
+    }
+    #revision-stream .rs-thinking { color: #9a7b3f; font-style: italic; opacity: 0.75; }
+    #revision-stream .rs-text { color: #5a3a00; }
     .revising-spinner {
       display: inline-block;
       width: 12px; height: 12px;
@@ -1775,11 +1832,15 @@ function pageTemplate(
       const banner = document.getElementById('sidebar-status-banner');
       if (!btnAccept) return; // read-only view
 
+      // If a revision error is currently surfaced, leave the banner alone —
+      // it gets cleared explicitly when the user retries the revision.
+      const errorShowing = !!banner?.classList.contains('error');
+
       if (roundResolved) {
         btnAccept.disabled = true;
         btnAccept.textContent = '✓ Accepted';
-        if (banner) {
-          banner.innerHTML = '<span class="revising-spinner"></span><span>Revising the document<span class="revising-dots"><span>.</span><span>.</span><span>.</span></span></span>';
+        if (banner && !errorShowing) {
+          banner.innerHTML = '<div class="revising-header"><span class="revising-spinner"></span><span>Revising the document<span class="revising-dots"><span>.</span><span>.</span><span>.</span></span></span></div><div id="revision-stream"></div>';
           banner.classList.add('revising');
           banner.style.display = 'flex';
         }
@@ -1790,7 +1851,7 @@ function pageTemplate(
         btnAccept.disabled = false;
         btnAccept.textContent = 'Done';
         btnAccept.dataset.mode = 'finish';
-        if (banner) {
+        if (banner && !errorShowing) {
           banner.classList.remove('revising');
           banner.style.display = 'none';
         }
@@ -1799,7 +1860,7 @@ function pageTemplate(
         btnAccept.disabled = hasOpen;
         btnAccept.dataset.mode = 'accept';
         btnAccept.textContent = hasOpen ? 'Revise document' : 'Revise document ✓';
-        if (banner) {
+        if (banner && !errorShowing) {
           banner.classList.remove('revising');
           if (!hasOpen) {
             banner.textContent = 'All comments resolved — ready to accept.';
@@ -1815,6 +1876,13 @@ function pageTemplate(
       const btnAccept = document.getElementById('btn-accept');
       if (btnAccept?.disabled) return;
       const mode = btnAccept.dataset.mode;
+      // Clear any prior error banner so a retry shows the revising state cleanly
+      const banner = document.getElementById('sidebar-status-banner');
+      if (banner) {
+        banner.classList.remove('error');
+        banner.style.display = 'none';
+        banner.textContent = '';
+      }
       const endpoint = mode === 'finish' ? '/api/finish' : '/api/accept';
       const res = await fetch(endpoint, { method: 'POST' });
       const data = await res.json();
@@ -1825,7 +1893,7 @@ function pageTemplate(
           btnAccept.textContent = '✓ Done';
           const banner = document.getElementById('sidebar-status-banner');
           if (banner) {
-            banner.classList.remove('revising');
+            banner.classList.remove('revising'); banner.classList.remove('error');
             banner.textContent = 'Review complete. Document is ready.';
             banner.style.display = 'block';
           }
@@ -1863,7 +1931,6 @@ function pageTemplate(
 
     document.getElementById('diff-btn-feedback').addEventListener('click', () => {
       document.getElementById('diff-overlay').classList.remove('open');
-      // Round was accepted — for now just dismiss; future: open a new round
     });
 
     // ── Round picker ─────────────────────────────────────────────────
@@ -1883,6 +1950,10 @@ function pageTemplate(
     positionCards();
     updateNav();
     applyRoundState();
+    if (sessionStorage.getItem('just-revised')) {
+      sessionStorage.removeItem('just-revised');
+      showDiffOverlay();
+    }
     window.addEventListener('scroll', positionCards, { passive: true });
     window.addEventListener('resize', positionCards, { passive: true });
 
@@ -1916,7 +1987,43 @@ function pageTemplate(
         softRefresh();
       });
       es.addEventListener('comment-resolved', () => softRefresh({ rehighlight: true }));
-      es.addEventListener('reload', () => window.location.reload());
+      es.addEventListener('reload', () => { sessionStorage.setItem('just-revised', '1'); window.location.reload(); });
+      es.addEventListener('revision-chunk', (e) => {
+        try {
+          const { text, kind } = JSON.parse(e.data);
+          const stream = document.getElementById('revision-stream');
+          if (stream) {
+            if (stream.style.display === 'none' || !stream.style.display) stream.style.display = 'block';
+            const span = document.createElement('span');
+            span.className = kind === 'thinking' ? 'rs-thinking' : 'rs-text';
+            span.textContent = text;
+            stream.appendChild(span);
+            stream.scrollTop = stream.scrollHeight;
+          }
+        } catch {}
+      });
+      es.addEventListener('revision-error', (e) => {
+        let msg = 'Revision failed.';
+        try { msg = 'Revision failed: ' + (JSON.parse(e.data).message ?? 'unknown error'); } catch {}
+        softRefresh();
+        const banner = document.getElementById('sidebar-status-banner');
+        if (banner) {
+          banner.classList.remove('revising'); banner.classList.remove('error');
+          banner.classList.add('error');
+          banner.textContent = msg + ' Click "Revise document" to retry.';
+          banner.style.display = 'block';
+        }
+      });
+      es.addEventListener('revision-no-changes', () => {
+        softRefresh();
+        const banner = document.getElementById('sidebar-status-banner');
+        if (banner) {
+          banner.classList.remove('revising'); banner.classList.remove('error');
+          banner.textContent = 'No changes — the document is unchanged.';
+          banner.style.display = 'block';
+          setTimeout(() => { banner.style.display = 'none'; }, 5000);
+        }
+      });
       es.addEventListener('finished', () => {
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;flex-direction:column;gap:16px;color:#374151"><div style="font-size:48px">✓</div><div style="font-size:20px;font-weight:600">Review complete</div><div style="color:#6b7280">You can close this tab and continue in Claude Code.</div></div>';
       });

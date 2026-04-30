@@ -34,18 +34,24 @@ if (args[0] === "resolve") {
   }
 
   const app = createServer(resolved);
-  const server = Bun.serve({ port: 3000, fetch: app.fetch });
+  const server = Bun.serve({ port: 3000, fetch: app.fetch, idleTimeout: 0 });
   const url = `http://localhost:${server.port}`;
-  console.log(`Redline → ${url}`);
-  console.log(`File: ${resolved}`);
+  const bar = "─".repeat(60);
+  console.log(`\n${bar}`);
+  console.log(`Redline review session`);
+  console.log(`  File: ${resolved}`);
+  console.log(`  URL:  ${url}    ← open here if you lose the tab`);
+  console.log(`${bar}\n`);
 
   const agentProc = Bun.spawn(
-    [process.execPath, path.join(import.meta.dir, "agent.ts"), resolved],
+    [process.execPath, "run", path.join(import.meta.dir, "agent.ts"), resolved],
     { stdout: "inherit", stderr: "inherit", stdin: "ignore" }
   );
   process.on("exit", () => agentProc.kill());
-  process.on("SIGINT", () => { agentProc.kill(); process.exit(0); });
-  process.on("SIGTERM", () => { agentProc.kill(); process.exit(0); });
+  // SIGINT/SIGTERM = abandoned session. Exit 2 so a calling agent can
+  // distinguish "user gave up" from "user clicked Done" (exit 0).
+  process.on("SIGINT", () => { agentProc.kill(); console.log("\nREDLINE_RESULT: abandoned"); process.exit(2); });
+  process.on("SIGTERM", () => { agentProc.kill(); console.log("\nREDLINE_RESULT: abandoned"); process.exit(2); });
 
   const open =
     process.platform === "darwin" ? "open" :
