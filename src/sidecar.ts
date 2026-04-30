@@ -29,6 +29,7 @@ export interface Round {
 
 export interface Sidecar {
   file: string;
+  context?: string;
   rounds: Round[];
 }
 
