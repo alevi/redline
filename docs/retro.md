@@ -12,4 +12,4 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 **Why universal.** Every Levi Studio project that uses functional milestones hits the same trade-off: a single running log is right for in-the-moment capture and cross-milestone pattern recognition, but reads poorly when you (or a fresh-session agent) want to understand "what did M2 teach us." The per-milestone file is the smallest fix — a derived artifact, not a replacement — so it doesn't trade off either property. It also gives the roadmap something concrete to link from (`Retro: docs/retros/m2-retro.md`), which makes the `Status: reached` line on a milestone genuinely useful as a navigation point rather than a flat assertion.
 
-**Status.** Proposed
+**Status.** Accepted — merged in [levi-studio#2](https://github.com/alevi/levi-studio/pull/2) (2026-04-30).
