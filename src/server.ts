@@ -176,6 +176,9 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     if (!comment) return c.json({ ok: false, error: "Comment not found" }, 404);
     comment.resolved = false;
     await saveSidecar(filePath, sidecar);
+    // Broadcast so other browser tabs and the agent see the reopen.
+    const allResolved = latestRound.comments.length > 0 && latestRound.comments.every((cm) => cm.resolved);
+    broadcast("comment-resolved", { round: latestRound.round, commentId: id, allResolved });
     return c.json({ ok: true, comment });
   });
 
@@ -392,6 +395,38 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     const newText = await readFile(filePath, "utf-8");
     const html = renderDocDiff(oldText, newText);
     return c.json({ ok: true, html });
+  });
+
+  // Static asset fallback: serve sibling files (images, etc.) from the doc's
+  // directory so relative `![alt](./diagram.png)` works. Path-traversal guard:
+  // resolved path must stay under the doc directory; the .review subdir is off limits.
+  app.get("*", async (c) => {
+    const docDir = path.resolve(path.dirname(filePath));
+    let urlPath: string;
+    try {
+      urlPath = decodeURIComponent(new URL(c.req.url).pathname);
+    } catch {
+      return c.notFound();
+    }
+    const requested = path.resolve(docDir, "." + urlPath);
+    if (!requested.startsWith(docDir + path.sep) && requested !== docDir) return c.notFound();
+    if (requested.startsWith(path.join(docDir, ".review") + path.sep)) return c.notFound();
+    if (requested === path.resolve(filePath)) return c.notFound(); // the markdown itself is served at "/"
+    try {
+      const data = await readFile(requested);
+      const ext = path.extname(requested).toLowerCase();
+      const ct =
+        ext === ".png" ? "image/png" :
+        ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
+        ext === ".gif" ? "image/gif" :
+        ext === ".svg" ? "image/svg+xml" :
+        ext === ".webp" ? "image/webp" :
+        ext === ".pdf" ? "application/pdf" :
+        "application/octet-stream";
+      return new Response(data, { headers: { "Content-Type": ct, "Cache-Control": "no-cache" } });
+    } catch {
+      return c.notFound();
+    }
   });
 
   return {
@@ -653,6 +688,8 @@ function pageTemplate(
       font-weight: 500;
       cursor: pointer;
       transition: border-color 0.15s, color 0.15s;
+      min-width: 168px;
+      text-align: center;
     }
     .btn-accept:hover:not(:disabled) { border-color: #9ca3af; color: #111827; }
     .btn-accept:disabled { opacity: 0.4; cursor: default; }
@@ -676,12 +713,50 @@ function pageTemplate(
     }
     .prose h1 { font-size: 1.9em; margin-top: 0; }
     .prose h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-    .prose h3 { font-size: 1.15em; }
-    .prose h4 { font-size: 1em; }
+    .prose h3 { font-size: 1.22em; margin-top: 2em; }
+    .prose h4 {
+      font-size: 0.85em;
+      margin-top: 1.6em;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
 
     .prose p { margin: 0.9em 0; }
+    .prose img { max-width: 100%; height: auto; display: block; margin: 1.2em auto; border-radius: 4px; }
+    .prose .broken-img {
+      display: block;
+      padding: 14px 18px;
+      margin: 1.2em auto;
+      background: var(--thread-bg);
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      font-style: italic;
+    }
     .prose ul, .prose ol { margin: 0.9em 0; padding-left: 1.6em; }
     .prose li { margin: 0.3em 0; }
+    .prose li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.4em; }
+    .prose li > input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border: 1.5px solid #c5c5bf;
+      border-radius: 3px;
+      vertical-align: -2px;
+      margin-right: 7px;
+      cursor: default;
+      background: white;
+    }
+    .prose li > input[type="checkbox"]:checked {
+      background-color: var(--accent);
+      border-color: var(--accent);
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><path d='M3 7l3 3 5-6' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+      background-repeat: no-repeat;
+      background-position: center;
+    }
     .prose blockquote {
       border-left: 3px solid var(--border);
       margin: 1em 0;
@@ -709,12 +784,25 @@ function pageTemplate(
       font-size: 0.85em;
       color: inherit;
     }
-    .prose a { color: var(--accent); text-decoration: underline; }
+    .prose a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
+    .prose a:hover { color: #1e40af; }
     .prose hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
-    .prose table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-    .prose th, .prose td { border: 1px solid var(--border); padding: 0.5em 0.8em; text-align: left; }
+    .prose table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 1.2em 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 14px;
+    }
+    .prose th, .prose td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); }
     .prose th { background: #f5f5f3; font-weight: 600; }
+    .prose tr:last-child td { border-bottom: none; }
+    .prose tbody tr:nth-child(even) td { background: #fafaf9; }
     .prose strong { font-weight: 600; }
+    .prose del, .prose s { color: #94a3b8; }
 
     /* ── Highlights — box-shadow underline avoids any layout shift ── */
     mark.rl-highlight {
@@ -1166,6 +1254,17 @@ function pageTemplate(
       color: var(--text);
     }
     .btn-diff-feedback:hover { background: var(--thread-bg); }
+    .btn-diff-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 16px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .btn-diff-close:hover { background: var(--thread-bg); color: var(--text); }
 
     /* ── Revision banner ── */
     .revision-banner {
@@ -1254,7 +1353,7 @@ function pageTemplate(
         <span class="doc-title">
           ${escapeHtml(title)}
           <span style="position:relative">
-            <span class="round-badge${totalRounds > 1 ? ' repeat' : ''}${totalRounds > 1 ? ' clickable' : ''}" id="round-badge">Round ${roundNumber}${totalRounds > 1 ? ` of ${totalRounds}` : ''}</span>
+            <span class="round-badge${totalRounds > 1 ? ' repeat' : ''}${totalRounds > 1 ? ' clickable' : ''}" id="round-badge">Round ${roundNumber} of ${totalRounds}</span>
             ${totalRounds > 1 ? `<div class="round-picker" id="round-picker" style="display:none">${
               Array.from({length: totalRounds}, (_, i) => i + 1).map(n => {
                 const isCurrent = n === roundNumber;
@@ -1301,6 +1400,7 @@ function pageTemplate(
         <h2>Review changes</h2>
         <button class="btn-diff-feedback" id="diff-btn-feedback">Give more feedback</button>
         <button class="btn-diff-accept" id="diff-btn-accept">Looks good — close session</button>
+        <button class="btn-diff-close" id="diff-btn-close" aria-label="Close">✕</button>
       </div>
       <div id="diff-panel-body"></div>
     </div>
@@ -1326,7 +1426,9 @@ function pageTemplate(
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) return;
         const text = sel.toString().trim();
-        if (!text) return;
+        // Require at least 2 characters to avoid accidental single-letter comments
+        // from stray click-drags.
+        if (!text || text.length < 2) return;
 
         const prose = document.getElementById('prose');
         if (!prose.contains(sel.anchorNode)) return;
@@ -1514,7 +1616,11 @@ function pageTemplate(
     // Run a DOM-mutating callback while pinning scroll position.
     // Uses requestAnimationFrame to clamp scroll for two frames after the mutation
     // — this catches focus-loss scrolls and layout-induced jumps that fire after the call returns.
+    let deliberateScrollUntil = 0;
     function preserveScroll(fn) {
+      // If a deliberate scroll-to is in flight (e.g. all-resolved scroll-to-top),
+      // skip the pin so the SSE softRefresh doesn't override the smooth scroll.
+      if (Date.now() < deliberateScrollUntil) { fn(); return; }
       const top = window.scrollY;
       const active = document.activeElement;
       if (active && active !== document.body && typeof active.blur === 'function') active.blur();
@@ -1676,11 +1782,11 @@ function pageTemplate(
         if (mark) {
           const markRect = mark.getBoundingClientRect();
           ideal = Math.max(0, markRect.top - sidebarRect.top);
-          fallbackTop = Math.max(fallbackTop, ideal + card.offsetHeight + 8);
+          fallbackTop = Math.max(fallbackTop, ideal + card.offsetHeight + 14);
         } else {
           // No highlight anchor (e.g. read-only view of past round) — stack sequentially
           ideal = fallbackTop;
-          fallbackTop += card.offsetHeight + 8;
+          fallbackTop += card.offsetHeight + 14;
         }
         items.push({
           card,
@@ -1700,7 +1806,7 @@ function pageTemplate(
         items.forEach(({ card, ideal }) => {
           const top = Math.max(ideal, minTop);
           card.style.top = top + 'px';
-          minTop = top + card.offsetHeight + 8;
+          minTop = top + card.offsetHeight + 14;
         });
         return;
       }
@@ -1710,21 +1816,21 @@ function pageTemplate(
       active.card.style.top = active.ideal + 'px';
 
       // Cards above: cascade upward from active card's top edge
-      let ceiling = active.ideal - 8;
+      let ceiling = active.ideal - 14;
       for (let i = activeIdx - 1; i >= 0; i--) {
         const { card, ideal } = items[i];
         const top = Math.max(0, Math.min(ideal, ceiling - card.offsetHeight));
         card.style.top = top + 'px';
-        ceiling = top - 8;
+        ceiling = top - 14;
       }
 
       // Cards below: cascade downward from active card's bottom edge
-      let floor = active.ideal + active.card.offsetHeight + 8;
+      let floor = active.ideal + active.card.offsetHeight + 14;
       for (let i = activeIdx + 1; i < items.length; i++) {
         const { card, ideal } = items[i];
         const top = Math.max(ideal, floor);
         card.style.top = top + 'px';
-        floor = top + card.offsetHeight + 8;
+        floor = top + card.offsetHeight + 14;
       }
     }
 
@@ -1744,7 +1850,7 @@ function pageTemplate(
 
     function buildCommentCard(comment) {
       const card = document.createElement('div');
-      card.className = 'comment-card' + (comment.resolved ? ' resolved' : '') + (comment.resolved && roundResolved ? ' expanded' : '');
+      card.className = 'comment-card' + (comment.resolved ? ' resolved' : '');
       card.id = 'card-' + comment.id;
 
       const quote = document.createElement('div');
@@ -1758,13 +1864,18 @@ function pageTemplate(
       quote.appendChild(document.createTextNode('"' + comment.quote + '"'));
       card.appendChild(quote);
 
-      // For resolved cards: show last agent reply as a commitment summary (visible when collapsed)
+      // For resolved cards: show a short commitment summary (visible when collapsed).
+      // Take the first sentence of the last agent reply, capped at 140 chars.
       if (comment.resolved) {
         const lastAgentMsg = [...comment.thread].reverse().find(e => e.role === 'agent');
         if (lastAgentMsg) {
+          const full = lastAgentMsg.message;
+          const sentenceEnd = full.search(/[.!?](\\s|$)/);
+          let summary = sentenceEnd !== -1 ? full.slice(0, sentenceEnd + 1) : full;
+          if (summary.length > 140) summary = summary.slice(0, 137).trimEnd() + '…';
           const commitment = document.createElement('div');
           commitment.className = 'card-commitment';
-          commitment.textContent = lastAgentMsg.message;
+          commitment.textContent = summary;
           card.appendChild(commitment);
         }
       }
@@ -1877,6 +1988,8 @@ function pageTemplate(
       } else {
         if (card) card.style.zIndex = '';
       }
+      // Card height changed — re-cascade so siblings shift instead of overlapping.
+      positionCards();
     }
 
     async function submitReply(id, message) {
@@ -1916,7 +2029,10 @@ function pageTemplate(
           positionCards();
           updateNav();
           applyRoundState();
-          if (data.allResolved) window.scrollTo({ top: 0, behavior: 'smooth' });
+          if (data.allResolved) {
+            deliberateScrollUntil = Date.now() + 1200;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
         } else {
           showError(data.error || 'Failed to resolve comment');
         }
@@ -2077,6 +2193,10 @@ function pageTemplate(
       document.getElementById('diff-overlay').classList.remove('open');
     });
 
+    document.getElementById('diff-btn-close')?.addEventListener('click', () => {
+      document.getElementById('diff-overlay').classList.remove('open');
+    });
+
     // ── Round picker ─────────────────────────────────────────────────
     const roundBadge = document.getElementById('round-badge');
     const roundPicker = document.getElementById('round-picker');
@@ -2102,6 +2222,20 @@ function pageTemplate(
       } catch {}
     })();
 
+    // Replace broken images with a styled placeholder showing the alt text.
+    function swapBrokenImg(img) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'broken-img';
+      placeholder.textContent = 'Image failed to load' + (img.alt ? ': ' + img.alt : '');
+      img.replaceWith(placeholder);
+    }
+    document.querySelectorAll('#prose img').forEach(img => {
+      img.addEventListener('error', () => swapBrokenImg(img));
+      // Image may already have errored before our listener attached (cached failure,
+      // or the request raced ahead of script eval). Detect via the standard pattern.
+      if (img.complete && img.naturalWidth === 0) swapBrokenImg(img);
+    });
+
     // ── Init ─────────────────────────────────────────────────────────
     renderComments();
     applyHighlights();
@@ -2111,6 +2245,16 @@ function pageTemplate(
     if (sessionStorage.getItem('just-revised')) {
       sessionStorage.removeItem('just-revised');
       showRevisionBanner();
+    }
+    if (sessionStorage.getItem('rl-no-changes')) {
+      sessionStorage.removeItem('rl-no-changes');
+      const banner = document.getElementById('sidebar-status-banner');
+      if (banner) {
+        banner.classList.remove('revising'); banner.classList.remove('error');
+        banner.textContent = 'No changes — the document is unchanged.';
+        banner.style.display = 'block';
+        setTimeout(() => { banner.style.display = 'none'; }, 5000);
+      }
     }
     window.addEventListener('scroll', positionCards, { passive: true });
     window.addEventListener('resize', positionCards, { passive: true });
@@ -2173,14 +2317,10 @@ function pageTemplate(
         }
       });
       es.addEventListener('revision-no-changes', () => {
-        softRefresh();
-        const banner = document.getElementById('sidebar-status-banner');
-        if (banner) {
-          banner.classList.remove('revising'); banner.classList.remove('error');
-          banner.textContent = 'No changes — the document is unchanged.';
-          banner.style.display = 'block';
-          setTimeout(() => { banner.style.display = 'none'; }, 5000);
-        }
+        // Stash the message and reload so the round badge / state catches up.
+        // The init code below picks up the flag and surfaces the banner briefly.
+        try { sessionStorage.setItem('rl-no-changes', '1'); } catch {}
+        window.location.reload();
       });
       es.addEventListener('finished', () => {
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;flex-direction:column;gap:16px;color:#374151"><div style="font-size:48px">✓</div><div style="font-size:20px;font-weight:600">Review complete</div><div style="color:#6b7280">You can close this tab and continue in Claude Code.</div></div>';
