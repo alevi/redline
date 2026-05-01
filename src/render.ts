@@ -3,7 +3,13 @@ import { marked } from "marked";
 marked.setOptions({ gfm: true });
 
 export function renderMarkdown(content: string): string {
-  return marked.parse(content) as string;
+  const html = marked.parse(content) as string;
+  // Surface the language tag on the <pre> so CSS can render a small badge.
+  // Marked emits <pre><code class="language-foo">...</code></pre>.
+  return html.replace(
+    /<pre><code class="language-([^"]+)">/g,
+    '<pre data-language="$1"><code class="language-$1">'
+  );
 }
 
 /**

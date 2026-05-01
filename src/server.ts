@@ -550,6 +550,8 @@ function pageTemplate(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)} — Redline</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -778,6 +780,19 @@ function pageTemplate(
       border: 1px solid #e1e4e8;
       overflow-x: auto;
       margin: 1.2em 0;
+      position: relative;
+    }
+    .prose pre[data-language]::before {
+      content: attr(data-language);
+      position: absolute;
+      top: 0.4em;
+      right: 0.6em;
+      font-family: "SF Mono", "Fira Code", Menlo, monospace;
+      font-size: 0.7em;
+      color: #6e7781;
+      text-transform: lowercase;
+      letter-spacing: 0.04em;
+      pointer-events: none;
     }
     .prose pre code {
       background: none;
@@ -1453,7 +1468,10 @@ function pageTemplate(
 
       selectionTimer = setTimeout(() => {
         selectionTimer = null;
-        if (document.getElementById('new-comment-form')) return;
+        if (document.getElementById('new-comment-form')) {
+          if (window.getSelection()?.toString().trim().length >= 2) nudgeOpenForm();
+          return;
+        }
 
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) return;
@@ -1466,8 +1484,27 @@ function pageTemplate(
         if (!prose.contains(sel.anchorNode)) return;
 
         const range = sel.getRangeAt(0);
+
+        // Table multi-cell selections produce a range whose toString() interleaves cells with
+        // whitespace that doesn't exist in the flat prose text — the quote can't be relocated and
+        // the highlight scatters across cells. Bail with a friendly hint.
+        const startCell = nearestCell(range.startContainer);
+        const endCell = nearestCell(range.endContainer);
+        if (startCell && endCell && startCell !== endCell) {
+          showError('Highlight text within a single cell to comment on a table.');
+          sel.removeAllRanges();
+          return;
+        }
+
+        const captured = captureSelection(sel, text);
+        if (!captured) {
+          showError('Highlight a single passage — selections that cross images or sections can\\'t be anchored.');
+          sel.removeAllRanges();
+          return;
+        }
+
         const rect = range.getBoundingClientRect();
-        pendingSelection = captureSelection(sel, text);
+        pendingSelection = captured;
         pendingSelection._rectTop = rect.top;
         pendingSelection._range = range.cloneRange();
 
@@ -1482,7 +1519,12 @@ function pageTemplate(
       if (e.target.tagName !== 'IMG') return;
       const prose = document.getElementById('prose');
       if (!prose.contains(e.target)) return;
-      if (document.getElementById('new-comment-form')) return;
+      if (document.getElementById('new-comment-form')) {
+        // A draft is already open. Don't silently swallow this click — surface the existing form.
+        e.preventDefault();
+        nudgeOpenForm();
+        return;
+      }
       e.preventDefault();
       const img = e.target;
       const alt = img.alt || '';
@@ -1496,14 +1538,40 @@ function pageTemplate(
       showNewCommentForm(pendingSelection, rect.top - sidebarRect.top);
     }, true);
 
-    // Cancel pending open and close any open form when clicking outside it
+    // Close empty draft form when clicking outside it. NEVER silently destroy a typed draft —
+    // if the user has typed anything, leave the form alone (Cancel/Escape are the explicit dismiss paths).
     document.addEventListener('mousedown', (e) => {
       if (selectionTimer) { clearTimeout(selectionTimer); selectionTimer = null; }
       const form = document.getElementById('new-comment-form');
-      if (form && !form.contains(e.target)) {
+      if (form && !form.contains(e.target) && isFormEmpty()) {
         dismissNewCommentForm();
       }
     });
+
+    function nearestCell(node) {
+      const el = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
+      return el && el.closest ? el.closest('td, th') : null;
+    }
+
+    function isFormEmpty() {
+      const ta = document.querySelector('#new-comment-form textarea');
+      return !ta || ta.value.trim() === '';
+    }
+
+    // Surface the existing draft form when the user tries to start a new comment.
+    // Pulses the textarea border and refocuses so they know where their in-progress draft is.
+    function nudgeOpenForm() {
+      const form = document.getElementById('new-comment-form');
+      if (!form) return;
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const ta = form.querySelector('textarea');
+      if (ta) {
+        ta.focus();
+        ta.style.borderColor = 'var(--accent)';
+        ta.style.boxShadow = '0 0 0 3px rgba(192,57,43,0.25)';
+        setTimeout(() => { ta.style.boxShadow = ''; }, 600);
+      }
+    }
 
     function showNewCommentForm(selection, formTop) {
       document.getElementById('new-comment-form')?.remove();
@@ -1639,6 +1707,13 @@ function pageTemplate(
         return { quote: text, context_before: '', context_after: '' };
       }
 
+      // Verify the quote can actually be relocated — if the selection crossed an <img>
+      // or other non-text element, sel.toString() may include alt text or whitespace
+      // that doesn't appear in the flat text we walk for highlighting. Bail so the user
+      // doesn't get a comment with no visible highlight.
+      const slice = flat.slice(quoteStart, quoteStart + text.length);
+      if (slice !== text) return null;
+
       return {
         quote: text,
         context_before: flat.slice(Math.max(0, quoteStart - 32), quoteStart),
@@ -1699,7 +1774,11 @@ function pageTemplate(
       if (Date.now() < deliberateScrollUntil) { fn(); return; }
       const top = window.scrollY;
       const active = document.activeElement;
-      if (active && active !== document.body && typeof active.blur === 'function') active.blur();
+      // Don't blur focus inside the new-comment-form — it's not in the mutated subtree,
+      // and blurring it eats keystrokes when the user is mid-draft (e.g. while the agent
+      // is replying to a previous comment and an SSE event triggers softRefresh).
+      const protectFocus = active && active.closest && active.closest('#new-comment-form');
+      if (!protectFocus && active && active !== document.body && typeof active.blur === 'function') active.blur();
       fn();
       document.documentElement.scrollTop = top;
       requestAnimationFrame(() => {
@@ -2371,6 +2450,16 @@ function pageTemplate(
     });
 
     // ── Init ─────────────────────────────────────────────────────────
+    // Syntax-highlight code blocks before applyHighlights wraps comment marks,
+    // so hljs tokenization happens against raw text and our <mark>s sit on top.
+    if (window.hljs) {
+      // Only highlight blocks with an explicit language tag — hljs's auto-detection
+      // mis-tokenizes plain prose in unlabelled code blocks.
+      document.querySelectorAll('#prose pre code[class*="language-"]').forEach(el => {
+        try { window.hljs.highlightElement(el); } catch (e) { /* unknown language — leave as-is */ }
+      });
+    }
+
     renderComments();
     applyHighlights();
     positionCards();
