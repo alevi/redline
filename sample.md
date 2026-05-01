@@ -108,27 +108,3 @@ Line two should appear directly under it.
 ## Final thoughts
 
 Redline is intentionally minimal. It does one thing: let you leave inline comments on a Markdown file so an AI agent can act on them.
-
-
----
-
-## Settled comments
-
-1. Quote: "sample document for testing"
-   Discussion:
-    Reviewer: Replace this entire opening sentence with: This is a sample document. Use it to test Redlines selection and commenting workflow on real Markdown content.
-
----
-
-## Previously agreed changes (do not undo)
-
-- Round 1: "sample document for testing" → This looks like a test comment on the opening phrase. Are you testing the Redline workflow, or would you like me to revise "sample document for testing" to something more specific?
-- Round 1: "A subsection (H3)" → This is a test comment flagging the H3 heading. If you'd like me to revise the heading text, make it more descriptive, or adjust its level in the hierarchy, let me know what change you'd prefer.
-- Round 1: "function greet" → Got it — you've flagged the `greet` function. Would you like me to adjust this code (e.g., add error handling, change the syntax, or expand the example), or is this just testing that comments work on code blocks?
-- Round 1: "agent will always" → This assumption is indeed worth questioning—in practice, agents sometimes produce malformed Markdown or introduce subtle formatting issues. Would you like me to revise this to acknowledge potential agent errors and suggest a validation or correction step? Or is this flagged because the language is too absolute?
-- Round 1: "multiple sentences that should be" → Got it — this looks like a test comment to verify the anchor lands correctly on that phrase. No change needed to the document text; the selection and threading are working as expected.
-- Round 1: "Top level item" → This appears to be a test comment on the first list item. Is this testing the comment system itself, or would you like me to revise the "Top level item" text or its context in the list?
-- Round 1: "Nested item" → I see the test comment on "Nested item" — looks like you're verifying the comment capture works. What would you like me to do with this passage? Should I reword it, expand the nested list section, or is this just a system check?
-- Round 1: "Deeply nested item" → This appears to be a test comment on the deeply nested list item. Is this confirming that the selection mechanism works correctly for nested content, or would you like me to make a change to that text?
-- Round 1: "Set up the server" → I see this is a test comment on the task list item. The current text "Set up the server" is marked complete (`[x]`). If you want me to revise this section—like expanding what setup entails, rephrasing it, or restructuring the task list—just let me know what change you're looking for.
-- Round 1: "Render markdown" → This comment is unclear — does "stacking-test" indicate this is a placeholder, or are you asking me to verify/improve something about how Markdown renders? If you could clarify what you'd like changed, I can address it in the revision.
