@@ -59,19 +59,22 @@ export async function resolve(filePath: string, options: { model?: string } = {}
         })
     );
     if (lines.length > 0) {
-      priorChangesBlock =
-        "\n\n---\n\n## Previously agreed changes (do not undo)\n\n" + lines.join("\n");
+      priorChangesBlock = `\n\n<previously-agreed-changes>\n${lines.join("\n")}\n</previously-agreed-changes>`;
     }
   }
 
   const systemPrompt =
     "You are revising a Markdown document based on settled reviewer comments.\n" +
-    "For each comment, edit the relevant passage to reflect what was agreed.\n" +
-    "Preserve all sections with no comments exactly as they are.\n" +
-    "Do not add commentary or explanation. Return only the revised Markdown document.";
+    "For each comment, edit the relevant passage in the document to reflect what was agreed.\n" +
+    "Preserve all sections that have no comments exactly as they are.\n" +
+    "Return ONLY the revised contents of <document> — the full Markdown document, nothing else.\n" +
+    "Do NOT include the <document> tags themselves in your output.\n" +
+    "Do NOT echo, summarize, or append any of the <comments-to-apply> or <previously-agreed-changes> content.\n" +
+    "Do NOT add commentary, preamble, or meta-sections like 'Settled comments' or 'Changelog'.\n" +
+    "The output should look like a clean revision of the original document — as if a human editor made the changes silently.";
 
   const userMessage =
-    `## Document\n\n${docText}\n\n---\n\n## Settled comments\n\n${commentsBlock}${priorChangesBlock}`;
+    `<comments-to-apply>\n${commentsBlock}\n</comments-to-apply>${priorChangesBlock}\n\n<document>\n${docText}\n</document>`;
 
   // Call the claude CLI (inherits auth from the user's Claude Code session — no API key needed)
   console.log(`Revising with ${chosenModel}...\n`);
@@ -158,8 +161,22 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     await fail(`claude CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`);
   }
 
-  // Validate output. Strip a wrapping code fence if present, and a preamble before the first heading.
-  let trimmed = revised.trim().replace(/^```(?:markdown)?\n([\s\S]*)\n```$/, "$1").trim();
+  // Validate output. Strip a wrapping code fence if present, a preamble before the
+  // first heading, any <document> wrapper tags, and any meta-sections the model
+  // sometimes appends (Settled comments, Previously agreed changes, Changelog).
+  let trimmed = revised.trim()
+    .replace(/^```(?:markdown)?\n([\s\S]*)\n```$/, "$1")
+    .replace(/^<document>\s*/i, "")
+    .replace(/\s*<\/document>\s*$/i, "")
+    .trim();
+  // Strip trailing meta-sections at any heading level (## or ###).
+  const metaHeading = trimmed.match(/\n#{2,3} (Settled comments|Previously agreed changes|Changelog|Revision notes)\b/i);
+  if (metaHeading) {
+    console.log(`Stripping trailing meta-section: ${metaHeading[1]}`);
+    trimmed = trimmed.slice(0, metaHeading.index).trimEnd();
+    // Strip a trailing horizontal rule that often precedes the meta-section.
+    trimmed = trimmed.replace(/\n+---\s*$/, "").trimEnd();
+  }
   if (!trimmed) {
     await fail("Agent returned empty output (no text deltas streamed)");
   }

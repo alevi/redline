@@ -771,10 +771,11 @@ function pageTemplate(
       border-radius: 3px;
     }
     .prose pre {
-      background: #1e1e1e;
-      color: #d4d4d4;
-      padding: 1.2em 1.4em;
+      background: #f6f8fa;
+      color: #24292f;
+      padding: 1em 1.2em;
       border-radius: var(--radius);
+      border: 1px solid #e1e4e8;
       overflow-x: auto;
       margin: 1.2em 0;
     }
@@ -1266,6 +1267,16 @@ function pageTemplate(
     }
     .btn-diff-close:hover { background: var(--thread-bg); color: var(--text); }
 
+    /* ── Empty-rail hint (cold-open only) ── */
+    .empty-rail-hint {
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      font-style: italic;
+      text-align: center;
+      opacity: 0.75;
+    }
+
     /* ── Revision banner ── */
     .revision-banner {
       display: flex;
@@ -1411,6 +1422,7 @@ function pageTemplate(
     // ── State ────────────────────────────────────────────────────────
     let comments = ${commentsJson};
     let roundResolved = ${roundResolved};
+    const totalRounds = ${totalRounds};
     const thinkingCommentIds = new Set();
     let pendingSelection = null;
     let selectionTimer = null;
@@ -2079,6 +2091,7 @@ function pageTemplate(
       const errorShowing = !!banner?.classList.contains('error');
 
       if (roundResolved) {
+        document.getElementById('empty-rail-hint')?.remove();
         btnAccept.disabled = true;
         btnAccept.textContent = '✓ Accepted';
         if (banner && !errorShowing) {
@@ -2091,13 +2104,33 @@ function pageTemplate(
         updateNav();
       } else if (comments.length === 0) {
         btnAccept.disabled = false;
-        btnAccept.textContent = 'Done';
+        // Cold-open (round 1, never commented) reads as "Skip review";
+        // an empty round after a revision is a real "Done — accept this version".
+        const isColdOpen = totalRounds <= 1;
+        btnAccept.textContent = isColdOpen ? 'Skip review' : 'Done';
         btnAccept.dataset.mode = 'finish';
         if (banner && !errorShowing) {
           banner.classList.remove('revising');
           banner.style.display = 'none';
         }
+        // Surface a subtle "Select text to leave a comment" hint on cold open.
+        const hint = document.getElementById('empty-rail-hint');
+        if (isColdOpen) {
+          if (!hint) {
+            const rail = document.querySelector('.sidebar-col');
+            if (rail) {
+              const el = document.createElement('div');
+              el.id = 'empty-rail-hint';
+              el.className = 'empty-rail-hint';
+              el.textContent = 'Select text to leave a comment.';
+              rail.appendChild(el);
+            }
+          }
+        } else if (hint) {
+          hint.remove();
+        }
       } else {
+        document.getElementById('empty-rail-hint')?.remove();
         const hasOpen = comments.some(c => !c.resolved);
         btnAccept.disabled = hasOpen;
         btnAccept.dataset.mode = 'accept';
