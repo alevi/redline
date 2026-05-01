@@ -33,7 +33,18 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
   - Reply box renders behind the next comment card down. Z-index / stacking context bug in the right rail.
 - **Retro:**
 
-### M5: Typed comment actions
+### M5: Load-bearing integration
+
+- **Done when:** Redline is wired into the normal course of work across active projects. Agents reach for it automatically when producing a Markdown proposal for human sign-off — without explicit instruction each time. The invocation path (skill, global guidance, `--context` handoff) is polished and trusted. Used on at least two or three real proposals outside the Redline project itself.
+- **Status:** planned (after M4 UX polish settles)
+- **Work items:**
+  - Update the `redline-review` skill to document `--context` and the outer-agent handoff pattern (currently undocumented)
+  - Install the skill globally (`~/.claude/skills/`) so it's available in all projects, not just this repo
+  - Add a short global `~/.claude/CLAUDE.md` rule: when producing a Markdown doc for human sign-off, reach for `redline-review` instead of sharing inline
+  - Validate on real proposals — at least two outside this project — and close any gaps that surface
+- **Retro:**
+
+### M6: Typed comment actions
 
 - **Done when:** The comment grammar supports typed actions (`[expand]`, `[challenge]`, `[cut]`, …) derived from the natural taxonomy that emerged from real usage in M1–M4. Free text remains supported.
 - **Status:** planned (waiting on real usage to inform the taxonomy)
