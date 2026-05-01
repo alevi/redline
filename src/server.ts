@@ -1749,9 +1749,9 @@ function pageTemplate(
           window.getSelection()?.removeAllRanges();
           renderComments();
           applyHighlights();
-          positionCards();
-          updateNav();
           applyRoundState();
+          focusComment(data.comment.id);
+          updateNav();
           // Scroll the new card into view so the user sees the save landed
           const newCard = document.getElementById('card-' + data.comment.id);
           if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1862,7 +1862,7 @@ function pageTemplate(
         const mark = document.createElement('mark');
         mark.className = 'rl-highlight' + (resolved ? ' resolved' : '');
         mark.dataset.commentId = id;
-        mark.addEventListener('click', () => focusComment(id));
+        mark.addEventListener('click', () => { focusComment(id); updateNav(); });
         const mid = node.splitText(localStart);
         const after = mid.splitText(localEnd - localStart);
         mid.parentNode.insertBefore(mark, after);
@@ -1910,26 +1910,31 @@ function pageTemplate(
       const nextBtn = document.getElementById('nav-next');
       if (open.length === 0) { nav.style.display = 'none'; return; }
       nav.style.display = 'flex';
-      navIdx = Math.min(navIdx, open.length - 1);
+      // Sync navIdx to the currently active card so Prev/Next move from where the user is,
+      // not from a stale index. Falls back to 0 if no active card matches.
+      const activeCard = document.querySelector('.comment-card.active');
+      const activeId = activeCard ? activeCard.id.replace(/^card-/, '') : null;
+      const idx = activeId ? open.findIndex(c => c.id === activeId) : -1;
+      navIdx = idx >= 0 ? idx : Math.min(navIdx, open.length - 1);
       if (open.length === 1) {
-        countEl.textContent = '1 open';
+        countEl.textContent = '1 / 1';
         prevBtn.style.display = 'none';
         nextBtn.textContent = 'Jump to comment ↓';
         nextBtn.disabled = false;
         nextBtn.style.display = '';
       } else {
-        countEl.textContent = (navIdx + 1) + ' / ' + open.length + ' open';
+        countEl.textContent = (navIdx + 1) + ' / ' + open.length;
         prevBtn.style.display = '';
         prevBtn.textContent = '↑ Prev';
         nextBtn.textContent = 'Next ↓';
         prevBtn.disabled = navIdx === 0;
         nextBtn.disabled = navIdx === open.length - 1;
       }
-      navigateTo(open[navIdx].id);
     }
 
     document.getElementById('nav-prev').addEventListener('click', () => {
-      if (navIdx > 0) { navIdx--; updateNav(); }
+      const open = comments.filter(c => !c.resolved);
+      if (navIdx > 0) { navIdx--; navigateTo(open[navIdx].id); updateNav(); }
     });
     document.getElementById('nav-next').addEventListener('click', () => {
       const open = comments.filter(c => !c.resolved);
@@ -1937,6 +1942,7 @@ function pageTemplate(
         navigateTo(open[0].id);
       } else if (navIdx < open.length - 1) {
         navIdx++;
+        navigateTo(open[navIdx].id);
         updateNav();
       }
     });
@@ -2031,12 +2037,21 @@ function pageTemplate(
       preserveScroll(() => {
         const sidebar = document.querySelector('.sidebar-col');
 
-        // Remove existing cards (not the new-comment-form)
+        // Preserve active card across rebuild (SSE softRefresh would otherwise wipe it).
+        const activeCard = sidebar.querySelector('.comment-card.active');
+        const activeId = activeCard ? activeCard.id.replace(/^card-/, '') : null;
+
         sidebar.querySelectorAll('.comment-card').forEach(el => el.remove());
 
         comments.forEach(comment => {
           sidebar.appendChild(buildCommentCard(comment));
         });
+
+        if (activeId) {
+          const restored = document.getElementById('card-' + activeId);
+          if (restored) restored.classList.add('active');
+          document.querySelectorAll('mark.rl-highlight[data-comment-id="' + activeId + '"]').forEach(el => el.classList.add('active'));
+        }
       });
     }
 
@@ -2149,6 +2164,7 @@ function pageTemplate(
         if (e.target.tagName === 'BUTTON' || e.target.tagName === 'TEXTAREA') return;
         if (comment.resolved) return; // handled by quote click
         focusComment(comment.id);
+        updateNav();
       });
 
       return card;
