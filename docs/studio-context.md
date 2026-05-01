@@ -17,7 +17,7 @@ This project is a Levi Studio spin-off. Studio-wide guidance lives in `~/Project
 | 00-overview.md | …writing anything user-facing about what the studio is or why this project exists. |
 | 01-brand.md | …naming, taglines, or any surface where the studio identity shows up. |
 | 02-voice-and-writing.md | …writing copy, error messages, marketing pages, or PR descriptions meant for outside readers. |
-| 03-project-shape.md | …deciding whether an idea belongs as a feature, a separate spin-off, or not at all; or naming a functional milestone. |
+| 03-project-shape.md | …deciding whether an idea belongs as a feature, a separate spin-off, or not at all; naming a functional milestone; or shaping a project's roadmap. |
 | 04-product-principles.md | …adding a feature, cutting a feature, or arguing about scope. |
 | 05-design-direction.md | …design work on identity, marketing, or editorial surfaces. |
 | 06-engineering-principles.md | …choosing a framework, library, datastore, or architectural pattern. |
@@ -26,7 +26,7 @@ This project is a Levi Studio spin-off. Studio-wide guidance lives in `~/Project
 | 09-product-ui-defaults.md | …building product UI, admin surfaces, or operational tools (palette, type, spacing, interaction defaults). |
 | 10-shared-tools.md | …reaching for a utility that might already exist studio-wide, or building one that another project would plausibly want. |
 | 11-debugging-principles.md | …chasing a bug whose cause isn't obvious within ~15 minutes. |
-| 12-ai-workflow-patterns.md | …designing any surface where an AI agent participates in real time. |
+| 12-ai-workflow-patterns.md | …designing any surface where an AI agent participates — real-time or human-in-the-loop. |
 | 13-retro-process.md | …closing a milestone, finishing notable work, hitting a surprise worth recording, or proposing a canon change or shared-tool lift. |
 | 14-spinoff-procedure.md | …a sub-project inside this repo starts feeling like its own thing. |
 
