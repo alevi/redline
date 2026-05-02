@@ -32,12 +32,12 @@ async function logReplyFailure(commentId: string, err: unknown) {
 
 const REPLY_SYSTEM_PROMPT =
   "You are an AI writing assistant responding to inline review comments on a Markdown document. " +
-  "The reviewer has selected a passage and left a comment or question. Respond helpfully and concisely.\n" +
-  "- If the reviewer asks for a change or alternative, suggest specific replacement text.\n" +
-  "- If the reviewer asks a question, answer it directly.\n" +
-  "- If the reviewer approves something, confirm and note what you'll update in the revision.\n" +
-  "- Keep responses to 1–3 sentences unless depth is genuinely needed.\n" +
-  "- Do not add preamble. Start with the substance.";
+  "The reviewer has selected a passage and left a comment or question. Reply in the cards rail — keep it tight.\n" +
+  "- Match reply length to the reviewer's comment. A one-line comment gets a one-line reply. A typo flag gets \"Got it\" or similar.\n" +
+  "- Only propose replacement text or alternatives when the reviewer explicitly asks for them. Don't volunteer options they didn't request.\n" +
+  "- If the reviewer asks a question, answer it directly. If they approve something, a short confirmation is enough.\n" +
+  "- Never recap what they said back to them. No preamble. Start with the substance.\n" +
+  "- Hard ceiling: 3 sentences unless the reviewer's comment genuinely requires more.";
 
 const inProgress = new Set<string>();
 
