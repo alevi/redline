@@ -1135,6 +1135,7 @@ function pageTemplate(
     #sidebar-status-banner {
       display: none;
       padding: 10px 14px;
+      margin-bottom: 14px;
       background: #e8f5e9;
       border-bottom: 1px solid #a5d6a7;
       color: #2e7d32;
@@ -1249,6 +1250,8 @@ function pageTemplate(
     .diff-prose pre { background: #f6f8fa; border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-size: 13px; }
     .diff-prose code { font-family: 'Menlo','Monaco',monospace; font-size: 0.875em; background: #f0f0ed; padding: 1px 4px; border-radius: 3px; }
     .diff-prose pre code { background: none; padding: 0; }
+    .diff-prose a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
+    .diff-prose a:hover { color: #1e40af; }
     .diff-prose ul, .diff-prose ol { padding-left: 1.5em; margin: 0.8em 0; }
     .diff-prose li { margin: 0.3em 0; line-height: 1.7; }
     .diff-block { border-radius: 4px; margin: 2px -12px; padding: 2px 12px; }
@@ -1621,9 +1624,20 @@ function pageTemplate(
       body.appendChild(actions);
       form.appendChild(body);
 
-      document.querySelector('.sidebar-col').appendChild(form);
+      const sidebar = document.querySelector('.sidebar-col');
+      sidebar.appendChild(form);
       textarea.focus();
       positionCards();
+
+      // Clamp top so the form's bottom doesn't run past the sidebar.
+      // Has to wait one frame for layout so offsetHeight is real.
+      requestAnimationFrame(() => {
+        const sidebarHeight = sidebar.getBoundingClientRect().height;
+        const formHeight = form.offsetHeight;
+        const desiredTop = parseFloat(form.style.top) || 0;
+        const maxTop = Math.max(0, sidebarHeight - formHeight - 8);
+        if (desiredTop > maxTop) form.style.top = maxTop + 'px';
+      });
     }
 
     function dismissNewCommentForm() {
