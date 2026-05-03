@@ -60,6 +60,41 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
   let onRevisionErrorCallback: ((message: string) => void) | undefined;
   let onRevisionRecoveredCallback: (() => void) | undefined;
 
+  // Revision watchdog: when /api/accept fires we start a timer. If no terminal
+  // event (/api/reload, /api/revision-no-changes, /api/revision-error) arrives
+  // within REVISION_TIMEOUT_MS, we assume the resolve flow is wedged (root
+  // cause unknown — see docs/retro.md M5 redline-on-itself entry) and surface
+  // a `revision-stalled` event so the user can recover. The round is also
+  // un-resolved so clicking Revise again is meaningful.
+  const REVISION_TIMEOUT_MS = process.env.REDLINE_REVISION_TIMEOUT_MS
+    ? parseInt(process.env.REDLINE_REVISION_TIMEOUT_MS, 10)
+    : 3 * 60 * 1000;
+  let revisionWatchdog: ReturnType<typeof setTimeout> | null = null;
+  function clearRevisionWatchdog() {
+    if (revisionWatchdog) { clearTimeout(revisionWatchdog); revisionWatchdog = null; }
+  }
+  function startRevisionWatchdog() {
+    clearRevisionWatchdog();
+    revisionWatchdog = setTimeout(async () => {
+      revisionWatchdog = null;
+      const reason = `revision did not complete within ${REVISION_TIMEOUT_MS / 1000}s`;
+      console.error(`[redline] ${reason} — un-resolving round and notifying browser.`);
+      try {
+        await withSidecar(filePath, (sidecar) => {
+          const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
+          if (!lastResolved) return false as const;
+          lastResolved.resolved_at = null;
+        });
+      } catch (e) {
+        console.error("[redline] watchdog: failed to un-resolve round:", e);
+      }
+      broadcast("revision-stalled", { message: reason });
+      // Same recovery semantics as a revision crash — calling agent should see
+      // the session as errored if it abandons in this state.
+      onRevisionErrorCallback?.(reason);
+    }, REVISION_TIMEOUT_MS);
+  }
+
   function checkBrowserPresence() {
     if (browserClients.size > 0) {
       hadBrowser = true;
@@ -214,6 +249,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     if (out.skip) return c.json({ ok: false, error: "No active round" }, 400);
     broadcast("accepted", { round: out.roundNumber });
     onRevisionRecoveredCallback?.();
+    startRevisionWatchdog();
     return c.json({ ok: true });
   });
 
@@ -236,6 +272,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
 
   // Called by redline resolve after writing the revised document
   app.post("/api/reload", (c) => {
+    clearRevisionWatchdog();
     broadcast("reload", {});
     onRevisionRecoveredCallback?.();
     return c.json({ ok: true });
@@ -243,6 +280,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
 
   // Called by redline resolve when the model returned no changes
   app.post("/api/revision-no-changes", (c) => {
+    clearRevisionWatchdog();
     broadcast("revision-no-changes", {});
     onRevisionRecoveredCallback?.();
     return c.json({ ok: true });
@@ -258,6 +296,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
   // Called by the agent when the revision flow throws — un-resolves the latest
   // round so the human can retry by clicking "Revise document" again
   app.post("/api/revision-error", async (c) => {
+    clearRevisionWatchdog();
     const { message } = await c.req.json();
     await withSidecar(filePath, (sidecar) => {
       const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
@@ -2608,6 +2647,20 @@ function pageTemplate(
       es.addEventListener('revision-error', (e) => {
         let msg = 'Revision failed.';
         try { msg = 'Revision failed: ' + (JSON.parse(e.data).message ?? 'unknown error'); } catch {}
+        softRefresh();
+        const banner = document.getElementById('sidebar-status-banner');
+        if (banner) {
+          banner.classList.remove('revising'); banner.classList.remove('error');
+          banner.classList.add('error');
+          banner.textContent = msg + ' Click "Revise document" to retry.';
+          banner.style.display = 'block';
+        }
+      });
+      es.addEventListener('revision-stalled', (e) => {
+        // Watchdog tripped — server has un-resolved the round and broadcast.
+        // Reuse the revision-error UI path so the banner reads consistently.
+        let msg = 'Revision did not complete.';
+        try { msg = 'Revision did not complete: ' + (JSON.parse(e.data).message ?? 'unknown'); } catch {}
         softRefresh();
         const banner = document.getElementById('sidebar-status-banner');
         if (banner) {

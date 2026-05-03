@@ -157,6 +157,62 @@ test("POST /api/reload broadcasts reload (revision-finish trigger)", async () =>
   expect(ev.event).toBe("reload");
 }, 15_000);
 
+// ── Revision watchdog ─────────────────────────────────────────────────────
+
+test("watchdog broadcasts revision-stalled and un-resolves the round on timeout", async () => {
+  // Run createServer inline (no agent subprocess) so the watchdog isn't
+  // pre-empted by the agent posting /api/revision-error in response to its
+  // failed resolve() call. We're testing the server's stall-detection path.
+  const { createServer } = await import("../src/server");
+  const { filePath, dir } = createTestFile(SAMPLE);
+  process.env.REDLINE_REVISION_TIMEOUT_MS = "500";
+  const app = createServer(filePath);
+  const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
+  delete process.env.REDLINE_REVISION_TIMEOUT_MS;
+  stops.push(() => { try { server.stop(true); } catch {} });
+  const port = server.port;
+
+  await postComment(port, { quote: "First paragraph" }, "x");
+
+  // Subscribe before triggering — closes the broadcast race.
+  const stall = waitForEvent(port, "revision-stalled", { timeoutMs: 4000 });
+  await stall.ready;
+
+  // /api/accept marks the round resolved AND starts the watchdog.
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+
+  // Watchdog fires after ~500ms with no terminal event arriving.
+  const ev = await stall;
+  expect(ev.data.message).toContain("did not complete");
+
+  // The server should also have un-resolved the round so Revise is meaningful again.
+  const sidecarRaw = await Bun.file(`${dir}/.review/test.md.json`).text();
+  const sidecar = JSON.parse(sidecarRaw);
+  expect(sidecar.rounds[0].resolved_at).toBeNull();
+}, 10_000);
+
+test("watchdog is cleared by /api/reload", async () => {
+  const { createServer } = await import("../src/server");
+  const { filePath } = createTestFile(SAMPLE);
+  process.env.REDLINE_REVISION_TIMEOUT_MS = "500";
+  const app = createServer(filePath);
+  const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
+  delete process.env.REDLINE_REVISION_TIMEOUT_MS;
+  stops.push(() => { try { server.stop(true); } catch {} });
+  const port = server.port;
+
+  await postComment(port, { quote: "First paragraph" }, "x");
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+  // Successful revision lands.
+  await fetch(`http://localhost:${port}/api/reload`, { method: "POST" });
+
+  // Now wait past the watchdog window. If the timer wasn't cleared, we'd see
+  // a (spurious) revision-stalled event.
+  const sub = waitForEvent(port, "revision-stalled", { timeoutMs: 1500 });
+  await sub.ready;
+  await expect(sub).rejects.toThrow(/Timed out/);
+}, 10_000);
+
 test("POST /api/revision-no-changes broadcasts revision-no-changes", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);
