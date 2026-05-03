@@ -94,6 +94,76 @@ export async function startServer(
   return { port, proc, stop: () => { try { proc.kill(); } catch {} } };
 }
 
+export type SseEvent = { event: string; data: any };
+
+/**
+ * Subscribe to /api/events and resolve on the first frame matching `eventName`
+ * (and optionally `predicate`). Subscribe FIRST, then trigger the action that
+ * produces the event, then await — otherwise you race the broadcast.
+ */
+export function waitForEvent(
+  port: number,
+  eventName: string,
+  options: { client?: string; timeoutMs?: number; predicate?: (data: any) => boolean } = {}
+): Promise<SseEvent> & { stop: () => void } {
+  const { client = "test", timeoutMs = 3000, predicate } = options;
+  const ac = new AbortController();
+  let stopped = false;
+  const stop = () => { stopped = true; try { ac.abort(); } catch {} };
+
+  const promise = (async (): Promise<SseEvent> => {
+    const res = await fetch(`http://localhost:${port}/api/events?client=${client}`, {
+      signal: ac.signal,
+    });
+    if (!res.body) throw new Error("SSE stream has no body");
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    const deadline = Date.now() + timeoutMs;
+
+    try {
+      while (!stopped) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error(`Timed out waiting for SSE event "${eventName}"`);
+        const { value, done } = await Promise.race([
+          reader.read(),
+          Bun.sleep(remaining).then(() => { throw new Error(`Timed out waiting for SSE event "${eventName}"`); }),
+        ]) as ReadableStreamReadResult<Uint8Array>;
+        if (done) throw new Error("SSE stream closed before event arrived");
+        buf += dec.decode(value, { stream: true });
+
+        // SSE frames are separated by a blank line
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) !== -1) {
+          const frame = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          // Skip comment frames (": connected", ": ping")
+          if (frame.startsWith(":")) continue;
+          const lines = frame.split("\n");
+          let evType = "message";
+          let dataStr = "";
+          for (const line of lines) {
+            if (line.startsWith("event:")) evType = line.slice(6).trim();
+            else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+          }
+          if (evType !== eventName) continue;
+          let data: any = null;
+          try { data = dataStr ? JSON.parse(dataStr) : null; } catch { /* not json */ }
+          if (predicate && !predicate(data)) continue;
+          return { event: evType, data };
+        }
+      }
+      throw new Error("Stopped before event arrived");
+    } finally {
+      try { reader.cancel(); } catch {}
+      stop();
+    }
+  })();
+
+  return Object.assign(promise, { stop });
+}
+
 /** POST a comment and return the created comment object. */
 export async function postComment(
   port: number,
