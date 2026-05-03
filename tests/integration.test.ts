@@ -161,6 +161,29 @@ test("agent auto-restarts when it dies unexpectedly", async () => {
   await waitForAgentConnects(2, 8000);
 }, 15_000);
 
+test("two concurrent CLIs both write result files under simultaneous SIGTERM", async () => {
+  // Investigation #5: two sister Redlines under one harness both "crashed" in
+  // M4 testing. Reproduced as harness-style PGID sharing — the result files
+  // do land cleanly under SIGTERM thanks to the M3 synchronous writeFileSync
+  // path, even with two signals delivered at once. This codifies that.
+  const a = createTestFile();
+  const b = createTestFile();
+  const [sa, sb] = await Promise.all([spawnTracked(a.filePath), spawnTracked(b.filePath)]);
+  await Promise.all([waitForServer(sa.port), waitForServer(sb.port)]);
+
+  // Fire both SIGTERMs as close to simultaneous as the runtime allows.
+  process.kill(sa.proc.pid!, "SIGTERM");
+  process.kill(sb.proc.pid!, "SIGTERM");
+
+  const [aCode, bCode] = await Promise.all([waitForExit(sa.proc, 5000), waitForExit(sb.proc, 5000)]);
+  expect(aCode).toBe(2);
+  expect(bCode).toBe(2);
+
+  const [aRes, bRes] = await Promise.all([readResult(a.dir), readResult(b.dir)]);
+  expect(aRes.status).toBe("abandoned");
+  expect(bRes.status).toBe("abandoned");
+}, 20_000);
+
 test("/api/finish writes approved result file and exits 0", async () => {
   const { filePath, dir } = createTestFile();
   const { proc, port } = await spawnTracked(filePath);
