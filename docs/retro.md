@@ -130,6 +130,16 @@ The lesson isn't really about IDs — it's about how easy it is to write code wh
 
 ---
 
+## 2026-05-03 — process.kill(pid, "SIGTERM") DOES fire JS signal handlers; subproc.kill() doesn't
+
+M3 retro noted that Bun's `subprocess.kill("SIGINT")` doesn't deliver to a registered `process.on("SIGINT", ...)` handler — the OS terminates the child before Bun's event loop can dispatch. While reproducing the M5 #5 concurrent-crash hypothesis, I discovered the qualifier: this only applies to the Bun `subprocess.kill()` API. The standalone `process.kill(pid, "SIGTERM")` (a Node/Bun standard process API that sends the OS signal directly) does fire the JS handler in the target process, including under simultaneous delivery to two sibling processes.
+
+This makes signal-path integration tests writable after all — they just need `process.kill(child.pid, ...)` instead of `child.kill(...)`. The new test in M5 #5 codifies this: two CLIs under simultaneous SIGTERM both reach their `process.on("SIGTERM", ...)` handler and land their result files via the M3 synchronous-write path.
+
+The M3 retro entry isn't wrong, just narrower than the cleaner-than-expected story: `proc.kill()` is the unreliable one; OS signals via `process.kill(pid)` work.
+
+---
+
 ## 2026-05-03 — Rebasing a stacked PR: both sides of the conflict often contain novel work
 
 Stacked PR #14 (M5 #1) on origin/main while PR #13 (M5 #3) was waiting to merge. After #13 landed, rebasing #14 produced a conflict in `tests/integration.test.ts` — both branches had appended new tests in the same region. The default mental shortcut "take HEAD" or "take incoming" is wrong here: HEAD held the just-merged #13 tests, the incoming commit held the #1 test, and both were correct additions. I treated it as a single-side conflict on the first pass, dropping the #3 tests. Caught only because the test count came out one short.
