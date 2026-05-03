@@ -1,4 +1,5 @@
 import path from "path";
+import { existsSync, unlinkSync } from "fs";
 import { appendFile, mkdir, readFile } from "fs/promises";
 import { resolve } from "./resolve";
 import { pickReplyModel } from "./pickModel";
@@ -7,6 +8,21 @@ const filePath = process.argv[2];
 if (!filePath) {
   console.error("[agent] Usage: agent <file.md>");
   process.exit(1);
+}
+
+// Test-only crash hook: shortly after startup, if REDLINE_AGENT_CRASH_FILE
+// points to an existing file, delete it and exit non-zero. The delay is so
+// the agent connects to SSE and logs "[agent] connected" first — the test
+// then waits for a *second* connect to prove the restart fired. Unlink
+// ensures the restart spawn starts cleanly.
+const crashFile = process.env.REDLINE_AGENT_CRASH_FILE;
+if (crashFile) {
+  setTimeout(() => {
+    if (!existsSync(crashFile)) return;
+    console.log(`[agent] crash hook fired — exiting (file=${crashFile})`);
+    try { unlinkSync(crashFile); } catch { /* best effort */ }
+    process.exit(99);
+  }, 500);
 }
 
 const BASE_URL = `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;

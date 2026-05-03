@@ -1,7 +1,10 @@
 import { test, expect, afterEach } from "bun:test";
+import { writeFileSync } from "fs";
+import path from "path";
 import {
   createTestFile,
   spawnCLI,
+  type SpawnedCLI,
   waitForServer,
   readResult,
   waitForExit,
@@ -17,7 +20,7 @@ afterEach(() => {
 async function spawnTracked(
   filePath: string,
   extraEnv: Record<string, string> = {}
-): Promise<{ proc: ReturnType<typeof Bun.spawn>; port: number }> {
+): Promise<SpawnedCLI> {
   const result = await spawnCLI(filePath, extraEnv);
   procs.push(result.proc);
   return result;
@@ -139,6 +142,23 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
 
   // Cleanup
   ac2.abort();
+}, 15_000);
+
+test("agent auto-restarts when it dies unexpectedly", async () => {
+  const { filePath, dir } = createTestFile();
+  // The crash hook in agent.ts deletes the file on first run, so the *first*
+  // spawn exits non-zero and the *second* (restart) starts cleanly.
+  const crashFile = path.join(dir, "crash-trigger");
+  writeFileSync(crashFile, "");
+
+  const { port, waitForAgentConnects } = await spawnTracked(filePath, {
+    REDLINE_AGENT_CRASH_FILE: crashFile,
+  });
+  await waitForServer(port);
+
+  // Wait for the second agent connection — proves cli.ts spawned a fresh
+  // agent after the first one exited via the crash hook.
+  await waitForAgentConnects(2, 8000);
 }, 15_000);
 
 test("/api/finish writes approved result file and exits 0", async () => {

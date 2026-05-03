@@ -39,6 +39,8 @@ export type SpawnedCLI = {
   proc: ReturnType<typeof Bun.spawn>;
   port: number;
   agentReady: Promise<void>;
+  /** Resolves when the Nth `[agent] connected` line appears on stdout. */
+  waitForAgentConnects: (n: number, timeoutMs?: number) => Promise<void>;
 };
 
 export async function spawnCLI(
@@ -61,12 +63,27 @@ export async function spawnCLI(
   let rejectPort!: (e: unknown) => void;
   const portP = new Promise<number>((res, rej) => { resolvePort = res; rejectPort = rej; });
 
+  // Track every `[agent] connected` occurrence so tests can wait for restarts.
+  let agentConnects = 0;
+  type Waiter = { n: number; resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
+  const waiters: Waiter[] = [];
+  const onAgentConnect = () => {
+    agentConnects += 1;
+    for (let i = waiters.length - 1; i >= 0; i--) {
+      if (waiters[i].n <= agentConnects) {
+        clearTimeout(waiters[i].timer);
+        waiters[i].resolve();
+        waiters.splice(i, 1);
+      }
+    }
+  };
+
   let resolveAgent!: () => void;
   const agentReady = new Promise<void>((res) => { resolveAgent = res; });
 
   watchStdout(proc.stdout, {
     onPort: resolvePort,
-    onAgentReady: resolveAgent,
+    onAgentConnect: () => { onAgentConnect(); resolveAgent(); },
     onError: rejectPort,
   });
   drainStream(proc.stderr);
@@ -75,18 +92,33 @@ export async function spawnCLI(
     portP,
     Bun.sleep(10_000).then(() => { throw new Error("CLI did not print URL within 10s"); }),
   ]);
-  return { proc, port, agentReady };
+
+  const waitForAgentConnects = (n: number, timeoutMs = 10_000) =>
+    new Promise<void>((resolve, reject) => {
+      if (agentConnects >= n) return resolve();
+      const timer = setTimeout(() => {
+        const idx = waiters.findIndex((w) => w.n === n && w.resolve === resolve);
+        if (idx !== -1) waiters.splice(idx, 1);
+        reject(new Error(`Timed out waiting for ${n}th [agent] connected (saw ${agentConnects})`));
+      }, timeoutMs);
+      waiters.push({ n, resolve, reject, timer });
+    });
+
+  return { proc, port, agentReady, waitForAgentConnects };
 }
 
 async function watchStdout(
   stream: ReadableStream<Uint8Array>,
-  cb: { onPort: (n: number) => void; onAgentReady: () => void; onError: (e: unknown) => void }
+  cb: { onPort: (n: number) => void; onAgentConnect: () => void; onError: (e: unknown) => void }
 ): Promise<void> {
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = "";
   let portSeen = false;
-  let agentSeen = false;
+  // Track the consumed offset so each "[agent] connected" line fires exactly
+  // once per occurrence (a single read can deliver multiple lines and a later
+  // read can deliver another connect after a restart).
+  let consumed = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -99,12 +131,19 @@ async function watchStdout(
         const m = buf.match(/URL:\s+http:\/\/localhost:(\d+)/);
         if (m) { portSeen = true; cb.onPort(parseInt(m[1], 10)); }
       }
-      if (!agentSeen && buf.includes("[agent] connected")) {
-        agentSeen = true;
-        cb.onAgentReady();
+      // Scan for new "[agent] connected" occurrences past the last consumed offset.
+      let idx;
+      while ((idx = buf.indexOf("[agent] connected", consumed)) !== -1) {
+        consumed = idx + "[agent] connected".length;
+        cb.onAgentConnect();
       }
-      // Trim buffer so it doesn't grow without bound
-      if (buf.length > 16384) buf = buf.slice(-1024);
+      // Trim buffer so it doesn't grow without bound, but preserve enough tail
+      // that a partially-buffered marker can complete on the next read.
+      if (buf.length > 16384) {
+        const drop = buf.length - 1024;
+        buf = buf.slice(drop);
+        consumed = Math.max(0, consumed - drop);
+      }
     }
   } catch (e) {
     if (!portSeen) cb.onError(e);
