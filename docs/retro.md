@@ -4,6 +4,25 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-03 — M6 items 1–3: making redline reachable from any project
+
+**What shipped.** Three small things that together turn redline from "a tool I have to remember to use" into "a tool other-project agents reach for on their own":
+1. `redline-review` skill updated ([redline#26](https://github.com/alevi/redline/pull/26)) to document the `--context` flag and the full outer-agent handoff loop. Also synced with two shipped behaviors the skill text predated: verdict-aware approval (an approved file may be byte-identical to the handoff if every comment was Q&A — that's not a no-op) and no-auto-open (the agent must surface the URL in its text output, since stolen-focus is no longer the signal).
+2. `scripts/install-skill.sh` ([redline#27](https://github.com/alevi/redline/pull/27)) copies `skills/redline-review/` into `~/.claude/skills/` so the skill is visible from any working directory.
+3. Two-sentence rule added to `~/.claude/CLAUDE.md`: when producing a Markdown doc that needs sign-off, reach for `redline-review` instead of pasting inline or just linking the file.
+
+**Stacked PR mishap worth noting.** I created #27 with #26 as its base. The user merged #26 first; that fast-forwarded `main` to the skill-docs commit but left #27's content sitting on the now-stale `m6/skill-docs` branch. When #27 then merged into that branch, GitHub reported it as merged — but `main` never received the install-script commit. Caught when the worktree synced and `scripts/` was missing. Fixed with a cherry-pick onto a fresh PR.
+
+The lesson: **stacking PRs onto a non-main base means the merge order matters and "merged" in the GitHub UI doesn't imply "on main."** When stacking, either (a) hold the bottom PR until the top one merges and use main as the base for both, or (b) after merging the bottom, re-target the top PR's base to main before merging.
+
+**Copy-not-symlink for the skill install.** The repo lives in worktree paths that move and rename. A symlink from `~/.claude/skills/redline-review` into a worktree would break the moment the worktree is cleaned up; a stale dangling symlink is worse than a copy that needs an explicit re-run after pulling skill changes. The install script makes the refresh step a documented one-liner rather than a "remember the path" problem.
+
+**Why M6 isn't done yet.** The whole thesis — "publish a project's tool as a global skill + a 2-sentence CLAUDE.md rule, and other-project agents will reach for it automatically" — is unproven until two organic, outside-redline doc tasks come up and either (a) the agent reaches for redline on its own or (b) the human notices the agent didn't and corrects it. Manufacturing validation tasks would defeat the point. Item 4 stays open until that happens naturally.
+
+**Candidate canon (hold until M6 closes).** If the validation works, the cross-project lesson is worth canonizing: *to make a project's tool the default reach for AI agents in other projects, ship it as a global skill (copied via an in-repo install script, not symlinked) and add a terse global CLAUDE.md rule that delegates everything else to the skill's SKILL.md*. Do not propose to canon yet — promote only if Item 4 confirms the pattern works.
+
+---
+
 ## 2026-05-03 — Patch close: deferred browser open
 
 **What shipped.** `redline <file>` no longer spawns `open` / `xdg-open` on launch. The terminal prints the `localhost:<port>` URL with a "cmd-click when you're ready" nudge; pass `--open` to restore the old auto-open behavior. The `REDLINE_NO_OPEN` env var (an M3-era test escape hatch) is removed since the new default matches what tests wanted, and `tests/helpers.ts` got simpler. README updated. Shipped in [redline#23](https://github.com/alevi/redline/pull/23).
