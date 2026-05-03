@@ -4,6 +4,20 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-03 — Patch close: M5_P1 verdict-aware resolve
+
+**What shipped.** Every agent reply now carries a structured verdict (`requires_revision: true|false` + `reason`) returned via a JSON contract from `claude -p` and parsed in `src/parseReply.ts` with a safe-default fallback. The round-level button defaults to "Revise document" or "Accept as-is" based on the verdicts; the alternate is one click away as a secondary link with a `confirm()` warning when the human overrides "implies edits → skip revision." Per-reply ✎ footer with the edit reason, warm-tinted "Resolve → queue edit" button, post-resolve verdict badges. Verdict is agent-owned; disagreement flows through a follow-up reply, not a UI toggle. Shipped in [redline#22](https://github.com/alevi/redline/pull/22).
+
+**What surprised.** First version showed both verdict states symmetrically — "✎ Will edit the doc: <reason>" *and* "💬 Answered here — no edit needed." under every reply. User pushed back immediately on visual noise: "this is good overall, but a little too verbose" and called out specific redundancy ("Will add a line 3" + "Will edit the doc: Add a third line..."). The fix wasn't to shorten the copy — it was to **drop the neutral-state footer entirely**. The plain Resolve button (no warm tint) and the absence of the ✎ marker were already the signal that nothing was queued. Asymmetry IS the signal; symmetric "and here's the *other* state" copy was load-bearing nothing. Same round caught a coupled bug: the agent's free-text reply was restating what the verdict footer would render — fixed by adding "don't say the same thing twice; the message engages, the reason describes the edit" with a bad/good example to the agent prompt.
+
+**Worth promoting to canon (revisit at next milestone close).** Two adjacent observations:
+1. *Asymmetry as signal in two-state status UIs.* When a UI surfaces one of two states, default to giving only the action-bearing state a visible treatment — its presence/absence is the signal. Saved as a project-level memory; could lift to `canon/docs/09-product-ui-defaults.md` if it generalizes.
+2. *When the UI wraps an agent reply with structured metadata (badges, labels, footers), tell the agent not to restate that metadata in the message itself.* General prompt-engineering pattern for any agent whose output gets composed with rendered metadata. Could fit `canon/docs/12-ai-workflow-patterns.md`.
+
+Holding both for milestone-close canon review per process.
+
+---
+
 ## 2026-04-30 — Canon proposal: Per-milestone retro summary alongside the running log
 
 **Observation.** At M2 close, we wrote a per-milestone retro summary at `docs/retros/m2-multi-round-revision.md` (a focused, narrative read of just M2's lessons) without first logging entries into a running `docs/retro.md`. We then noticed the gap: the per-milestone file is great for reading-the-milestone-back, but it doesn't replace the running log — cross-milestone patterns (e.g. "we keep hitting the same async UI race") only surface when entries are co-located, and the `Status` lifecycle on canon proposals (Proposed → Accepted/Rejected) needs a stable place across milestones. M1's retro went straight to canon commits without either artifact, so this is the second time the project has improvised on retro shape.

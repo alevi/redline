@@ -50,7 +50,7 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 - **Status:** reached
 - **Why a patch, not part of M5:** UX/workflow change, not resilience. Surfaced during dogfood: the only path forward after even one comment was a full revision pass, even when every thread was just Q&A the agent had already answered.
 - **Out of scope:** classifying without agent JSON output (e.g. inferring from message text), per-comment human override of the verdict, scoping the revision pass to only revision-implying comments. The last is the most interesting follow-up — could make revision lighter/faster — flagged for a future patch.
-- **Retro:** inline — see commit / PR description.
+- **Retro:** [docs/retro.md — 2026-05-03 entry](retro.md). Shipped in [redline#22](https://github.com/alevi/redline/pull/22).
 
 ### M6: Load-bearing integration
 
