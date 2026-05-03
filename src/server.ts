@@ -51,6 +51,8 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
   let abandonTimer: ReturnType<typeof setTimeout> | null = null;
   let onAbandonCallback: (() => void) | undefined;
   let onFinishedCallback: ((payload: { totalRounds: number; totalComments: number }) => void) | undefined;
+  let onRevisionErrorCallback: ((message: string) => void) | undefined;
+  let onRevisionRecoveredCallback: (() => void) | undefined;
 
   function checkBrowserPresence() {
     if (browserClients.size > 0) {
@@ -207,6 +209,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     round.resolved_at = new Date().toISOString();
     await saveSidecar(filePath, sidecar);
     broadcast("accepted", { round: round.round });
+    onRevisionRecoveredCallback?.();
     return c.json({ ok: true });
   });
 
@@ -229,12 +232,14 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
   // Called by redline resolve after writing the revised document
   app.post("/api/reload", (c) => {
     broadcast("reload", {});
+    onRevisionRecoveredCallback?.();
     return c.json({ ok: true });
   });
 
   // Called by redline resolve when the model returned no changes
   app.post("/api/revision-no-changes", (c) => {
     broadcast("revision-no-changes", {});
+    onRevisionRecoveredCallback?.();
     return c.json({ ok: true });
   });
 
@@ -256,6 +261,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
       await saveSidecar(filePath, sidecar);
     }
     broadcast("revision-error", { message });
+    onRevisionErrorCallback?.(message);
     return c.json({ ok: true });
   });
 
@@ -438,6 +444,8 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     onFinished(cb: (payload: { totalRounds: number; totalComments: number }) => void) {
       onFinishedCallback = cb;
     },
+    onRevisionError(cb: (message: string) => void) { onRevisionErrorCallback = cb; },
+    onRevisionRecovered(cb: () => void) { onRevisionRecoveredCallback = cb; },
   };
 }
 

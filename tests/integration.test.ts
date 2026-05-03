@@ -58,6 +58,58 @@ test("tab-close triggers abandon after grace period", async () => {
   expect(result.status).toBe("abandoned");
 }, 15_000);
 
+test("revision crash → abandon writes error result, not abandoned", async () => {
+  const { filePath, dir } = createTestFile();
+  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
+  await waitForServer(port);
+
+  // Simulate a revision crash: agent posts /api/revision-error with the failure reason.
+  const errRes = await fetch(`http://localhost:${port}/api/revision-error`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "claude CLI exited with code 1 — boom" }),
+  });
+  expect(errRes.status).toBe(200);
+
+  // Connect a browser then drop it, tripping the abandon timer.
+  const ac = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  await Bun.sleep(200);
+  ac.abort();
+
+  const code = await waitForExit(proc, 5000);
+  expect(code).toBe(3);
+
+  const result = await readResult(dir);
+  expect(result.status).toBe("error");
+  expect(result.reason).toContain("boom");
+}, 15_000);
+
+test("revision crash → recovered → abandon writes abandoned, not error", async () => {
+  const { filePath, dir } = createTestFile();
+  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
+  await waitForServer(port);
+
+  // Crash...
+  await fetch(`http://localhost:${port}/api/revision-error`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "boom" }),
+  });
+  // ...then a successful revision lands (clears the error).
+  await fetch(`http://localhost:${port}/api/reload`, { method: "POST" });
+
+  const ac = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  await Bun.sleep(200);
+  ac.abort();
+
+  const code = await waitForExit(proc, 5000);
+  expect(code).toBe(2);
+  const result = await readResult(dir);
+  expect(result.status).toBe("abandoned");
+}, 15_000);
+
 test("/api/finish writes approved result file and exits 0", async () => {
   const { filePath, dir } = createTestFile();
   const { proc, port } = await spawnTracked(filePath);
