@@ -4,6 +4,16 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-03 — Patch close: deferred browser open
+
+**What shipped.** `redline <file>` no longer spawns `open` / `xdg-open` on launch. The terminal prints the `localhost:<port>` URL with a "cmd-click when you're ready" nudge; pass `--open` to restore the old auto-open behavior. The `REDLINE_NO_OPEN` env var (an M3-era test escape hatch) is removed since the new default matches what tests wanted, and `tests/helpers.ts` got simpler. README updated. Shipped in [redline#23](https://github.com/alevi/redline/pull/23).
+
+**What surprised.** Nothing during implementation — change was as local as the spec predicted (one flag, three lines in `cli.ts`, banner copy tweak). The interesting moment was upstream: the spec write-up flagged that the M3-era abandonment timer at `src/server.ts:48` only arms after `hadBrowser` becomes true, so a session where the user never clicks doesn't self-terminate. That arm-on-first-connect choice was made for a different reason during M3 (avoid 2-min grace tripping on DevTools-offline tests in M5 #1) but turns out to be exactly the right behavior for a default-no-open world. Worth noting that defensive design choices made for one reason can turn out to be load-bearing for an unrelated future change.
+
+**Worth promoting to canon (revisit at next milestone close).** "For local CLIs that serve a browser UI, default to print-URL-don't-open; offer `--open` as opt-in." This matters more than it looks: the same default is correct for outer-agent invocations (M6 territory — there may be no GUI session at all), so the rule is robust across both interactive and non-interactive callers. Could fit `canon/docs/09-product-ui-defaults.md` or a new CLI-conventions entry. Saved as a project-level memory in the meantime.
+
+---
+
 ## 2026-05-03 — Patch close: M5_P1 verdict-aware resolve
 
 **What shipped.** Every agent reply now carries a structured verdict (`requires_revision: true|false` + `reason`) returned via a JSON contract from `claude -p` and parsed in `src/parseReply.ts` with a safe-default fallback. The round-level button defaults to "Revise document" or "Accept as-is" based on the verdicts; the alternate is one click away as a secondary link with a `confirm()` warning when the human overrides "implies edits → skip revision." Per-reply ✎ footer with the edit reason, warm-tinted "Resolve → queue edit" button, post-resolve verdict badges. Verdict is agent-owned; disagreement flows through a follow-up reply, not a UI toggle. Shipped in [redline#22](https://github.com/alevi/redline/pull/22).
