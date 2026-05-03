@@ -14,6 +14,16 @@ Requires [Bun](https://bun.sh) and an authenticated Claude Code session (the age
 bun install
 ```
 
+### Install the Claude skill (optional)
+
+To make the `redline-review` skill available to Claude Code in any project (not just this repo), run:
+
+```sh
+./scripts/install-skill.sh
+```
+
+This copies `skills/redline-review/` into `~/.claude/skills/`. Re-run after pulling skill changes — it's a copy, not a symlink, so updates aren't automatic.
+
 ## Use
 
 ```sh
