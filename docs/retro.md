@@ -51,3 +51,89 @@ When writing integration tests for a CLI that has observable side effects (openi
 This is worth noting because the first instinct is often to add a `--test` flag or a mock layer. Env vars are less invasive: no CLI surface changes, no test-mode branching in application logic, and they compose naturally with child processes (child inherits the env).
 
 ---
+
+## 2026-05-02 — Idempotent re-renders must preserve transient UI state explicitly
+
+M4 surfaced several "the wrong card is highlighted" / "scroll jumped to top" / "first-created card stays active forever" bugs. Root cause was always the same shape: an SSE event fired softRefresh, which rebuilt the comment cards from scratch, which dropped the `.active` class on whatever card the user was looking at. The page state was driven entirely from server data, but transient UI state (active selection, scroll position, focus) lives only in the DOM. Rebuild, lose state.
+
+The fix that worked: before rebuilding, capture the transient state (which card has `.active`, current `scrollY`, currently-focused element); after the rebuild, restore it. This is `preserveScroll(fn)` and the active-class preservation in `renderComments`. The pattern generalizes — any reactive UI driven by server pushes needs to be honest about what state lives where, or stuff the user cares about gets clobbered on every event.
+
+---
+
+## 2026-05-02 — Tight coupling between "what to render" and "where focus goes" hides bugs
+
+`updateNav()` updated the comment-nav UI (`X / Y open` count, prev/next button states) AND called `navigateTo(open[navIdx].id)` on every invocation. Since `navIdx` defaulted to 0, every softRefresh secretly moved focus back to the first card — which masked an entirely separate fix to `saveComment` that was *trying* to set focus on the new card.
+
+It took console-stack traces to find: the new card *did* get focus correctly, then a millisecond later `updateNav → navigateTo` snatched it back. The lesson is structural: a function whose name suggests "update labels" should not also be moving focus. Separating render from navigation made the actual bug obvious. Worth carrying as a code-smell heuristic — "this function does N things" hides at least N-1 bugs.
+
+---
+
+## 2026-05-02 — Promise.race(read, sleep) leaks the loser; the next read sees a poisoned reader
+
+While building the SSE test helper (`waitForEvent`), I used `Promise.race([reader.read(), Bun.sleep(timeout).then(throw)])` to give each read a per-iteration timeout. The pattern looks clean. It is not.
+
+When the read wins, the sleep keeps running in the background; harmless. But when the race timeout *almost* fires concurrent with a read resolving, the next iteration calls `reader.read()` again on the same reader — which now has a pending unresolved read from the previous iteration. ReadableStream readers don't allow concurrent reads. Symptoms: tests time out at 8s with no useful error, and the agent flow that obviously works in a standalone script fails inside the test harness.
+
+Fix: a single `setTimeout` that aborts the underlying fetch on timeout, plus AbortError → "Timed out" translation in the read loop's catch. Lesson: `Promise.race` is fine for one-shot races; in a loop, the loser's cleanup matters as much as the winner's value.
+
+---
+
+## 2026-05-02 — Spawned subprocess deadlocks if the parent stops draining its piped stdout
+
+Test harness was spawning the Redline CLI with `stdout: "pipe"`, reading the pipe until the URL line appeared, then dropping the reader. Worked fine for the existing integration tests because they exercised short-lived endpoints. Broke immediately when I added agent-driven tests: the agent inherits stdout from the CLI; once the pipe buffer filled (a few hundred lines of `[agent]` logs), the agent blocked on its next write, SSE handling stalled, tests timed out at 8s with no error.
+
+Fix: spawn helpers must drain both stdout and stderr for the lifetime of the process, not just until the marker line they care about. Cheap to do (a fire-and-forget reader loop that ignores the bytes), expensive to debug from symptoms.
+
+---
+
+## 2026-05-02 — Async subprocess "ready" ≠ HTTP server "ready"
+
+When the test harness spawned the CLI and waited for the URL line on stdout, then `waitForServer` confirmed the HTTP endpoint was responsive, the natural assumption was "everything is up — proceed." Wrong: the agent subprocess is started by the CLI in parallel and subscribes to `/api/events` *asynchronously*, typically a few hundred milliseconds after the URL is printed. Tests that posted a comment immediately after `waitForServer` resolved would silently time out because the agent missed the `comment-added` broadcast.
+
+Fix: an explicit `agentReady` promise that resolves when "[agent] connected" appears in stdout. Cheap signal because the agent already prints it. Lesson: a multi-process system has multiple readiness states; one HTTP probe tests one of them.
+
+---
+
+## 2026-05-02 — Canon proposal: "Check PR state before pushing follow-up commits"
+
+**Observation.** PR #5 was merged in the background while I kept working on the same branch. I pushed two more commits assuming the PR was still open; they sat orphaned on the merged-and-closed branch and never reached main. Recoverable via a fresh branch, but the trigger ("oh wait, my new commits aren't on main") only fired when the user asked. The harness gives no signal that an upstream PR has merged; the only way to know is `gh pr view`.
+
+**Proposed canon change.** Add to `canon/docs/12-ai-workflow-patterns.md` (or wherever PR/git workflow guidance lives) a short rule under a "Continuing work on a branch" subsection:
+
+> Before pushing follow-up commits to a branch that has an open PR, run `gh pr view` and check `state`. If the PR has merged or closed, push the new commits to a fresh branch off main instead — the dead branch is invisible to main, and your work won't ship from there.
+
+**Why universal.** Any Levi Studio project that opens PRs and continues iterating on the branch hits this exact case the moment a PR is merged out-of-band (by the user, by another agent, by a merge queue). It's a narrow concrete rule, the cost is one shell command, and the recovery cost when missed is "create a new branch and re-PR" — annoying and easy to forget.
+
+**Status.** Proposed.
+
+---
+
+## 2026-05-02 — Canon proposal: "Polish + test surface area expose the same bugs from opposite directions"
+
+**Observation.** The M4 milestone was scoped as "UX polish" — chrome and feel. Its sister effort was a test-coverage buildout (HTTP API, SSE, agent flow). Neither was scoped to find logic bugs. Both surfaced multiple real bugs that engineering completeness alone hadn't: scroll-vs-SSE race, reopen-doesn't-broadcast, focus-stays-on-first-card, ID collision, sidecar write race, agent-ready vs HTTP-ready race. The polish pass found bugs by *experiencing* the product carefully; the test pass found bugs by *enumerating* its surface area mechanically. Different mechanisms, comparable yields.
+
+**Proposed canon change.** Add to `canon/docs/03-project-shape.md` under "What a milestone is" (or add a new sub-section):
+
+> A milestone scoped as "UX polish" or "test coverage" will routinely surface logic bugs the previous engineering milestones missed. Treat this as expected, not as scope creep. Polish forces you to *experience* the product end-to-end at a different cadence than feature work; tests force you to *enumerate* its surface area mechanically. Both pressure-test assumptions made under the urgency of "make it work." Budget for in-flight bug fixes during these milestones, and let the followups bucket capture anything too big to fix inline.
+
+**Why universal.** Every Levi Studio project that follows the M1–MN roadmap pattern eventually hits a polish or test milestone. The default mental model treats them as low-risk maintenance. They're not — they're a different lens on the same code, and the lens systematically catches things feature-shaped review missed. Naming the pattern in canon means the next project lead doesn't have to relearn it.
+
+**Status.** Proposed.
+
+---
+
+## 2026-05-03 — Date.now() alone is not enough for IDs, even in single-process code
+
+Comment IDs were generated as `c${Date.now()}`. Two POSTs in the same millisecond — easy to do with two fast clicks on a local server, trivial to reproduce in tests — collided. Resolving by ID then resolved the wrong comment because `find` returned the first match. Surfaced by a parallel-POST test in the API coverage suite. Fix was a one-line change: append a 4-digit random suffix.
+
+The lesson isn't really about IDs — it's about how easy it is to write code where the only "uniqueness" comes from "events don't usually happen this close together." The implicit assumption survives manual testing because manual testing is slow. Tests that fire actions in tight loops surface the assumption in seconds.
+
+---
+
+## 2026-05-03 — Embedded client JS in a server template literal is a testing wall
+
+`server.ts` is ~2600 lines and a large fraction is browser JS embedded in a Hono template literal `<script>...</script>`. Convenient at the start — no build step, no asset pipeline, change anything by editing one file — but by M4 it had become structural debt. Phase 4 of the test-coverage milestone (browser-side coverage of `applyHighlights`, `focusComment`, `updateNav`, selection capture) cannot proceed without first extracting the script into a real file. Extraction is non-trivial because the script is interpolated with server-side state, so it's a real refactor, not a copy-paste.
+
+Worth recording so a future project that's tempted to embed JS in a server template knows the cost: the convenience expires the moment client-side bugs become worth catching with tests, and at that point you pay for the refactor and the testing infrastructure together.
+
+---
