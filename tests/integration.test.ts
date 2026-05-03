@@ -1,20 +1,12 @@
 import { test, expect, afterEach } from "bun:test";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
-import { readFile } from "fs/promises";
-import { mkdtempSync } from "fs";
-import path from "path";
-import os from "os";
+import {
+  createTestFile,
+  spawnCLI,
+  waitForServer,
+  readResult,
+  waitForExit,
+} from "./helpers";
 
-const CLI = path.join(import.meta.dir, "../src/cli.ts");
-const BUN = process.execPath;
-
-// Shared env for all test spawns: suppress browser open, short Claude timeout
-const TEST_ENV = {
-  ...process.env,
-  REDLINE_NO_OPEN: "1",
-};
-
-// Track spawned processes so afterEach can always clean up
 const procs: ReturnType<typeof Bun.spawn>[] = [];
 afterEach(() => {
   for (const p of procs.splice(0)) {
@@ -22,83 +14,20 @@ afterEach(() => {
   }
 });
 
-function createTestFile(): { filePath: string; dir: string } {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "redline-test-"));
-  const filePath = path.join(dir, "test.md");
-  writeFileSync(filePath, "# Test Document\n\nThis is a test.\n");
-  return { filePath, dir };
-}
-
-async function spawnCLI(
+async function spawnTracked(
   filePath: string,
   extraEnv: Record<string, string> = {}
 ): Promise<{ proc: ReturnType<typeof Bun.spawn>; port: number }> {
-  const proc = Bun.spawn([BUN, "run", CLI, filePath], {
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "ignore",
-    env: { ...TEST_ENV, ...extraEnv },
-  });
-  procs.push(proc);
-
-  // Read stdout until we find the URL line, then extract the port
-  const port = await Promise.race([
-    readPortFromStdout(proc.stdout),
-    Bun.sleep(10_000).then(() => { throw new Error("CLI did not print URL within 10s"); }),
-  ]);
-  return { proc, port };
-}
-
-async function readPortFromStdout(stream: ReadableStream<Uint8Array>): Promise<number> {
-  const reader = stream.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) throw new Error("stdout closed before URL appeared");
-      buf += dec.decode(value, { stream: true });
-      const m = buf.match(/URL:\s+http:\/\/localhost:(\d+)/);
-      if (m) return parseInt(m[1], 10);
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-}
-
-async function waitForServer(port: number, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://localhost:${port}/`);
-      if (res.ok) return;
-    } catch { /* not up yet */ }
-    await Bun.sleep(100);
-  }
-  throw new Error(`Server on port ${port} did not become ready within ${timeoutMs}ms`);
-}
-
-async function readResult(dir: string): Promise<Record<string, unknown>> {
-  const p = path.join(dir, ".review", "test.md.result");
-  const raw = await readFile(p, "utf-8");
-  return JSON.parse(raw);
-}
-
-async function waitForExit(
-  proc: ReturnType<typeof Bun.spawn>,
-  timeoutMs = 5000
-): Promise<number> {
-  return Promise.race([
-    proc.exited,
-    Bun.sleep(timeoutMs).then(() => { throw new Error(`Process did not exit within ${timeoutMs}ms`); }),
-  ]);
+  const result = await spawnCLI(filePath, extraEnv);
+  procs.push(result.proc);
+  return result;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 test("server starts on a free port, not 3000", async () => {
   const { filePath } = createTestFile();
-  const { port } = await spawnCLI(filePath);
+  const { port } = await spawnTracked(filePath);
   expect(port).toBeGreaterThan(0);
   expect(port).not.toBe(3000);
 }, 15_000);
@@ -110,7 +39,7 @@ test("server starts on a free port, not 3000", async () => {
 
 test("tab-close triggers abandon after grace period", async () => {
   const { filePath, dir } = createTestFile();
-  const { proc, port } = await spawnCLI(filePath, { REDLINE_ABANDON_MS: "1000" });
+  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
   await waitForServer(port);
 
   // Connect as a browser client, then disconnect
@@ -131,7 +60,7 @@ test("tab-close triggers abandon after grace period", async () => {
 
 test("/api/finish writes approved result file and exits 0", async () => {
   const { filePath, dir } = createTestFile();
-  const { proc, port } = await spawnCLI(filePath);
+  const { proc, port } = await spawnTracked(filePath);
   await waitForServer(port);
 
   // Server auto-creates an open round on startup — /api/finish should work

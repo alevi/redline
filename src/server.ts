@@ -128,8 +128,10 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     const sidecar = await loadSidecar(filePath);
     const round = getOrCreateActiveRound(sidecar);
 
+    // Two comments POSTed within the same millisecond would collide on Date.now() alone.
+    // The 4-digit random suffix makes per-ms collision functionally impossible.
     const comment: Comment = {
-      id: `c${Date.now()}`,
+      id: `c${Date.now()}${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
       quote: body.quote,
       context_before: body.context_before,
       context_after: body.context_after,
