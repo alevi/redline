@@ -1,7 +1,21 @@
-import { mkdtempSync, writeFileSync } from "fs";
+import { mkdtempSync, writeFileSync, chmodSync } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
 import os from "os";
+
+/**
+ * Write a shim wrapper script in the test's tmp dir that invokes the claude
+ * shim via `bun`. Returns an absolute path suitable for CLAUDE_CODE_EXECPATH.
+ * Needed because the agent/resolve code does `spawn(cliBin, ...)` directly,
+ * and the shim's `#!/usr/bin/env bun` shebang fails when bun isn't on PATH.
+ */
+export function installClaudeShim(dir: string): string {
+  const shimPath = path.resolve(import.meta.dir, "fixtures", "claude-shim.ts");
+  const wrapper = path.join(dir, "claude");
+  writeFileSync(wrapper, `#!/bin/sh\nexec ${process.execPath} ${shimPath} "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  return wrapper;
+}
 
 export const CLI = path.join(import.meta.dir, "../src/cli.ts");
 export const BUN = process.execPath;
@@ -21,10 +35,16 @@ export function createTestFile(content = "# Test Document\n\nThis is a test.\n")
   return { filePath, dir };
 }
 
+export type SpawnedCLI = {
+  proc: ReturnType<typeof Bun.spawn>;
+  port: number;
+  agentReady: Promise<void>;
+};
+
 export async function spawnCLI(
   filePath: string,
   extraEnv: Record<string, string> = {}
-): Promise<{ proc: ReturnType<typeof Bun.spawn>; port: number }> {
+): Promise<SpawnedCLI> {
   const proc = Bun.spawn([BUN, "run", CLI, filePath], {
     stdout: "pipe",
     stderr: "pipe",
@@ -32,28 +52,76 @@ export async function spawnCLI(
     env: { ...TEST_ENV, ...extraEnv },
   });
 
+  // The agent inherits stdout/stderr from the CLI. We need to keep both pipes
+  // drained for the lifetime of the spawn, AND watch the stream for two
+  // markers: the "URL:" line (which gives us the port) and "[agent] connected"
+  // (which tells us the agent has subscribed to /api/events and won't miss the
+  // first broadcast).
+  let resolvePort!: (n: number) => void;
+  let rejectPort!: (e: unknown) => void;
+  const portP = new Promise<number>((res, rej) => { resolvePort = res; rejectPort = rej; });
+
+  let resolveAgent!: () => void;
+  const agentReady = new Promise<void>((res) => { resolveAgent = res; });
+
+  watchStdout(proc.stdout, {
+    onPort: resolvePort,
+    onAgentReady: resolveAgent,
+    onError: rejectPort,
+  });
+  drainStream(proc.stderr);
+
   const port = await Promise.race([
-    readPortFromStdout(proc.stdout),
+    portP,
     Bun.sleep(10_000).then(() => { throw new Error("CLI did not print URL within 10s"); }),
   ]);
-  return { proc, port };
+  return { proc, port, agentReady };
 }
 
-async function readPortFromStdout(stream: ReadableStream<Uint8Array>): Promise<number> {
+async function watchStdout(
+  stream: ReadableStream<Uint8Array>,
+  cb: { onPort: (n: number) => void; onAgentReady: () => void; onError: (e: unknown) => void }
+): Promise<void> {
   const reader = stream.getReader();
   const dec = new TextDecoder();
   let buf = "";
+  let portSeen = false;
+  let agentSeen = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) throw new Error("stdout closed before URL appeared");
+      if (done) {
+        if (!portSeen) cb.onError(new Error("stdout closed before URL appeared"));
+        return;
+      }
       buf += dec.decode(value, { stream: true });
-      const m = buf.match(/URL:\s+http:\/\/localhost:(\d+)/);
-      if (m) return parseInt(m[1], 10);
+      if (!portSeen) {
+        const m = buf.match(/URL:\s+http:\/\/localhost:(\d+)/);
+        if (m) { portSeen = true; cb.onPort(parseInt(m[1], 10)); }
+      }
+      if (!agentSeen && buf.includes("[agent] connected")) {
+        agentSeen = true;
+        cb.onAgentReady();
+      }
+      // Trim buffer so it doesn't grow without bound
+      if (buf.length > 16384) buf = buf.slice(-1024);
     }
-  } finally {
-    reader.cancel().catch(() => {});
+  } catch (e) {
+    if (!portSeen) cb.onError(e);
   }
+}
+
+function drainStream(stream: ReadableStream<Uint8Array>): void {
+  // Best-effort drain — ignore errors so cleanup of dead processes is silent.
+  (async () => {
+    try {
+      const reader = stream.getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) return;
+      }
+    } catch { /* stream closed or already locked */ }
+  })();
 }
 
 export async function waitForServer(port: number, timeoutMs = 5000): Promise<void> {
@@ -94,22 +162,35 @@ export async function startServer(
   return { port, proc, stop: () => { try { proc.kill(); } catch {} } };
 }
 
+
 export type SseEvent = { event: string; data: any };
 
 /**
  * Subscribe to /api/events and resolve on the first frame matching `eventName`
- * (and optionally `predicate`). Subscribe FIRST, then trigger the action that
- * produces the event, then await — otherwise you race the broadcast.
+ * (and optionally `predicate`). Pattern:
+ *
+ *   const ev = waitForEvent(port, "X");
+ *   await ev.ready;            // SSE handshake complete; safe to trigger
+ *   await fetch(...);          // do the action
+ *   const data = await ev;     // event guaranteed not missed
+ *
+ * Awaiting `ev.ready` before triggering the action is what closes the race:
+ * the server's broadcast loop only sees the new client once `: connected` has
+ * been written, so without the ready-await an early action's broadcast can
+ * fire before the test's controller is registered.
  */
 export function waitForEvent(
   port: number,
   eventName: string,
   options: { client?: string; timeoutMs?: number; predicate?: (data: any) => boolean } = {}
-): Promise<SseEvent> & { stop: () => void } {
+): Promise<SseEvent> & { stop: () => void; ready: Promise<void> } {
   const { client = "test", timeoutMs = 3000, predicate } = options;
   const ac = new AbortController();
   let stopped = false;
   const stop = () => { stopped = true; try { ac.abort(); } catch {} };
+
+  let resolveReady: () => void;
+  const ready = new Promise<void>((res) => { resolveReady = res; });
 
   const promise = (async (): Promise<SseEvent> => {
     const res = await fetch(`http://localhost:${port}/api/events?client=${client}`, {
@@ -120,26 +201,47 @@ export function waitForEvent(
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = "";
-    const deadline = Date.now() + timeoutMs;
+    let signaledReady = false;
 
+    // Timeout aborts the fetch so a stuck read can unblock. The catch below
+    // converts the resulting AbortError into the expected "Timed out" message
+    // — distinct from natural completion (event found) where we do NOT abort.
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try { ac.abort(); } catch {}
+    }, timeoutMs);
+
+    let foundEvent: SseEvent | undefined;
     try {
-      while (!stopped) {
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) throw new Error(`Timed out waiting for SSE event "${eventName}"`);
-        const { value, done } = await Promise.race([
-          reader.read(),
-          Bun.sleep(remaining).then(() => { throw new Error(`Timed out waiting for SSE event "${eventName}"`); }),
-        ]) as ReadableStreamReadResult<Uint8Array>;
-        if (done) throw new Error("SSE stream closed before event arrived");
-        buf += dec.decode(value, { stream: true });
+      while (!stopped && foundEvent === undefined) {
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try {
+          chunk = await reader.read();
+        } catch (e: any) {
+          if (timedOut || e?.name === "AbortError") {
+            throw new Error(`Timed out waiting for SSE event "${eventName}"`);
+          }
+          throw e;
+        }
+        if (chunk.done) {
+          if (timedOut) throw new Error(`Timed out waiting for SSE event "${eventName}"`);
+          throw new Error("SSE stream closed before event arrived");
+        }
+        buf += dec.decode(chunk.value, { stream: true });
 
         // SSE frames are separated by a blank line
         let idx;
         while ((idx = buf.indexOf("\n\n")) !== -1) {
           const frame = buf.slice(0, idx);
           buf = buf.slice(idx + 2);
-          // Skip comment frames (": connected", ": ping")
-          if (frame.startsWith(":")) continue;
+          // Skip comment frames (": connected", ": ping"). The first comment
+          // frame doubles as the "you're connected" signal.
+          if (frame.startsWith(":")) {
+            if (!signaledReady) { signaledReady = true; resolveReady(); }
+            continue;
+          }
+          if (!signaledReady) { signaledReady = true; resolveReady(); }
           const lines = frame.split("\n");
           let evType = "message";
           let dataStr = "";
@@ -151,17 +253,22 @@ export function waitForEvent(
           let data: any = null;
           try { data = dataStr ? JSON.parse(dataStr) : null; } catch { /* not json */ }
           if (predicate && !predicate(data)) continue;
-          return { event: evType, data };
+          foundEvent = { event: evType, data };
+          break;
         }
       }
+      if (foundEvent) return foundEvent;
       throw new Error("Stopped before event arrived");
     } finally {
-      try { reader.cancel(); } catch {}
-      stop();
+      clearTimeout(timer);
+      // Cancel the reader cleanly (no abort) so we don't surface a stray
+      // AbortError when we already have the result.
+      reader.cancel().catch(() => {});
+      stopped = true;
     }
   })();
 
-  return Object.assign(promise, { stop });
+  return Object.assign(promise, { stop, ready });
 }
 
 /** POST a comment and return the created comment object. */
