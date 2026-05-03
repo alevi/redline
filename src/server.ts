@@ -318,7 +318,13 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
   // Post a reply to a comment thread (human or agent)
   app.post("/api/comment/:id/reply", async (c) => {
     const id = c.req.param("id");
-    const body = await c.req.json<{ message: string; role?: string; name?: string }>();
+    const body = await c.req.json<{
+      message: string;
+      role?: string;
+      name?: string;
+      requires_revision?: boolean;
+      revision_reason?: string;
+    }>();
     if (!body.message?.trim()) return c.json({ ok: false, error: "message is required" }, 400);
     const role = (body.role === "human" ? "human" : "agent") as "human" | "agent";
     const name = body.name?.trim() || undefined;
@@ -328,8 +334,13 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
       if (!round) return { skip: true as const, status: 400, error: "No active round" };
       const comment = round.comments.find((c) => c.id === id);
       if (!comment) return { skip: true as const, status: 404, error: "Comment not found" };
-      const entry: { role: "human" | "agent"; name?: string; message: string; at: string } = { role, message: body.message.trim(), at: new Date().toISOString() };
+      const entry: import("./sidecar").ThreadEntry = { role, message: body.message.trim(), at: new Date().toISOString() };
       if (name) entry.name = name;
+      // Verdict only meaningful on agent replies; ignore on human entries.
+      if (role === "agent" && typeof body.requires_revision === "boolean") {
+        entry.requires_revision = body.requires_revision;
+        if (body.revision_reason?.trim()) entry.revision_reason = body.revision_reason.trim();
+      }
       comment.thread.push(entry);
       return { skip: false as const, roundNumber: round.round, comment };
     });
@@ -1044,6 +1055,69 @@ function pageTemplate(
       line-height: 1.5;
       color: var(--text);
     }
+
+    /* ── Verdict footer on agent replies ── */
+    .verdict {
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.45;
+      display: flex;
+      gap: 6px;
+      align-items: baseline;
+    }
+    .verdict-icon {
+      font-size: 11px;
+      flex-shrink: 0;
+      line-height: 1.5;
+    }
+    .verdict.revise { color: #92400e; }
+    .verdict.revise .verdict-label { font-weight: 600; }
+    .verdict.accept { color: var(--text-muted); font-style: italic; }
+
+    /* Warm-tinted resolve button when the latest verdict implies an edit */
+    .btn-resolve-comment.revise {
+      border-color: #f59e0b;
+      color: #92400e;
+    }
+    .btn-resolve-comment.revise:hover {
+      background: #fffbeb;
+      border-color: #d97706;
+    }
+
+    /* Per-card verdict badge on resolved cards (next to ✓ Resolved) */
+    .verdict-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      padding: 1px 6px;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-radius: 3px;
+      font-style: normal;
+    }
+    .verdict-badge.revise { background: #fef3c7; color: #92400e; }
+    .verdict-badge.accept { background: #e5e7eb; color: var(--text-muted); }
+
+    /* Round-level secondary action (under the primary banner button) */
+    .round-secondary {
+      margin-top: 8px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .round-secondary button {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--accent);
+      cursor: pointer;
+      font: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .round-secondary button:hover { color: #c2410c; }
 
     .thinking-dots { display: flex; gap: 4px; align-items: center; padding: 2px 0; }
     .thinking-dots span {
@@ -2153,6 +2227,13 @@ function pageTemplate(
         badge.className = 'resolved-badge';
         badge.textContent = '✓ Resolved';
         quote.appendChild(badge);
+        const verdict = latestVerdict(comment);
+        if (verdict) {
+          const vbadge = document.createElement('span');
+          vbadge.className = 'verdict-badge ' + verdict;
+          vbadge.textContent = verdict === 'revise' ? '✎ Edit queued' : '✓ Answered';
+          quote.appendChild(vbadge);
+        }
       }
       quote.appendChild(document.createTextNode('"' + comment.quote + '"'));
       card.appendChild(quote);
@@ -2202,8 +2283,9 @@ function pageTemplate(
         actions.appendChild(replyBtn);
 
         const resolveBtn = document.createElement('button');
-        resolveBtn.className = 'btn-resolve-comment';
-        resolveBtn.textContent = 'Resolve';
+        const verdict = latestVerdict(comment);
+        resolveBtn.className = 'btn-resolve-comment' + (verdict === 'revise' ? ' revise' : '');
+        resolveBtn.textContent = verdict === 'revise' ? 'Resolve → queue edit' : 'Resolve';
         resolveBtn.addEventListener('click', () => resolveComment(comment.id));
         actions.appendChild(resolveBtn);
       }
@@ -2261,11 +2343,33 @@ function pageTemplate(
       const label = entry.name ?? (role === 'agent' ? 'Agent' : 'Human');
       const div = document.createElement('div');
       div.className = 'thread-entry';
+      let verdictHtml = '';
+      if (role === 'agent' && typeof entry.requires_revision === 'boolean') {
+        if (entry.requires_revision) {
+          const reason = entry.revision_reason ? ' ' + escapeHtml(entry.revision_reason) : '';
+          verdictHtml = \`<div class="verdict revise"><span class="verdict-icon">✎</span><span><span class="verdict-label">Will edit the doc:</span>\${reason}</span></div>\`;
+        } else {
+          verdictHtml = \`<div class="verdict accept"><span class="verdict-icon">💬</span><span>Answered here — no edit needed.</span></div>\`;
+        }
+      }
       div.innerHTML = \`
         <div class="thread-role \${role}">\${escapeHtml(label)}</div>
         <div class="thread-message">\${escapeHtml(entry.message)}</div>
+        \${verdictHtml}
       \`;
       return div;
+    }
+
+    // Latest agent verdict on a comment thread. Mirrors latestVerdict() in sidecar.ts.
+    function latestVerdict(comment) {
+      const t = comment.thread || [];
+      for (let i = t.length - 1; i >= 0; i--) {
+        const e = t[i];
+        if (e.role !== 'agent') continue;
+        if (typeof e.requires_revision !== 'boolean') continue;
+        return e.requires_revision ? 'revise' : 'accept';
+      }
+      return null;
     }
 
     function escapeHtml(s) {
@@ -2374,6 +2478,7 @@ function pageTemplate(
 
       if (roundResolved) {
         document.getElementById('empty-rail-hint')?.remove();
+        document.getElementById('round-secondary')?.remove();
         btnAccept.disabled = true;
         btnAccept.textContent = '✓ Accepted';
         if (banner && !errorShowing) {
@@ -2385,6 +2490,7 @@ function pageTemplate(
         positionCards();
         updateNav();
       } else if (comments.length === 0) {
+        document.getElementById('round-secondary')?.remove();
         btnAccept.disabled = false;
         // Cold-open (round 1, never commented) reads as "Skip review";
         // an empty round after a revision is a real "Done — accept this version".
@@ -2415,25 +2521,76 @@ function pageTemplate(
         document.getElementById('empty-rail-hint')?.remove();
         const hasOpen = comments.some(c => !c.resolved);
         btnAccept.disabled = hasOpen;
-        btnAccept.dataset.mode = 'accept';
-        btnAccept.textContent = hasOpen ? 'Revise document' : 'Revise document ✓';
-        if (banner && !errorShowing) {
-          banner.classList.remove('revising');
-          if (!hasOpen) {
-            banner.textContent = 'All comments resolved — ready to accept.';
-            banner.style.display = 'block';
-          } else {
+        // Strip any prior secondary action; we re-add it below if applicable.
+        document.getElementById('round-secondary')?.remove();
+        if (hasOpen) {
+          btnAccept.dataset.mode = 'accept';
+          btnAccept.classList.remove('revise-tinted');
+          btnAccept.textContent = 'Revise document';
+          if (banner && !errorShowing) {
+            banner.classList.remove('revising');
             banner.style.display = 'none';
+          }
+        } else {
+          // All resolved — pick default action by majority verdict.
+          // Any 'revise' wins (safe default: revising more is cheaper than missing an edit).
+          const verdicts = comments.map(latestVerdict);
+          const reviseCount = verdicts.filter(v => v === 'revise').length;
+          const total = verdicts.length;
+          const anyRevise = reviseCount > 0;
+
+          btnAccept.dataset.mode = anyRevise ? 'accept' : 'finish';
+          btnAccept.textContent = anyRevise ? 'Revise document' : 'Accept as-is';
+
+          if (banner && !errorShowing) {
+            banner.classList.remove('revising');
+            let bannerText;
+            if (reviseCount === 0) {
+              bannerText = total === 1
+                ? 'Comment answered in thread — no revision needed.'
+                : \`All \${total} comments answered in thread — no revision needed.\`;
+            } else if (reviseCount === total) {
+              bannerText = total === 1
+                ? 'Comment implies an edit — ready to revise.'
+                : \`All \${total} comments imply edits — ready to revise.\`;
+            } else {
+              bannerText = \`\${reviseCount} of \${total} comments imply edits.\`;
+            }
+            banner.textContent = bannerText;
+            banner.style.display = 'block';
+          }
+
+          // Secondary action — the opposite of the default.
+          const sidebar = document.querySelector('.sidebar-col');
+          if (sidebar) {
+            const sec = document.createElement('div');
+            sec.id = 'round-secondary';
+            sec.className = 'round-secondary';
+            const altLabel = anyRevise ? 'accept as-is without revising' : 'revise the document anyway';
+            sec.innerHTML = \`or <button id="round-secondary-btn">\${altLabel}</button>\`;
+            // Insert right after the banner so it sits with the round-level controls.
+            banner?.insertAdjacentElement('afterend', sec) ?? sidebar.appendChild(sec);
+            sec.querySelector('#round-secondary-btn').addEventListener('click', () => {
+              if (anyRevise) {
+                // User is overriding to skip revision despite implied edits — confirm.
+                const msg = reviseCount === 1
+                  ? '1 comment suggested an edit. Accept anyway?'
+                  : \`\${reviseCount} comments suggested edits. Accept anyway?\`;
+                if (!confirm(msg)) return;
+                triggerRoundAction('finish');
+              } else {
+                triggerRoundAction('accept');
+              }
+            });
           }
         }
       }
     }
 
-    document.getElementById('btn-accept')?.addEventListener('click', async () => {
+    // Trigger the same flow as clicking the primary button, but for an
+    // arbitrary mode ('accept' | 'finish'). Used by the secondary action link.
+    async function triggerRoundAction(mode) {
       const btnAccept = document.getElementById('btn-accept');
-      if (btnAccept?.disabled) return;
-      const mode = btnAccept.dataset.mode;
-      // Clear any prior error banner so a retry shows the revising state cleanly
       const banner = document.getElementById('sidebar-status-banner');
       if (banner) {
         banner.classList.remove('error');
@@ -2445,10 +2602,9 @@ function pageTemplate(
       const data = await res.json();
       if (data.ok) {
         roundResolved = true;
+        document.getElementById('round-secondary')?.remove();
         if (mode === 'finish') {
-          btnAccept.disabled = true;
-          btnAccept.textContent = '✓ Done';
-          const banner = document.getElementById('sidebar-status-banner');
+          if (btnAccept) { btnAccept.disabled = true; btnAccept.textContent = '✓ Done'; }
           if (banner) {
             banner.classList.remove('revising'); banner.classList.remove('error');
             banner.textContent = 'Review complete. Document is ready.';
@@ -2460,6 +2616,12 @@ function pageTemplate(
       } else {
         alert(data.error || 'Could not complete.');
       }
+    }
+
+    document.getElementById('btn-accept')?.addEventListener('click', () => {
+      const btnAccept = document.getElementById('btn-accept');
+      if (btnAccept?.disabled) return;
+      triggerRoundAction(btnAccept.dataset.mode);
     });
 
     // ── Revision banner ──────────────────────────────────────────────

@@ -43,6 +43,14 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
   - **Phase 4 of test milestone** (client JS extraction + browser-driven tests): testing infrastructure expansion, not resilience. Slot after M5 so the new resilience changes get coverage at the same time.
 - **Retro:** [docs/retros/m5-resilience-v2.md](retros/m5-resilience-v2.md)
 
+### M5_P1: Verdict-aware resolve
+
+- **Done when:** Every agent reply carries a verdict on whether the resolved comment implies a doc edit. The round-level action defaults to "Revise document" or "Accept as-is" based on the verdicts; the alternate action is one click away. Per-reply footer + per-card badge make the verdict legible *before* the human clicks Resolve.
+- **Status:** reached
+- **Why a patch, not part of M5:** UX/workflow change, not resilience. Surfaced during dogfood: the only path forward after even one comment was a full revision pass, even when every thread was just Q&A the agent had already answered.
+- **Out of scope:** classifying without agent JSON output (e.g. inferring from message text), per-comment human override of the verdict, scoping the revision pass to only revision-implying comments. The last is the most interesting follow-up — could make revision lighter/faster — flagged for a future patch.
+- **Retro:** inline — see commit / PR description.
+
 ### M6: Load-bearing integration
 
 - **Done when:** Redline is wired into the normal course of work across active projects. Agents reach for it automatically when producing a Markdown proposal for human sign-off — without explicit instruction each time. The invocation path (skill, global guidance, `--context` handoff) is polished and trusted. Used on at least two or three real proposals outside the Redline project itself.

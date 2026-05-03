@@ -174,6 +174,50 @@ test("POST /api/comment/:id/reply appends to the thread", async () => {
   expect(updated.thread[1]).toMatchObject({ role: "agent", name: "Claude", message: "ack" });
 }, 15_000);
 
+test("POST /api/comment/:id/reply persists agent verdict (requires_revision + reason)", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const c = await postComment(port, { quote: "first paragraph" }, "fix typo");
+
+  const replyRes = await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: "agent",
+      name: "Claude",
+      message: "Will fix.",
+      requires_revision: true,
+      revision_reason: "fix the misspelled word",
+    }),
+  });
+  expect(replyRes.status).toBe(200);
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const entry = sidecar.rounds[0].comments[0].thread[1];
+  expect(entry.requires_revision).toBe(true);
+  expect(entry.revision_reason).toBe("fix the misspelled word");
+}, 15_000);
+
+test("POST /api/comment/:id/reply ignores verdict on human entries", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const c = await postComment(port, { quote: "first paragraph" }, "q");
+
+  // Human entries shouldn't carry a verdict even if one is sent.
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: "human", message: "follow-up", requires_revision: true }),
+  });
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const entry = sidecar.rounds[0].comments[0].thread[1];
+  expect(entry.role).toBe("human");
+  expect(entry.requires_revision).toBeUndefined();
+}, 15_000);
+
 test("POST /api/comment/:id/thinking succeeds (broadcast hook)", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);
