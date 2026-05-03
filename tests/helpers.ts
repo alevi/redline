@@ -22,7 +22,6 @@ export const BUN = process.execPath;
 
 export const TEST_ENV = {
   ...process.env,
-  REDLINE_NO_OPEN: "1",
 };
 
 export function createTestFile(content = "# Test Document\n\nThis is a test.\n"): {

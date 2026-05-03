@@ -20,7 +20,7 @@ bun install
 bun start path/to/spec.md
 ```
 
-This opens `localhost:3000` in your browser and starts a dedicated agent process that listens for comment events. Select any text in the document to leave a comment. The agent will reply in the thread within a couple seconds.
+This starts a local server and a dedicated agent process that listens for comment events. The terminal prints a `localhost` URL — cmd-click it when you're ready to review. (Pass `--open` if you want the browser to launch automatically.) Select any text in the document to leave a comment. The agent will reply in the thread within a couple seconds.
 
 When you're done with a comment, click **Resolve**. When every comment in the round is resolved, the **Revise document** button enables. Click it and the agent will rewrite the doc to reflect the discussion.
 
