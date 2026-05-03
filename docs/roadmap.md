@@ -55,12 +55,12 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 ### M6: Load-bearing integration
 
 - **Done when:** Redline is wired into the normal course of work across active projects. Agents reach for it automatically when producing a Markdown proposal for human sign-off — without explicit instruction each time. The invocation path (skill, global guidance, `--context` handoff) is polished and trusted. Used on at least two or three real proposals outside the Redline project itself.
-- **Status:** planned (after M5 Resilience pass v2)
+- **Status:** in progress — items 1–3 shipped; closure gated on item 4 (organic real-usage validation)
 - **Work items:**
-  - Update the `redline-review` skill to document `--context` and the outer-agent handoff pattern (currently undocumented)
-  - Install the skill globally (`~/.claude/skills/`) so it's available in all projects, not just this repo
-  - Add a short global `~/.claude/CLAUDE.md` rule: when producing a Markdown doc for human sign-off, reach for `redline-review` instead of sharing inline
-  - Validate on real proposals — at least two outside this project — and close any gaps that surface
+  - ✅ Update the `redline-review` skill to document `--context` and the outer-agent handoff pattern. Shipped in [redline#26](https://github.com/alevi/redline/pull/26).
+  - ✅ Install the skill globally (`~/.claude/skills/`) so it's available in all projects, not just this repo. Install script shipped in [redline#27](https://github.com/alevi/redline/pull/27); copied to `~/.claude/skills/redline-review/` and confirmed visible in Claude Code's available-skills list.
+  - ✅ Add a short global `~/.claude/CLAUDE.md` rule: when producing a Markdown doc for human sign-off, reach for `redline-review` instead of pasting inline or just linking the file.
+  - ⏳ Validate on real proposals — at least two outside this project — and close any gaps that surface. Waiting on organic doc tasks rather than manufacturing them; this is the closure gate.
 - **Retro:**
 
 ### M7: Client-side test coverage
