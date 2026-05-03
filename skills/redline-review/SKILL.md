@@ -9,12 +9,14 @@ When you've produced a markdown document that the human needs to read, comment o
 
 ## How to invoke it
 
-**Short reviews (≤10 min):** Run `redline <path-to-file.md>` via the Bash tool with `timeout: 600000`. This call blocks until the human clicks Done or abandons. The blocking behavior is the point — you wait here.
+The redline binary lives at `__REDLINE_BIN__` (substituted at install time — if you see the literal placeholder string, the skill was installed incorrectly; tell the human to re-run `scripts/install-skill.sh` from the redline repo). Always invoke it by this absolute path. Do not call bare `redline` and do not try to "fix" PATH issues by running `bun link` or guessing where the repo lives.
+
+**Short reviews (≤10 min):** Run `__REDLINE_BIN__ <path-to-file.md>` via the Bash tool with `timeout: 600000`. This call blocks until the human clicks Done or abandons. The blocking behavior is the point — you wait here.
 
 **Long reviews (>10 min):** Use the polling pattern so the Bash timeout doesn't cut you off:
 
 ```bash
-redline /abs/path/to/file.md > /tmp/redline.log 2>&1 &
+__REDLINE_BIN__ /abs/path/to/file.md > /tmp/redline.log 2>&1 &
 RESULT_FILE="/abs/path/to/.review/file.md.result"
 until [ -f "$RESULT_FILE" ]; do sleep 30; done
 cat "$RESULT_FILE"
@@ -22,12 +24,12 @@ cat "$RESULT_FILE"
 
 The result file is written at `.review/<basename>.result` (next to the file) when the session ends for any reason. On startup, Redline prints the result file path in its URL banner.
 
-If `redline` is not on PATH, run `bun link` once from the redline repo root to install it globally, then retry.
+If invocation fails (binary missing, permission denied, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run the install script.
 
 ### Pass context with `--context`
 
 ```
-redline /abs/path/file.md --context "Draft of the auth-rewrite RFC — focus on the migration plan in §4."
+__REDLINE_BIN__ /abs/path/file.md --context "Draft of the auth-rewrite RFC — focus on the migration plan in §4."
 ```
 
 The context string is shown in the reader's header so the human knows what they're being asked to review and what you'd like them to focus on. Use it whenever the file alone doesn't make the ask obvious. One sentence is plenty.
@@ -70,7 +72,7 @@ The full loop, when you are the outer agent producing the doc:
 
 1. Write the markdown file to disk at an absolute path.
 2. Tell the human in one sentence what's about to happen and surface the URL Redline will print.
-3. Invoke `redline <abs-path> --context "<one-liner about what they're reviewing>"`. Use blocking for short reviews, the polling pattern for longer ones.
+3. Invoke `__REDLINE_BIN__ <abs-path> --context "<one-liner about what they're reviewing>"`. Use blocking for short reviews, the polling pattern for longer ones.
 4. While the session runs, you are idle — do not start unrelated work and do not poll the file system yourself; the result file or the Bash return is your signal.
 5. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
 6. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
