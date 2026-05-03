@@ -320,6 +320,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     return c.json({
       comments: latestRound?.comments ?? [],
       roundResolved: latestRound?.resolved_at != null,
+      totalRounds: sidecar.rounds.length,
     });
   });
 
@@ -561,8 +562,8 @@ function pageTemplate(
       --border: #e8e6e1;
       --text: #1a1a1a;
       --text-muted: #6b6b6b;
-      --accent: #c0392b;
-      --accent-light: #fdf2f2;
+      --accent: #d97706;
+      --accent-light: #fff7ed;
       --highlight: #fff3cd;
       --highlight-active: #ffe8a0;
       --thread-bg: #f7f7f5;
@@ -828,8 +829,16 @@ function pageTemplate(
       cursor: pointer;
       transition: background 0.1s;
     }
-    mark.rl-highlight:hover, mark.rl-highlight.active {
+    mark.rl-highlight:hover {
       background: rgba(255, 220, 100, 0.65);
+    }
+    /* Active highlight: amber ring traces the exact span tied to the active card.
+       Works for overlapping highlights too — the ring outlines whichever <mark>
+       is active, even when nested inside another. */
+    mark.rl-highlight.active {
+      background: rgba(255, 220, 100, 0.65);
+      box-shadow: inset 0 -1.5px 0 0 #e8b84b, 0 0 0 1.5px var(--accent);
+      border-radius: 2px;
     }
     mark.rl-highlight.resolved {
       background: rgba(200, 230, 201, 0.45);
@@ -860,7 +869,7 @@ function pageTemplate(
     }
     /* Hover affordance on images so it's discoverable that you can comment */
     .prose img { cursor: pointer; transition: box-shadow 0.15s; }
-    .prose img:hover { box-shadow: 0 0 0 2px rgba(192,57,43,0.4); border-radius: 4px; }
+    .prose img:hover { box-shadow: 0 0 0 2px rgba(217,119,6,0.4); border-radius: 4px; }
 
 
     /* ── Sidebar ── */
@@ -881,7 +890,7 @@ function pageTemplate(
       transition: border-color 0.15s, box-shadow 0.15s;
       box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
-    .comment-card.active { border-color: var(--accent); box-shadow: 0 2px 8px rgba(192,57,43,0.12); }
+    .comment-card.active { border-color: var(--accent); box-shadow: 0 2px 8px rgba(217,119,6,0.12); }
     .comment-card.resolved { opacity: 0.55; }
     .comment-card.resolved .comment-body { display: none; }
     .comment-card.resolved.expanded .comment-body { display: block; }
@@ -1071,7 +1080,7 @@ function pageTemplate(
       border: 1px solid var(--accent);
       border-radius: var(--radius);
       overflow: hidden;
-      box-shadow: 0 2px 8px rgba(192,57,43,0.12);
+      box-shadow: 0 2px 8px rgba(217,119,6,0.12);
       z-index: 10;
     }
 
@@ -1460,7 +1469,7 @@ function pageTemplate(
     // ── State ────────────────────────────────────────────────────────
     let comments = ${commentsJson};
     let roundResolved = ${roundResolved};
-    const totalRounds = ${totalRounds};
+    let totalRounds = ${totalRounds};
     const thinkingCommentIds = new Set();
     let pendingSelection = null;
     let selectionTimer = null;
@@ -1571,7 +1580,7 @@ function pageTemplate(
       if (ta) {
         ta.focus();
         ta.style.borderColor = 'var(--accent)';
-        ta.style.boxShadow = '0 0 0 3px rgba(192,57,43,0.25)';
+        ta.style.boxShadow = '0 0 0 3px rgba(217,119,6,0.25)';
         setTimeout(() => { ta.style.boxShadow = ''; }, 600);
       }
     }
@@ -1876,7 +1885,7 @@ function pageTemplate(
         const mark = document.createElement('mark');
         mark.className = 'rl-highlight' + (resolved ? ' resolved' : '');
         mark.dataset.commentId = id;
-        mark.addEventListener('click', () => { focusComment(id); updateNav(); });
+        mark.addEventListener('click', (e) => { e.stopPropagation(); focusComment(id); updateNav(); });
         const mid = node.splitText(localStart);
         const after = mid.splitText(localEnd - localStart);
         mid.parentNode.insertBefore(mark, after);
@@ -2517,6 +2526,12 @@ function pageTemplate(
       try {
         const res = await fetch('/api/comments');
         const data = await res.json();
+        // If a new round was created while we were disconnected (missed reload event),
+        // the only safe thing is to reload — the page state is from a stale round.
+        if (typeof data.totalRounds === 'number' && data.totalRounds > totalRounds) {
+          window.location.reload();
+          return;
+        }
         comments = data.comments;
         roundResolved = data.roundResolved;
         renderComments();
@@ -2527,8 +2542,17 @@ function pageTemplate(
       } catch { /* non-fatal */ }
     }
 
+    let sseHasConnectedOnce = false;
     (function connectEvents() {
       const es = new EventSource('/api/events?client=browser');
+      es.onopen = () => {
+        if (sseHasConnectedOnce) {
+          // Reconnected after a drop. Reconcile state — softRefresh will full-reload
+          // if a new round was created while we were disconnected (missed reload event).
+          softRefresh({ rehighlight: true });
+        }
+        sseHasConnectedOnce = true;
+      };
       es.addEventListener('comment-thinking', (e) => {
         try { thinkingCommentIds.add(JSON.parse(e.data).commentId); } catch {}
         renderComments();
