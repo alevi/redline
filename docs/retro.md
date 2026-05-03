@@ -140,6 +140,20 @@ The M3 retro entry isn't wrong, just narrower than the cleaner-than-expected sto
 
 ---
 
+## 2026-05-03 — Resolve flow hung silently; root cause never identified; symptom-level watchdog shipped
+
+While dogfooding redline on its own M5 retro draft, the resolve flow stalled after the user clicked Revise. State at hang time: round 1 still `resolved_at` set, no round 2 in sidecar, file mtime unchanged, `errors.log` empty, `claude -p` no longer running, agent process alive and idle in the JS event loop. None of resolve.ts's exit paths (success branches reach `openNextRound`; error branches write `errors.log`) had fired.
+
+First hypothesis was EPIPE: cli.ts had been launched with `bun run src/cli.ts <file> | head -30 &`, so the parent stdout pipe was broken. The theory was that `process.stdout.write` calls inside the streaming loop would throw EPIPE, derailing the resolve flow before its protocol fetches could fire. **This was wrong.** Direct probe confirmed Bun does not throw on broken-pipe stdout writes — it silently no-ops and returns false. Three reproductions of the user's exact conditions (small doc, full retro doc clean launch, full retro doc with `head -30` piping) all completed cleanly. The bug was real but not reliably reproducible.
+
+The right defense without a known root cause is symptom-level. Shipped a server-side watchdog ([redline#18](https://github.com/alevi/redline/pull/18)): if no terminal event (`reload` / `revision-no-changes` / `revision-error`) arrives within `REDLINE_REVISION_TIMEOUT_MS` (default 3min) of `/api/accept`, the server un-resolves the round, broadcasts `revision-stalled`, and triggers the same recovery path as a known revision crash.
+
+**What to capture next time a hang happens, before killing the session:** full agent process stack (`sample $PID 5`), `claude -p` stdout/stderr buffers if still running, `lsof -p $PID` for the agent (open pipes/fds tell you what it's actually awaiting), the SSE event log on the browser side (DevTools network panel → EventStream view), and the cli.ts output log if it was redirected to a file. The investigation that ran this time had only sidecar state, mtime, and the agent's idle-event-loop sample — enough to rule out theories but not enough to pin a cause.
+
+**Lesson worth canon-ing.** When a system can hang in unidentifiable ways, ship a watchdog that catches the symptom class without requiring you to nail the cause. Pinning the cause is still the goal — but the watchdog buys you time and gives users a recovery path while you investigate. The cost is one timer and a clear-on-success contract.
+
+---
+
 ## 2026-05-03 — Rebasing a stacked PR: both sides of the conflict often contain novel work
 
 Stacked PR #14 (M5 #1) on origin/main while PR #13 (M5 #3) was waiting to merge. After #13 landed, rebasing #14 produced a conflict in `tests/integration.test.ts` — both branches had appended new tests in the same region. The default mental shortcut "take HEAD" or "take incoming" is wrong here: HEAD held the just-merged #13 tests, the incoming commit held the #1 test, and both were correct additions. I treated it as a single-side conflict on the first pass, dropping the #3 tests. Caught only because the test count came out one short.
