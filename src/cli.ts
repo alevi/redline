@@ -109,7 +109,7 @@ if (args[0] === "resolve") {
       .finally(() => process.exit(0));
   });
 
-  // Tab-close abandonment: if no browser reconnects within 2 minutes, exit cleanly.
+  // Tab-close abandonment: if no browser reconnects within the abandon grace, exit cleanly.
   app.onAbandon(abandon);
 
   // Track revision-error state so a session that abandons after a broken revision

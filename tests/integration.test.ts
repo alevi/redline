@@ -110,6 +110,37 @@ test("revision crash → recovered → abandon writes abandoned, not error", asy
   expect(result.status).toBe("abandoned");
 }, 15_000);
 
+test("brief disconnect-reconnect within grace does NOT trip abandon", async () => {
+  const { filePath } = createTestFile();
+  // 2s grace gives us a window to disconnect, reconnect, and outlast the original timer
+  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "2000" });
+  await waitForServer(port);
+
+  // First connection
+  const ac1 = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac1.signal }).catch(() => {});
+  await Bun.sleep(200);
+
+  // Drop it briefly — starts the abandon timer (2s)
+  ac1.abort();
+  await Bun.sleep(500);
+
+  // Reconnect well within the grace — should cancel the timer
+  const ac2 = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac2.signal }).catch(() => {});
+  await Bun.sleep(200);
+
+  // Wait past the original 2s grace window. If the timer wasn't cancelled, the server would have exited.
+  await Bun.sleep(2500);
+
+  // Verify still alive: the HTTP endpoint responds.
+  const res = await fetch(`http://localhost:${port}/api/comments`);
+  expect(res.ok).toBe(true);
+
+  // Cleanup
+  ac2.abort();
+}, 15_000);
+
 test("/api/finish writes approved result file and exits 0", async () => {
   const { filePath, dir } = createTestFile();
   const { proc, port } = await spawnTracked(filePath);
