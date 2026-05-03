@@ -776,7 +776,9 @@ function pageTemplate(
     .prose pre {
       background: #f6f8fa;
       color: #24292f;
-      padding: 1em 1.2em;
+      /* Right padding bumped to give the language label its own visual gutter
+         so code content doesn't appear to crowd the right edge. */
+      padding: 1em 1.6em 1em 1.2em;
       border-radius: var(--radius);
       border: 1px solid #e1e4e8;
       overflow-x: auto;
@@ -960,6 +962,12 @@ function pageTemplate(
     }
     #comment-nav button:hover { background: var(--thread-bg); }
     #comment-nav button:disabled { opacity: 0.3; cursor: default; }
+
+    /* Soften the swap when the nav hides and the status banner appears
+       (and vice versa) — display can't transition, so just fade the
+       *appearance* with a brief animation. */
+    #comment-nav, #sidebar-status-banner { animation: rl-fade-in 0.18s ease-out; }
+    @keyframes rl-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
     .thread-entry {
       margin-bottom: 10px;
