@@ -60,15 +60,45 @@ if (args[0] === "resolve") {
   console.log(`  Result: ${resultFile}`);
   console.log(`${bar}\n`);
 
-  const agentProc = Bun.spawn(
-    [process.execPath, "run", path.join(import.meta.dir, "agent.ts"), resolved],
-    {
-      stdout: "inherit", stderr: "inherit", stdin: "ignore",
-      env: { ...process.env, REDLINE_PORT: String(server.port) },
-    }
-  );
-
+  // Auto-restart the agent if it dies unexpectedly (harness reaping, OOM,
+  // a transient claude-CLI auth blip, etc). Capped to MAX_RESTARTS within
+  // RESTART_WINDOW_MS so a permanently-broken environment doesn't loop forever.
+  const RESTART_WINDOW_MS = 60_000;
+  const MAX_RESTARTS = 5;
+  const restartTimes: number[] = [];
+  let agentProc: ReturnType<typeof Bun.spawn>;
   let serverExiting = false;
+
+  function spawnAgent() {
+    const proc = Bun.spawn(
+      [process.execPath, "run", path.join(import.meta.dir, "agent.ts"), resolved],
+      {
+        stdout: "inherit", stderr: "inherit", stdin: "ignore",
+        env: { ...process.env, REDLINE_PORT: String(server.port) },
+      }
+    );
+    agentProc = proc;
+    proc.exited.then((code) => {
+      if (serverExiting) return;
+      if (code === 0) return;
+      const now = Date.now();
+      while (restartTimes.length && now - restartTimes[0] > RESTART_WINDOW_MS) restartTimes.shift();
+      if (restartTimes.length >= MAX_RESTARTS) {
+        console.error(
+          `\n[redline] Agent crashed ${restartTimes.length}× in ${RESTART_WINDOW_MS / 1000}s — giving up. ` +
+          `Comment replies are unavailable; the review can still be completed manually. Check .review/errors.log.`
+        );
+        return;
+      }
+      restartTimes.push(now);
+      console.error(
+        `[redline] Agent exited unexpectedly (code ${code}) — restarting (${restartTimes.length}/${MAX_RESTARTS}).`
+      );
+      spawnAgent();
+    });
+  }
+  spawnAgent();
+  const killAgent = () => { try { agentProc?.kill(); } catch { /* already dead */ } };
   // Tracks the last unrecovered revision failure. If the session abandons while
   // this is set, the result file reports "error" instead of "abandoned" so a
   // calling agent can distinguish "user walked away" from "revision broke."
@@ -77,7 +107,7 @@ if (args[0] === "resolve") {
   const abandon = () => {
     if (serverExiting) return;
     serverExiting = true;
-    agentProc.kill();
+    killAgent();
     const status = lastRevisionError ? "error" : "abandoned";
     const payload: Record<string, unknown> = { status, file: resolved };
     if (lastRevisionError) payload.reason = lastRevisionError;
@@ -95,7 +125,7 @@ if (args[0] === "resolve") {
   // Happy-path finish: human clicked Done.
   app.onFinished(({ totalRounds, totalComments }) => {
     serverExiting = true;
-    agentProc.kill();
+    killAgent();
     const line = "─".repeat(60);
     console.log(`\n${line}`);
     console.log(`✓  Review complete — ${path.basename(resolved)}`);
@@ -123,14 +153,7 @@ if (args[0] === "resolve") {
     lastRevisionError = null;
   });
 
-  // Warn if the agent crashes so the user isn't left wondering why replies stopped.
-  agentProc.exited.then((code) => {
-    if (!serverExiting && code !== 0) {
-      console.error(`\n[redline] Warning: agent subprocess exited unexpectedly (code ${code}). Comment replies are unavailable. Check .review/errors.log for details.`);
-    }
-  });
-
-  process.on("exit", () => { serverExiting = true; agentProc.kill(); });
+  process.on("exit", () => { serverExiting = true; killAgent(); });
   // SIGINT/SIGTERM = abandoned session. Exit 2 so a calling agent can
   // distinguish "user gave up" from "user clicked Done" (exit 0).
   process.on("SIGINT", abandon);
