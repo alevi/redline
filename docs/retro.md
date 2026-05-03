@@ -130,6 +130,14 @@ The lesson isn't really about IDs — it's about how easy it is to write code wh
 
 ---
 
+## 2026-05-03 — Rebasing a stacked PR: both sides of the conflict often contain novel work
+
+Stacked PR #14 (M5 #1) on origin/main while PR #13 (M5 #3) was waiting to merge. After #13 landed, rebasing #14 produced a conflict in `tests/integration.test.ts` — both branches had appended new tests in the same region. The default mental shortcut "take HEAD" or "take incoming" is wrong here: HEAD held the just-merged #13 tests, the incoming commit held the #1 test, and both were correct additions. I treated it as a single-side conflict on the first pass, dropping the #3 tests. Caught only because the test count came out one short.
+
+The rule: when rebasing a stacked PR, conflict markers around appended-only regions almost always mean both sides contributed legitimate new work. The resolution is concatenation, not selection. Verify by counting: post-rebase test count = base (main) + new tests in this commit. Anything less means a side was dropped.
+
+---
+
 ## 2026-05-03 — Embedded client JS in a server template literal is a testing wall
 
 `server.ts` is ~2600 lines and a large fraction is browser JS embedded in a Hono template literal `<script>...</script>`. Convenient at the start — no build step, no asset pipeline, change anything by editing one file — but by M4 it had become structural debt. Phase 4 of the test-coverage milestone (browser-side coverage of `applyHighlights`, `focusComment`, `updateNav`, selection capture) cannot proceed without first extracting the script into a real file. Extraction is non-trivial because the script is interpolated with server-side state, so it's a real refactor, not a copy-paste.

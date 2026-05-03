@@ -60,6 +60,41 @@ export async function saveSidecar(
   await writeFile(sp, JSON.stringify(sidecar, null, 2), "utf-8");
 }
 
+// Per-file mutex queue. Each entry is the tail of an in-flight chain; new
+// transactions chain onto it so load → mutate → save is atomic against other
+// transactions on the same file. Without this, two POSTs can interleave their
+// load/save pair and silently drop one writer's mutation.
+const sidecarLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Run `fn` against the sidecar with a per-file mutex held across the
+ * load → mutate → save cycle. The mutator may return a value (passed through
+ * to the caller) and/or `false` to skip the save (e.g. when validation fails
+ * before any mutation happened — avoids a redundant disk write).
+ */
+export async function withSidecar<T>(
+  filePath: string,
+  fn: (sidecar: Sidecar) => T | Promise<T>
+): Promise<T> {
+  const key = path.resolve(filePath);
+  const prev = sidecarLocks.get(key) ?? Promise.resolve();
+  const next = prev.then(async () => {
+    const sidecar = await loadSidecar(filePath);
+    const result = await fn(sidecar);
+    // Skip the save if the mutator explicitly returned false. Useful for
+    // validate-only paths that bail before mutating; keeps the lock scope
+    // honest (we still serialized) without the wasted write.
+    if ((result as unknown) !== false) {
+      await saveSidecar(filePath, sidecar);
+    }
+    return result;
+  });
+  // Catch errors so one failed mutator doesn't poison the queue for the next
+  // caller. The original `next` promise still rejects for the current caller.
+  sidecarLocks.set(key, next.catch(() => {}));
+  return next;
+}
+
 export function activeRound(sidecar: Sidecar): Round | null {
   return sidecar.rounds.find((r) => r.resolved_at === null) ?? null;
 }
