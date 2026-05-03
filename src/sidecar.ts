@@ -7,6 +7,26 @@ export interface ThreadEntry {
   name?: string;
   message: string;
   at: string;
+  // Agent replies carry a verdict on whether the comment, once resolved,
+  // implies an edit to the document. Used to decide whether the round-level
+  // action defaults to "Revise" or "Accept as-is". Only set on agent entries.
+  requires_revision?: boolean;
+  revision_reason?: string;
+}
+
+// Latest agent verdict on a comment thread:
+// - 'revise'  → an agent reply set requires_revision: true
+// - 'accept'  → an agent reply set requires_revision: false
+// - null      → no agent reply yet (treat as accept per UX spec; the human
+//               resolved unilaterally so they're saying "doesn't matter")
+export function latestVerdict(comment: Comment): "revise" | "accept" | null {
+  for (let i = comment.thread.length - 1; i >= 0; i--) {
+    const e = comment.thread[i];
+    if (e.role !== "agent") continue;
+    if (typeof e.requires_revision !== "boolean") continue;
+    return e.requires_revision ? "revise" : "accept";
+  }
+  return null;
 }
 
 export interface Comment {

@@ -129,7 +129,7 @@ The original design doc had a "Submit for review" button. **That is gone.** The 
 
 1. Human leaves a comment → server broadcasts `comment-added` SSE event → agent replies immediately.
 2. Human can reply in the thread → broadcasts `comment-reply` → agent replies again.
-3. Human resolves comments one by one. When all are resolved, the "Revise document" button enables.
+3. Human resolves comments one by one. When all are resolved, the round-level button enables — labelled by the **majority verdict** the agent attached to its replies (see "Verdict-aware resolve" below). Default is "Revise document"; if every comment was answered without implying an edit, the default flips to "Accept as-is" (calls `/api/finish`, no revision pass). The non-default action is always one click away as a small secondary link below.
 4. Human clicks Revise → broadcasts `accepted` → agent runs the resolve flow → `/api/reload` triggers full browser reload to the next round.
 5. When a round opens with no comments to act on, the same button reads "Done" and calls `/api/finish`. That broadcasts `finished`, the browser shows a "review complete" splash, and the server prints a summary and exits — handing control back to whichever terminal launched it.
 
@@ -183,7 +183,24 @@ On startup the server checks the sidecar and auto-creates an open round if all r
 When you're acting as the agent on the other end of the SSE stream:
 
 1. POST `/api/comment/:id/thinking` *before* you start composing. This is the user's only signal that you saw their message.
-2. POST `/api/comment/:id/reply` with `{ role: "agent", name: "Claude", message }`.
+2. POST `/api/comment/:id/reply` with `{ role: "agent", name: "Claude", message, requires_revision, revision_reason }`. The verdict fields are required of every agent reply — see "Verdict-aware resolve" below.
 3. POST `/api/agent-replied` to clear the thinking indicator and trigger soft-refresh.
 
 Skipping step 1 leaves the user staring at silence wondering if anything is happening.
+
+## Verdict-aware resolve (M5_P1)
+
+Every agent reply ships with a verdict on whether the comment, once resolved, implies an edit to the document. The fields live on the `ThreadEntry` for that agent reply:
+
+- `requires_revision: true` — the comment implies a doc edit (typo fix, rewording, restructure, content change). The per-comment Resolve button reads "Resolve → queue edit" and tints warm. The resolved card carries an "✎ Edit queued" badge.
+- `requires_revision: false` — the conversation answered it (clarifying question, approval, agent explanation that doesn't imply an edit). The Resolve button stays plain, the card carries a "✓ Answered" badge.
+- field absent — the comment was resolved before the agent ever replied. Treated as `accept` (the human resolved unilaterally, so they're saying "doesn't matter").
+
+The round-level button picks its default by the latest verdict on each comment:
+- All verdicts are `accept` → primary = **Accept as-is** (`/api/finish`, no revision pass)
+- Any verdict is `revise` → primary = **Revise document** (`/api/accept`)
+- The non-default action is always available as a secondary text link under the banner. Choosing "accept anyway" when comments imply edits triggers a `confirm()` warning.
+
+The agent CLI (`src/agent.ts`) gets the verdict by switching `claude -p` from free-text to a JSON contract: `{ "message": "…", "requires_revision": true|false, "reason": "one short sentence" }`. `src/parseReply.ts` parses it; on any parse failure it falls back to `{ requires_revision: true }` (safe default — better to run an unnecessary revision than silently skip an implied edit).
+
+The verdict is **agent-owned**. The human cannot flip it directly. Disagreement flows through a follow-up reply, which gives the agent a chance to re-classify rather than be silently overridden.

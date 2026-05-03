@@ -3,6 +3,7 @@ import { existsSync, unlinkSync } from "fs";
 import { appendFile, mkdir, readFile } from "fs/promises";
 import { resolve } from "./resolve";
 import { pickReplyModel } from "./pickModel";
+import { parseReply } from "./parseReply";
 
 const filePath = process.argv[2];
 if (!filePath) {
@@ -53,7 +54,19 @@ const REPLY_SYSTEM_PROMPT =
   "- Only propose replacement text or alternatives when the reviewer explicitly asks for them. Don't volunteer options they didn't request.\n" +
   "- If the reviewer asks a question, answer it directly. If they approve something, a short confirmation is enough.\n" +
   "- Never recap what they said back to them. No preamble. Start with the substance.\n" +
-  "- Hard ceiling: 3 sentences unless the reviewer's comment genuinely requires more.";
+  "- Hard ceiling: 3 sentences unless the reviewer's comment genuinely requires more.\n" +
+  "\n" +
+  "After your reply, decide: would fully addressing this comment require editing the document itself, or was it answered within the conversation?\n" +
+  "- requires_revision: true  → an edit to the doc is implied (typo fix, rewording, restructure, content change, etc.)\n" +
+  "- requires_revision: false → the conversation answered it (clarifying question, approval, agent explanation that doesn't imply an edit)\n" +
+  "\n" +
+  "When requires_revision is true, the UI already shows the reason next to your reply — DO NOT restate the planned edit in your message. The message should engage with the reviewer (acknowledge, confirm, or briefly engage with their point); the reason describes the edit. Don't say the same thing twice.\n" +
+  "Bad:  message: \"Will add a line 3 to the example.\"  reason: \"Add a third line to the hard line breaks example\"  ← redundant\n" +
+  "Good: message: \"Got it.\"  reason: \"Add a third line to the hard line breaks example\"\n" +
+  "When requires_revision is false, leave reason empty (or a very short note about why no edit). The reply IS the answer.\n" +
+  "\n" +
+  "Output strictly as a single JSON object with this shape and nothing else (no prose before/after, no code fences):\n" +
+  '{ \"message\": \"<your reply text>\", \"requires_revision\": <true|false>, \"reason\": \"<one short sentence describing the edit, or empty>\" }';
 
 const inProgress = new Set<string>();
 
@@ -66,11 +79,16 @@ async function postThinking(commentId: string) {
   await fetch(`${BASE_URL}/api/comment/${commentId}/thinking`, { method: "POST" });
 }
 
-async function postReply(commentId: string, message: string) {
+async function postReply(
+  commentId: string,
+  message: string,
+  requires_revision: boolean,
+  revision_reason: string
+) {
   await fetch(`${BASE_URL}/api/comment/${commentId}/reply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role: "agent", name: "Claude", message }),
+    body: JSON.stringify({ role: "agent", name: "Claude", message, requires_revision, revision_reason }),
   });
 }
 
@@ -123,8 +141,11 @@ async function handleComment(commentId: string) {
       reply += new TextDecoder().decode(value);
     }
 
-    const trimmed = reply.trim();
-    if (trimmed) await postReply(commentId, trimmed);
+    if (reply.trim()) {
+      const parsed = parseReply(reply);
+      console.log(`[agent] verdict for ${commentId}: requires_revision=${parsed.requires_revision}`);
+      await postReply(commentId, parsed.message, parsed.requires_revision, parsed.reason);
+    }
   } catch (err) {
     await logReplyFailure(commentId, err);
     throw err;
