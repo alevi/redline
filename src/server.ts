@@ -5,6 +5,7 @@ import { renderMarkdown } from "./render";
 import {
   loadSidecar,
   saveSidecar,
+  withSidecar,
   getOrCreateActiveRound,
   activeRound,
   type Comment,
@@ -16,25 +17,27 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
 
   // On startup, ensure there is always an open round to receive comments
   (async () => {
-    const sidecar = await loadSidecar(filePath);
-    let changed = false;
-    const hasOpen = sidecar.rounds.some((r: any) => r.resolved_at === null);
-    if (!hasOpen) {
-      sidecar.rounds.push({
-        round: sidecar.rounds.length + 1,
-        started_at: new Date().toISOString(),
-        submitted_at: null,
-        agent_replied_at: null,
-        resolved_at: null,
-        comments: [],
-      });
-      changed = true;
-    }
-    if (opts.context && !sidecar.context) {
-      sidecar.context = opts.context;
-      changed = true;
-    }
-    if (changed) await saveSidecar(filePath, sidecar);
+    await withSidecar(filePath, (sidecar) => {
+      let changed = false;
+      const hasOpen = sidecar.rounds.some((r: any) => r.resolved_at === null);
+      if (!hasOpen) {
+        sidecar.rounds.push({
+          round: sidecar.rounds.length + 1,
+          started_at: new Date().toISOString(),
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: null,
+          comments: [],
+        });
+        changed = true;
+      }
+      if (opts.context && !sidecar.context) {
+        sidecar.context = opts.context;
+        changed = true;
+      }
+      // Skip the save if there's nothing to write.
+      if (!changed) return false as const;
+    });
   })();
 
   // ── SSE broadcast ────────────────────────────────────────────────────
@@ -130,105 +133,104 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
       message: string;
     }>();
 
-    const sidecar = await loadSidecar(filePath);
-    const round = getOrCreateActiveRound(sidecar);
-
-    // Two comments POSTed within the same millisecond would collide on Date.now() alone.
-    // The 4-digit random suffix makes per-ms collision functionally impossible.
-    const comment: Comment = {
-      id: `c${Date.now()}${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
-      quote: body.quote,
-      context_before: body.context_before,
-      context_after: body.context_after,
-      thread: [
-        { role: "human", message: body.message, at: new Date().toISOString() },
-      ],
-      resolved: false,
-    };
-
-    round.comments.push(comment);
-    await saveSidecar(filePath, sidecar);
-    broadcast("comment-added", { round: round.round, commentId: comment.id });
-
+    const { comment, roundNumber } = await withSidecar(filePath, (sidecar) => {
+      const round = getOrCreateActiveRound(sidecar);
+      // Two comments POSTed within the same millisecond would collide on Date.now() alone.
+      // The 4-digit random suffix makes per-ms collision functionally impossible.
+      const comment: Comment = {
+        id: `c${Date.now()}${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
+        quote: body.quote,
+        context_before: body.context_before,
+        context_after: body.context_after,
+        thread: [
+          { role: "human", message: body.message, at: new Date().toISOString() },
+        ],
+        resolved: false,
+      };
+      round.comments.push(comment);
+      return { comment, roundNumber: round.round };
+    });
+    broadcast("comment-added", { round: roundNumber, commentId: comment.id });
     return c.json({ ok: true, comment });
   });
 
   // Mark a comment resolved
   app.post("/api/comment/:id/resolve", async (c) => {
     const id = c.req.param("id");
-
-    const sidecar = await loadSidecar(filePath);
-    const round = activeRound(sidecar);
-    if (!round) return c.json({ ok: false, error: "No active round" }, 400);
-
-    const comment = round.comments.find((cm) => cm.id === id);
-    if (!comment) return c.json({ ok: false, error: "Comment not found" }, 404);
-
-    comment.resolved = true;
-    await saveSidecar(filePath, sidecar);
-
-    const allResolved = round.comments.length > 0 && round.comments.every((cm) => cm.resolved);
-    broadcast("comment-resolved", { round: round.round, commentId: id, allResolved });
-
-    return c.json({ ok: true, allResolved });
+    const out = await withSidecar(filePath, (sidecar) => {
+      const round = activeRound(sidecar);
+      if (!round) return { skip: true as const, status: 400, error: "No active round" };
+      const comment = round.comments.find((cm) => cm.id === id);
+      if (!comment) return { skip: true as const, status: 404, error: "Comment not found" };
+      comment.resolved = true;
+      const allResolved = round.comments.length > 0 && round.comments.every((cm) => cm.resolved);
+      return { skip: false as const, roundNumber: round.round, allResolved };
+    });
+    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
+    broadcast("comment-resolved", { round: out.roundNumber, commentId: id, allResolved: out.allResolved });
+    return c.json({ ok: true, allResolved: out.allResolved });
   });
 
   // Reopen a resolved comment
   app.post("/api/comment/:id/reopen", async (c) => {
     const id = c.req.param("id");
-    const sidecar = await loadSidecar(filePath);
-    const latestRound = sidecar.rounds[sidecar.rounds.length - 1] ?? null;
-    if (!latestRound) return c.json({ ok: false, error: "No round found" }, 400);
-    const comment = latestRound.comments.find((cm) => cm.id === id);
-    if (!comment) return c.json({ ok: false, error: "Comment not found" }, 404);
-    comment.resolved = false;
-    await saveSidecar(filePath, sidecar);
-    // Broadcast so other browser tabs and the agent see the reopen.
-    const allResolved = latestRound.comments.length > 0 && latestRound.comments.every((cm) => cm.resolved);
-    broadcast("comment-resolved", { round: latestRound.round, commentId: id, allResolved });
-    return c.json({ ok: true, comment });
+    const out = await withSidecar(filePath, (sidecar) => {
+      const latestRound = sidecar.rounds[sidecar.rounds.length - 1] ?? null;
+      if (!latestRound) return { skip: true as const, status: 400, error: "No round found" };
+      const comment = latestRound.comments.find((cm) => cm.id === id);
+      if (!comment) return { skip: true as const, status: 404, error: "Comment not found" };
+      comment.resolved = false;
+      const allResolved = latestRound.comments.length > 0 && latestRound.comments.every((cm) => cm.resolved);
+      return { skip: false as const, roundNumber: latestRound.round, allResolved, comment };
+    });
+    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
+    broadcast("comment-resolved", { round: out.roundNumber, commentId: id, allResolved: out.allResolved });
+    return c.json({ ok: true, comment: out.comment });
   });
 
   // Submit for agent review — signals the agent to respond to comments
   app.post("/api/submit", async (c) => {
-    const sidecar = await loadSidecar(filePath);
-    const round = activeRound(sidecar);
-    if (!round) return c.json({ ok: false, error: "No active round" }, 400);
-    if (round.comments.length === 0) return c.json({ ok: false, error: "No comments to submit" }, 400);
-
-    round.submitted_at = new Date().toISOString();
-    round.agent_replied_at = null; // clear so agent knows to respond again
-    await saveSidecar(filePath, sidecar);
-    broadcast("submitted", { round: round.round, comments: round.comments.length });
+    const out = await withSidecar(filePath, (sidecar) => {
+      const round = activeRound(sidecar);
+      if (!round) return { skip: true as const, status: 400, error: "No active round" };
+      if (round.comments.length === 0) return { skip: true as const, status: 400, error: "No comments to submit" };
+      round.submitted_at = new Date().toISOString();
+      round.agent_replied_at = null; // clear so agent knows to respond again
+      return { skip: false as const, roundNumber: round.round, count: round.comments.length };
+    });
+    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400);
+    broadcast("submitted", { round: out.roundNumber, comments: out.count });
     return c.json({ ok: true });
   });
 
   // Accept & revise — human is done discussing; agent should now revise the document
   app.post("/api/accept", async (c) => {
-    const sidecar = await loadSidecar(filePath);
-    const round = activeRound(sidecar);
-    if (!round) return c.json({ ok: false, error: "No active round" }, 400);
-
-    round.resolved_at = new Date().toISOString();
-    await saveSidecar(filePath, sidecar);
-    broadcast("accepted", { round: round.round });
+    const out = await withSidecar(filePath, (sidecar) => {
+      const round = activeRound(sidecar);
+      if (!round) return { skip: true as const };
+      round.resolved_at = new Date().toISOString();
+      return { skip: false as const, roundNumber: round.round };
+    });
+    if (out.skip) return c.json({ ok: false, error: "No active round" }, 400);
+    broadcast("accepted", { round: out.roundNumber });
     onRevisionRecoveredCallback?.();
     return c.json({ ok: true });
   });
 
   // Finish a round with no comments — no revision needed, just close out
   app.post("/api/finish", async (c) => {
-    const sidecar = await loadSidecar(filePath);
-    const round = activeRound(sidecar);
-    if (!round) return c.json({ ok: false, error: "No active round" }, 400);
-    round.resolved_at = new Date().toISOString();
-    await saveSidecar(filePath, sidecar);
-    broadcast("finished", { round: round.round });
-
-    const totalRounds = sidecar.rounds.filter((r: any) => r.resolved_at).length;
-    const totalComments = sidecar.rounds.reduce((n: number, r: any) => n + (r.comments?.length ?? 0), 0);
+    const out = await withSidecar(filePath, (sidecar) => {
+      const round = activeRound(sidecar);
+      if (!round) return { skip: true as const };
+      round.resolved_at = new Date().toISOString();
+      const totalRounds = sidecar.rounds.filter((r: any) => r.resolved_at).length;
+      const totalComments = sidecar.rounds.reduce((n: number, r: any) => n + (r.comments?.length ?? 0), 0);
+      return { skip: false as const, roundNumber: round.round, totalRounds, totalComments };
+    });
+    if (out.skip) return c.json({ ok: false, error: "No active round" }, 400);
+    broadcast("finished", { round: out.roundNumber });
     // Let the CLI handle the summary printout, result-file writing, and process exit.
-    setTimeout(() => onFinishedCallback?.({ totalRounds, totalComments }), 500);
+    setTimeout(() => onFinishedCallback?.({ totalRounds: out.totalRounds, totalComments: out.totalComments }), 500);
     return c.json({ ok: true });
   });
 
@@ -257,12 +259,11 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
   // round so the human can retry by clicking "Revise document" again
   app.post("/api/revision-error", async (c) => {
     const { message } = await c.req.json();
-    const sidecar = await loadSidecar(filePath);
-    const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
-    if (lastResolved) {
+    await withSidecar(filePath, (sidecar) => {
+      const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
+      if (!lastResolved) return false as const;
       lastResolved.resolved_at = null;
-      await saveSidecar(filePath, sidecar);
-    }
+    });
     broadcast("revision-error", { message });
     onRevisionErrorCallback?.(message);
     return c.json({ ok: true });
@@ -283,44 +284,46 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     const role = (body.role === "human" ? "human" : "agent") as "human" | "agent";
     const name = body.name?.trim() || undefined;
 
-    const sidecar = await loadSidecar(filePath);
-    const round = activeRound(sidecar);
-    if (!round) return c.json({ ok: false, error: "No active round" }, 400);
-    const comment = round.comments.find((c) => c.id === id);
-    if (!comment) return c.json({ ok: false, error: "Comment not found" }, 404);
-
-    const entry: { role: "human" | "agent"; name?: string; message: string; at: string } = { role, message: body.message.trim(), at: new Date().toISOString() };
-    if (name) entry.name = name;
-    comment.thread.push(entry);
-    await saveSidecar(filePath, sidecar);
-
+    const out = await withSidecar(filePath, (sidecar) => {
+      const round = activeRound(sidecar);
+      if (!round) return { skip: true as const, status: 400, error: "No active round" };
+      const comment = round.comments.find((c) => c.id === id);
+      if (!comment) return { skip: true as const, status: 404, error: "Comment not found" };
+      const entry: { role: "human" | "agent"; name?: string; message: string; at: string } = { role, message: body.message.trim(), at: new Date().toISOString() };
+      if (name) entry.name = name;
+      comment.thread.push(entry);
+      return { skip: false as const, roundNumber: round.round, comment };
+    });
+    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
     if (role === "human") {
-      broadcast("comment-reply", { round: round.round, commentId: id });
+      broadcast("comment-reply", { round: out.roundNumber, commentId: id });
     }
-
-    return c.json({ ok: true, comment });
+    return c.json({ ok: true, comment: out.comment });
   });
 
   // Agent signals it has finished replying to all comments
   app.post("/api/agent-replied", async (c) => {
-    const sidecar = await loadSidecar(filePath);
-    const round = activeRound(sidecar);
-    if (!round) return c.json({ ok: false, error: "No active round" }, 400);
-
-    round.agent_replied_at = new Date().toISOString();
-    await saveSidecar(filePath, sidecar);
-    broadcast("agent-replied", { round: round.round });
+    const out = await withSidecar(filePath, (sidecar) => {
+      const round = activeRound(sidecar);
+      if (!round) return { skip: true as const };
+      round.agent_replied_at = new Date().toISOString();
+      return { skip: false as const, roundNumber: round.round };
+    });
+    if (out.skip) return c.json({ ok: false, error: "No active round" }, 400);
+    broadcast("agent-replied", { round: out.roundNumber });
     return c.json({ ok: true });
   });
 
   // Keep /api/resolve as an alias for backward compat
   app.post("/api/resolve", async (c) => {
-    const sidecar = await loadSidecar(filePath);
-    const round = activeRound(sidecar);
-    if (!round) return c.json({ ok: false, error: "No active round" }, 400);
-    if (round.comments.length === 0) return c.json({ ok: false, error: "No comments to submit" }, 400);
-    round.submitted_at = new Date().toISOString();
-    await saveSidecar(filePath, sidecar);
+    const out = await withSidecar(filePath, (sidecar) => {
+      const round = activeRound(sidecar);
+      if (!round) return { skip: true as const, status: 400, error: "No active round" };
+      if (round.comments.length === 0) return { skip: true as const, status: 400, error: "No comments to submit" };
+      round.submitted_at = new Date().toISOString();
+      return { skip: false as const };
+    });
+    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400);
     return c.json({ ok: true });
   });
 

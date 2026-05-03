@@ -44,14 +44,48 @@ test("POST /api/comment creates a comment and persists to sidecar", async () => 
   expect(sidecar.rounds[0].comments[0].id).toBe(c.id);
 }, 15_000);
 
+test("POST /api/comment serializes 20 concurrent writes with no losses", async () => {
+  const { filePath, dir } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  // Fire 20 POSTs simultaneously. Without the per-file mutex these
+  // load → mutate → save cycles interleave: writers read the same starting
+  // sidecar, push into stale arrays, and the last save wins — silently
+  // dropping the others. >5 parallel POSTs reliably 500'd before the fix.
+  const N = 20;
+  const responses = await Promise.all(
+    Array.from({ length: N }, (_, i) =>
+      fetch(`http://localhost:${port}/api/comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quote: "first paragraph",
+          context_before: "",
+          context_after: `#${i}`,
+          message: `parallel ${i}`,
+        }),
+      }),
+    ),
+  );
+  for (const r of responses) expect(r.ok).toBe(true);
+
+  const raw = await readFile(path.join(dir, ".review", "test.md.json"), "utf-8");
+  const sidecar = JSON.parse(raw);
+  expect(sidecar.rounds).toHaveLength(1);
+  expect(sidecar.rounds[0].comments).toHaveLength(N);
+
+  // All ids unique
+  const ids = new Set(sidecar.rounds[0].comments.map((c: any) => c.id));
+  expect(ids.size).toBe(N);
+}, 15_000);
+
 test("POST /api/comment generates unique ids even under same-ms collisions", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);
 
   // Fire 3 sequentially-awaited POSTs. They land within a millisecond on a
   // local server, which is exactly the case where Date.now()-only IDs collide.
-  // Higher concurrency exposes a separate sidecar read-modify-write race —
-  // logged as a followup, not in scope for the ID-uniqueness regression check.
+  // (The higher-concurrency sidecar race is now covered by the test above.)
   const a = await postComment(port, { quote: "first paragraph", context_after: "a" }, "1");
   const b = await postComment(port, { quote: "first paragraph", context_after: "b" }, "2");
   const c = await postComment(port, { quote: "first paragraph", context_after: "c" }, "3");
