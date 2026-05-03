@@ -108,14 +108,24 @@ The agent loop is solid: parallel replies, thinking dots per card, one-shot agen
 
 ## What I did NOT test (deferred)
 
-- SSE reconnect mid-revision (server kill / network blip) — would need to interrupt the SSE stream
+- ~~SSE reconnect mid-revision~~ — done in PR #5; client reconciles totalRounds on reconnect and reloads if a new round appeared while disconnected.
+- ~~Selection that overlaps an existing highlight~~ — done in PR #5; nested marks render, innermost wins on click, active outline traces the exact span.
 - Tab close + reopen within abandon grace
 - Triple-click for paragraph selection (works in theory; the 250ms debounce is in place)
 - Cmd+A select-all behavior
-- Selection that overlaps an existing highlight
 - Microinteraction polish (hover states, transition speeds) — partial
 - Window resize / responsive behavior
 - Selecting identical text appearing in multiple places (anchor disambiguation)
+
+---
+
+## Followups surfaced during PR #5 dogfood (not P0/P1 polish, but worth tracking)
+
+1. **Abandonment timer fires during temporary disconnects.** A short DevTools-offline test was enough to trip the 120s grace and kill the server. Fix candidates: extend the grace when the browser was recently connected, or distinguish "never-here" from "was-here-now-gone" with a longer second-chance window.
+2. **Agent subprocess is fragile to harness-level reaping.** `cli.ts` spawns `agent.ts` as an attached child; the agent in turn spawns `claude -p` subprocesses. When the outer harness reaps the parent's process group, everything dies. Fix candidates: `detached: true` on the agent spawn, agent self-restart on subprocess crash, or move off the `claude -p` subprocess to the SDK directly.
+3. **Revision crash is reported as `abandoned` instead of `error`.** When the resolve subprocess crashed, the snapshot was saved correctly and the visible file was unchanged — but the result file used the wrong terminal signal. Tighten the failure path so the outer caller sees `error` (or `revision-failed`) when something actually broke.
+4. **Multi-fragment selection anchors.** Selections that cross images or section boundaries currently bail (`Highlight a single passage…`). Fix would change the sidecar shape: a comment's anchor becomes a *list* of fragments, each with its own quote+context. captureSelection and highlightText both need to handle the list case. Probably an M5+ candidate.
+5. **Two concurrent Redline instances under one harness — investigate whether that triggers (2).** Both this session and a sister session crashed at roughly the same time during testing. The most plausible link is harness-level process-group reaping, but it's unconfirmed. Worth reproducing deliberately and capturing exit signals + parent PIDs at time of death.
 
 ---
 
