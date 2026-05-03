@@ -65,7 +65,18 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
   - Fold in any client-side bugs surfaced by M6 real-usage validation
 - **Retro:**
 
-### M8: Typed comment actions
+### M8: Multi-file review sessions
+
+- **Done when:** A single Redline session can span multiple Markdown files — e.g. a work stream that produces several proposals, a feature spec split across docs, a directory of related notes. The reviewer navigates between files in one browser session; each file has its own sidecar (no schema change — the per-file mutex from M5 #6 already supports independent queues); the agent and resolve flows operate per-file with optional cross-file context. The result file communicates session-level outcome back to the calling agent.
+- **Status:** planned (after M7; surfaced during M5 retro review when the user asked whether the per-file mutex would block multi-file work)
+- **Open design questions** (resolve when scoping):
+  - CLI shape: positional list (`redline a.md b.md`), glob (`redline 'specs/*.md'`), or directory (`redline --dir specs/`)
+  - Navigation: file picker, sidebar tree, tabs, or keyboard shortcut
+  - Cross-file agent context: does the agent see the full set when replying, or just the active file?
+  - Result file: single session-level result or per-file results
+- **Retro:**
+
+### M9: Typed comment actions
 
 - **Done when:** The comment grammar supports typed actions (`[expand]`, `[challenge]`, `[cut]`, …) derived from the natural taxonomy that emerged from real usage in M1–M4 (and M6). Free text remains supported.
 - **Status:** planned (waiting on real usage to inform the taxonomy)
