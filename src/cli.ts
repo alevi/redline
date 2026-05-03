@@ -37,6 +37,7 @@ if (args[0] === "resolve") {
 
   const contextFlag = args.indexOf("--context");
   const context = contextFlag !== -1 ? args[contextFlag + 1] : undefined;
+  const autoOpen = args.includes("--open");
 
   const resultFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".result");
 
@@ -56,9 +57,11 @@ if (args[0] === "resolve") {
   console.log(`\n${bar}`);
   console.log(`Redline review session`);
   console.log(`  File: ${resolved}`);
-  console.log(`  URL:  ${url}    ← open here if you lose the tab`);
+  console.log(`  URL:  ${url}`);
   console.log(`  Result: ${resultFile}`);
-  console.log(`${bar}\n`);
+  console.log(`${bar}`);
+  if (!autoOpen) console.log(`\n  → cmd-click the URL when you're ready to review\n`);
+  else console.log("");
 
   // Auto-restart the agent if it dies unexpectedly (harness reaping, OOM,
   // a transient claude-CLI auth blip, etc). Capped to MAX_RESTARTS within
@@ -159,7 +162,7 @@ if (args[0] === "resolve") {
   process.on("SIGINT", abandon);
   process.on("SIGTERM", abandon);
 
-  if (!process.env.REDLINE_NO_OPEN) {
+  if (autoOpen) {
     const open =
       process.platform === "darwin" ? "open" :
       process.platform === "win32"  ? "start" : "xdg-open";

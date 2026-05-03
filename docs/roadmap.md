@@ -41,6 +41,7 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 - **Out of scope (deferred to their own efforts):**
   - **#4 Multi-fragment selection anchors** (cross-image, cross-section): adds new capability rather than fixing existing behavior; sidecar schema change. Earns its own scope when a real doc needs it.
   - **Phase 4 of test milestone** (client JS extraction + browser-driven tests): testing infrastructure expansion, not resilience. Slot after M5 so the new resilience changes get coverage at the same time.
+- **Post-M5 patch (small, queued):** [docs/deferred-browser-open.md](deferred-browser-open.md) — stop auto-opening the browser; print a cmd-clickable URL instead. UX paper-cut surfaced during M4 dogfood.
 - **Retro:** [docs/retros/m5-resilience-v2.md](retros/m5-resilience-v2.md)
 
 ### M5_P1: Verdict-aware resolve
