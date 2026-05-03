@@ -31,7 +31,7 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 ### M5: Resilience pass v2
 
 - **Done when:** The 7 followups surfaced during M4 dogfood + test buildout (see `docs/m4-polish-punch-list.md`) are addressed or explicitly deferred. The system tolerates concurrent writers, brief network blips, harness-level subprocess reaping, and surfaces failure modes honestly. No silent state-divergence between sidecar, server, and agent.
-- **Status:** planned (next)
+- **Status:** reached
 - **Work items (in suggested order):**
   - **#3 Revision-crash signal mismatch** (small): when the resolve subprocess crashes, the result file should report `error` (or a more specific failure status), not `abandoned`. Tighten the failure path so the outer caller can distinguish "user walked away" from "revision actually broke."
   - **#1 Abandonment timer fires during temporary disconnects** (small): a brief offline window (e.g. DevTools offline test) is enough to trip the 120s grace and kill the server. Distinguish "never connected" from "was here, briefly gone" with a longer second-chance window.
@@ -41,7 +41,7 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 - **Out of scope (deferred to their own efforts):**
   - **#4 Multi-fragment selection anchors** (cross-image, cross-section): adds new capability rather than fixing existing behavior; sidecar schema change. Earns its own scope when a real doc needs it.
   - **Phase 4 of test milestone** (client JS extraction + browser-driven tests): testing infrastructure expansion, not resilience. Slot after M5 so the new resilience changes get coverage at the same time.
-- **Retro:**
+- **Retro:** [docs/retros/m5-resilience-v2.md](retros/m5-resilience-v2.md)
 
 ### M6: Load-bearing integration
 
