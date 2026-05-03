@@ -1,0 +1,79 @@
+import { test, expect } from "bun:test";
+import { mkdtempSync, readFileSync, existsSync, statSync } from "fs";
+import { tmpdir } from "os";
+import path from "path";
+import { spawnSync } from "child_process";
+
+const REPO_ROOT = path.resolve(import.meta.dir, "..");
+const SCRIPT = path.join(REPO_ROOT, "scripts/install-skill.sh");
+
+function runInstall(claudeHome: string, scriptPath: string = SCRIPT) {
+  return spawnSync("bash", [scriptPath], {
+    env: { ...process.env, CLAUDE_HOME: claudeHome },
+    encoding: "utf-8",
+  });
+}
+
+test("install-skill.sh substitutes the launcher path into the installed SKILL.md", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "redline-skill-install-"));
+  const result = runInstall(tmp);
+
+  expect(result.status).toBe(0);
+
+  const installed = path.join(tmp, "skills/redline-review/SKILL.md");
+  expect(existsSync(installed)).toBe(true);
+
+  const text = readFileSync(installed, "utf-8");
+  // No placeholder may remain — a literal `__REDLINE_BIN__` would break every
+  // session that runs the skill.
+  expect(text).not.toContain("__REDLINE_BIN__");
+
+  // Substituted path must be the launcher next to SKILL.md, absolute.
+  const expectedLauncher = path.join(tmp, "skills/redline-review/redline");
+  expect(text).toContain(expectedLauncher);
+});
+
+test("install-skill.sh creates an executable launcher that runs bun + cli through absolute paths", () => {
+  // The whole point of the launcher: zero $PATH dependency. Verify by stripping
+  // PATH entirely from the env when invoking it — a working launcher must still
+  // reach bun and cli.ts. (`env -i` would also drop HOME, etc., which the bun
+  // runtime needs; clearing PATH alone is the cleanest way to prove the point.)
+  const tmp = mkdtempSync(path.join(tmpdir(), "redline-skill-launch-"));
+  const installResult = runInstall(tmp);
+  expect(installResult.status).toBe(0);
+
+  const launcher = path.join(tmp, "skills/redline-review/redline");
+  expect(existsSync(launcher)).toBe(true);
+  expect(statSync(launcher).mode & 0o111).toBeGreaterThan(0);
+
+  // Invoke launcher with no args. cli.ts prints `Usage: redline <file.md>` to
+  // stderr and exits 1 — that's enough to prove the bun-→-cli chain is wired.
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k !== "PATH" && v !== undefined) env[k] = v;
+  }
+  const run = spawnSync(launcher, [], { env, encoding: "utf-8" });
+  expect(run.status).toBe(1);
+  expect(run.stderr).toContain("Usage: redline");
+});
+
+test("install-skill.sh fails if the source SKILL.md has no placeholder", () => {
+  // Regression guard: if a future edit removes `__REDLINE_BIN__`, the installed
+  // copy would silently ship without the substituted launcher path.
+  const tmp = mkdtempSync(path.join(tmpdir(), "redline-skill-install-bad-"));
+  const fakeRepo = mkdtempSync(path.join(tmpdir(), "redline-fake-repo-"));
+
+  const fakeSkillDir = path.join(fakeRepo, "skills/redline-review");
+  spawnSync("mkdir", ["-p", fakeSkillDir]);
+  spawnSync("cp", [path.join(REPO_ROOT, "skills/redline-review/SKILL.md"), fakeSkillDir]);
+  spawnSync("sed", ["-i", "", "s|__REDLINE_BIN__|redline|g", path.join(fakeSkillDir, "SKILL.md")]);
+
+  // Stage src/cli.ts and the script so REPO_ROOT resolution works.
+  spawnSync("mkdir", ["-p", path.join(fakeRepo, "src"), path.join(fakeRepo, "scripts")]);
+  spawnSync("cp", [path.join(REPO_ROOT, "src/cli.ts"), path.join(fakeRepo, "src/cli.ts")]);
+  spawnSync("cp", [SCRIPT, path.join(fakeRepo, "scripts/install-skill.sh")]);
+
+  const result = runInstall(tmp, path.join(fakeRepo, "scripts/install-skill.sh"));
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("placeholder");
+});
