@@ -44,9 +44,12 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
 
   // Abandonment detection: if no browser is connected for ABANDON_GRACE_MS after
   // the first one ever connected, fire onAbandonCallback so the CLI can exit.
+  // Default 10min — DevTools-offline debugging, brief network blips, and tab
+  // sleeps all reconnect well within that. The previous 2min default tripped on
+  // routine offline-mode testing. Override with REDLINE_ABANDON_MS for tests.
   const ABANDON_GRACE_MS = process.env.REDLINE_ABANDON_MS
     ? parseInt(process.env.REDLINE_ABANDON_MS, 10)
-    : 2 * 60 * 1000; // default 2 minutes
+    : 10 * 60 * 1000;
   let hadBrowser = false;
   let abandonTimer: ReturnType<typeof setTimeout> | null = null;
   let onAbandonCallback: (() => void) | undefined;
