@@ -104,7 +104,7 @@ Fix: an explicit `agentReady` promise that resolves when "[agent] connected" app
 
 **Why universal.** Any Levi Studio project that opens PRs and continues iterating on the branch hits this exact case the moment a PR is merged out-of-band (by the user, by another agent, by a merge queue). It's a narrow concrete rule, the cost is one shell command, and the recovery cost when missed is "create a new branch and re-PR" — annoying and easy to forget.
 
-**Status.** Proposed.
+**Status.** Accepted — merged in [levi-studio#16](https://github.com/alevi/levi-studio/pull/16) (2026-05-03).
 
 ---
 
@@ -118,7 +118,7 @@ Fix: an explicit `agentReady` promise that resolves when "[agent] connected" app
 
 **Why universal.** Every Levi Studio project that follows the M1–MN roadmap pattern eventually hits a polish or test milestone. The default mental model treats them as low-risk maintenance. They're not — they're a different lens on the same code, and the lens systematically catches things feature-shaped review missed. Naming the pattern in canon means the next project lead doesn't have to relearn it.
 
-**Status.** Proposed.
+**Status.** Accepted — merged in [levi-studio#16](https://github.com/alevi/levi-studio/pull/16) (2026-05-03).
 
 ---
 
