@@ -69,19 +69,27 @@ if (args[0] === "resolve") {
   );
 
   let serverExiting = false;
+  // Tracks the last unrecovered revision failure. If the session abandons while
+  // this is set, the result file reports "error" instead of "abandoned" so a
+  // calling agent can distinguish "user walked away" from "revision broke."
+  let lastRevisionError: string | null = null;
 
   const abandon = () => {
     if (serverExiting) return;
     serverExiting = true;
     agentProc.kill();
+    const status = lastRevisionError ? "error" : "abandoned";
+    const payload: Record<string, unknown> = { status, file: resolved };
+    if (lastRevisionError) payload.reason = lastRevisionError;
     // Synchronous write so the result file lands even if the runtime is
     // terminating due to a signal (async I/O may not complete in that case).
     try {
       mkdirSync(path.dirname(resultFile), { recursive: true });
-      writeFileSync(resultFile, JSON.stringify({ status: "abandoned", file: resolved }, null, 2));
+      writeFileSync(resultFile, JSON.stringify(payload, null, 2));
     } catch { /* best effort */ }
-    console.log("\nREDLINE_RESULT: abandoned");
-    process.exit(2);
+    console.log(`\nREDLINE_RESULT: ${status}${lastRevisionError ? ` reason="${lastRevisionError}"` : ""}`);
+    // Exit 3 = revision error; 2 = abandoned. Both still distinguish from 0 (approved).
+    process.exit(lastRevisionError ? 3 : 2);
   };
 
   // Happy-path finish: human clicked Done.
@@ -103,6 +111,17 @@ if (args[0] === "resolve") {
 
   // Tab-close abandonment: if no browser reconnects within 2 minutes, exit cleanly.
   app.onAbandon(abandon);
+
+  // Track revision-error state so a session that abandons after a broken revision
+  // exits with status: "error" rather than "abandoned".
+  app.onRevisionError((message) => {
+    lastRevisionError = message;
+    console.error(`[redline] Revision failed: ${message}`);
+  });
+  app.onRevisionRecovered(() => {
+    if (lastRevisionError) console.log("[redline] Revision-error state cleared.");
+    lastRevisionError = null;
+  });
 
   // Warn if the agent crashes so the user isn't left wondering why replies stopped.
   agentProc.exited.then((code) => {
