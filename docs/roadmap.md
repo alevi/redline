@@ -54,9 +54,20 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
   - Validate on real proposals — at least two outside this project — and close any gaps that surface
 - **Retro:**
 
-### M7: Typed comment actions
+### M7: Client-side test coverage
 
-- **Done when:** The comment grammar supports typed actions (`[expand]`, `[challenge]`, `[cut]`, …) derived from the natural taxonomy that emerged from real usage in M1–M4. Free text remains supported.
+- **Done when:** The browser-side JavaScript currently embedded in `src/server.ts` as a Hono template literal (~half of the file's 2600 lines) is extracted into a real source file with a build/serve path, and is covered by automated tests. The interactions identified in M4 retro as test-blocking — `applyHighlights`, `focusComment`, `updateNav`, selection capture, scroll preservation across rebuilds — have direct test coverage. Any client-side bugs that surface during M6's real-usage validation get tests added at the same time.
+- **Status:** planned (after M6; deferred from M4 phase 4 + M5 explicitly)
+- **Work items:**
+  - Extract embedded client JS from `src/server.ts` into a separate file; preserve server-side interpolation where required
+  - Pick a browser test runner (Playwright, happy-dom, or Bun's WebKit equivalent) consistent with the existing Bun test harness
+  - Cover the M4-flagged interactions (highlights, focus, nav, selection, scroll preservation)
+  - Fold in any client-side bugs surfaced by M6 real-usage validation
+- **Retro:**
+
+### M8: Typed comment actions
+
+- **Done when:** The comment grammar supports typed actions (`[expand]`, `[challenge]`, `[cut]`, …) derived from the natural taxonomy that emerged from real usage in M1–M4 (and M6). Free text remains supported.
 - **Status:** planned (waiting on real usage to inform the taxonomy)
 - **Retro:**
 
