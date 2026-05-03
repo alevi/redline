@@ -1071,8 +1071,6 @@ function pageTemplate(
       line-height: 1.5;
     }
     .verdict.revise { color: #92400e; }
-    .verdict.revise .verdict-label { font-weight: 600; }
-    .verdict.accept { color: var(--text-muted); font-style: italic; }
 
     /* Warm-tinted resolve button when the latest verdict implies an edit */
     .btn-resolve-comment.revise {
@@ -2344,13 +2342,13 @@ function pageTemplate(
       const div = document.createElement('div');
       div.className = 'thread-entry';
       let verdictHtml = '';
-      if (role === 'agent' && typeof entry.requires_revision === 'boolean') {
-        if (entry.requires_revision) {
-          const reason = entry.revision_reason ? ' ' + escapeHtml(entry.revision_reason) : '';
-          verdictHtml = \`<div class="verdict revise"><span class="verdict-icon">✎</span><span><span class="verdict-label">Will edit the doc:</span>\${reason}</span></div>\`;
-        } else {
-          verdictHtml = \`<div class="verdict accept"><span class="verdict-icon">💬</span><span>Answered here — no edit needed.</span></div>\`;
-        }
+      // Only show a verdict footer when an edit is queued. The absence of the
+      // warm marker (and the plain Resolve button) is already the signal for
+      // the answered case — adding "Answered here — no edit needed" under
+      // every Q&A reply is just visual noise.
+      if (role === 'agent' && entry.requires_revision === true) {
+        const reason = entry.revision_reason ? escapeHtml(entry.revision_reason) : 'edit queued';
+        verdictHtml = \`<div class="verdict revise"><span class="verdict-icon">✎</span><span>\${reason}</span></div>\`;
       }
       div.innerHTML = \`
         <div class="thread-role \${role}">\${escapeHtml(label)}</div>

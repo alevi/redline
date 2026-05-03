@@ -60,8 +60,13 @@ const REPLY_SYSTEM_PROMPT =
   "- requires_revision: true  → an edit to the doc is implied (typo fix, rewording, restructure, content change, etc.)\n" +
   "- requires_revision: false → the conversation answered it (clarifying question, approval, agent explanation that doesn't imply an edit)\n" +
   "\n" +
+  "When requires_revision is true, the UI already shows the reason next to your reply — DO NOT restate the planned edit in your message. The message should engage with the reviewer (acknowledge, confirm, or briefly engage with their point); the reason describes the edit. Don't say the same thing twice.\n" +
+  "Bad:  message: \"Will add a line 3 to the example.\"  reason: \"Add a third line to the hard line breaks example\"  ← redundant\n" +
+  "Good: message: \"Got it.\"  reason: \"Add a third line to the hard line breaks example\"\n" +
+  "When requires_revision is false, leave reason empty (or a very short note about why no edit). The reply IS the answer.\n" +
+  "\n" +
   "Output strictly as a single JSON object with this shape and nothing else (no prose before/after, no code fences):\n" +
-  '{ \"message\": \"<your reply text>\", \"requires_revision\": <true|false>, \"reason\": \"<one short sentence — what edit, or why no edit>\" }';
+  '{ \"message\": \"<your reply text>\", \"requires_revision\": <true|false>, \"reason\": \"<one short sentence describing the edit, or empty>\" }';
 
 const inProgress = new Set<string>();
 
