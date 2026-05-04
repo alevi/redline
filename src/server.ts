@@ -2490,17 +2490,21 @@ function pageTemplate(
       } else if (comments.length === 0) {
         document.getElementById('round-secondary')?.remove();
         btnAccept.disabled = false;
-        // Cold-open (round 1, never commented) reads as "Skip review";
-        // an empty round after a revision is a real "Done — accept this version".
-        const isColdOpen = totalRounds <= 1;
-        btnAccept.textContent = isColdOpen ? 'Skip review' : 'Done';
+        // Whether this is a cold-open or a post-revision empty round, the
+        // human's action is the same: "I've read it, sign off." The old
+        // "Skip review" label suggested bailing without engaging — but
+        // sometimes the doc is fine on first read and that's a real approval.
+        btnAccept.textContent = 'Accept doc';
         btnAccept.dataset.mode = 'finish';
         if (banner && !errorShowing) {
           banner.classList.remove('revising');
           banner.style.display = 'none';
         }
-        // Surface a subtle "Select text to leave a comment" hint on cold open.
+        // Surface a "Select text to leave a comment" hint only on cold-open.
+        // Subsequent empty rounds already showed the hint once; repeating it
+        // would be noise.
         const hint = document.getElementById('empty-rail-hint');
+        const isColdOpen = totalRounds <= 1;
         if (isColdOpen) {
           if (!hint) {
             const rail = document.querySelector('.sidebar-col');
