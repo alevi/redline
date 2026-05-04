@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createServer } from "./server";
@@ -40,6 +40,13 @@ if (args[0] === "resolve") {
   const autoOpen = args.includes("--open");
 
   const resultFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".result");
+  const startupFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".startup.json");
+
+  // Clear stale state from a prior run so a polling agent can't be misled
+  // by a leftover .result or .startup.json file that predates this process.
+  for (const f of [resultFile, startupFile]) {
+    try { unlinkSync(f); } catch { /* not present is fine */ }
+  }
 
   async function writeResult(payload: Record<string, unknown>) {
     try {
@@ -53,6 +60,25 @@ if (args[0] === "resolve") {
   const app = createServer(resolved, { context });
   const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
   const url = `http://localhost:${server.port}`;
+
+  // Surface the URL to a calling agent that can't read this process's stdout.
+  // (Bash with timeout buffers stdout until the process exits — for blocking
+  // invocations the agent would otherwise never see the URL until the human
+  // clicked Done. Polling this file gives a deterministic, race-free signal.)
+  try {
+    mkdirSync(path.dirname(startupFile), { recursive: true });
+    writeFileSync(startupFile, JSON.stringify({
+      url,
+      port: server.port,
+      file: resolved,
+      result_file: resultFile,
+      started_at: new Date().toISOString(),
+      pid: process.pid,
+    }, null, 2));
+  } catch (e) {
+    console.error("[redline] Failed to write startup file:", e);
+  }
+
   const bar = "─".repeat(60);
   console.log(`\n${bar}`);
   console.log(`Redline review session`);
@@ -111,6 +137,7 @@ if (args[0] === "resolve") {
     if (serverExiting) return;
     serverExiting = true;
     killAgent();
+    try { unlinkSync(startupFile); } catch { /* best effort */ }
     const status = lastRevisionError ? "error" : "abandoned";
     const payload: Record<string, unknown> = { status, file: resolved };
     if (lastRevisionError) payload.reason = lastRevisionError;
@@ -129,6 +156,7 @@ if (args[0] === "resolve") {
   app.onFinished(({ totalRounds, totalComments }) => {
     serverExiting = true;
     killAgent();
+    try { unlinkSync(startupFile); } catch { /* best effort */ }
     const line = "─".repeat(60);
     console.log(`\n${line}`);
     console.log(`✓  Review complete — ${path.basename(resolved)}`);
