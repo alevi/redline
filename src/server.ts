@@ -1815,6 +1815,8 @@ function pageTemplate(
       sidebar.appendChild(form);
       textarea.focus();
       positionCards();
+      // Re-arm the size observer so this new form participates in auto-reposition.
+      observeCardSizes();
 
       // Clamp top so the form's bottom doesn't run past the sidebar.
       // Has to wait one frame for layout so offsetHeight is real.
@@ -2148,6 +2150,36 @@ function pageTemplate(
       }
     });
 
+    // Debounced rAF wrapper around positionCards. Multiple callers in a single
+    // tick coalesce into one layout pass.
+    let _positionRafId = 0;
+    function schedulePositionCards() {
+      if (_positionRafId) return;
+      _positionRafId = requestAnimationFrame(() => {
+        _positionRafId = 0;
+        positionCards();
+      });
+    }
+
+    // ResizeObserver re-runs positionCards whenever any card or the open
+    // new-comment-form changes height. Catches the cases where positionCards
+    // was called before content settled (e.g. SSE softRefresh delivers a
+    // larger reply than the initial card sized for, an agent verdict footer
+    // appears or disappears, a resolved card collapses/expands).
+    // Without this, the explicit positionCards() calls all assume size is
+    // final at call time — which usually holds but occasionally doesn't,
+    // producing the visible card-overlap bug surfaced in real usage.
+    const _cardResizeObserver = (typeof ResizeObserver !== 'undefined')
+      ? new ResizeObserver(() => schedulePositionCards())
+      : null;
+    function observeCardSizes() {
+      if (!_cardResizeObserver) return;
+      _cardResizeObserver.disconnect();
+      document.querySelectorAll('.comment-card, #new-comment-form').forEach(el => {
+        _cardResizeObserver.observe(el);
+      });
+    }
+
     function positionCards() {
       const sidebarCol = document.querySelector('.sidebar-col');
       if (!sidebarCol) return;
@@ -2344,6 +2376,10 @@ function pageTemplate(
           document.querySelectorAll('mark.rl-highlight[data-comment-id="' + activeId + '"]').forEach(el => el.classList.add('active'));
         }
       });
+      // Re-arm the size observer against the freshly-built cards. Old observed
+      // nodes are detached and will be GC'd; disconnect+re-observe keeps the
+      // observer set in sync with the live DOM.
+      observeCardSizes();
       restoreTypingState(typing);
     }
 
