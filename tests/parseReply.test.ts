@@ -63,3 +63,40 @@ test("parseReply: trims whitespace around message and reason", () => {
   expect(r.message).toBe("ok");
   expect(r.reason).toBe("why");
 });
+
+test("parseReply: trailing text after envelope (model overrun) is discarded", () => {
+  // Real failure mode observed in dogfood: agent emits a valid envelope, then
+  // keeps generating, hallucinating the next prompt's structure ("Reviewer: …").
+  // JSON.parse rejects the whole string; without recovery the raw fallback
+  // dumped the JSON envelope verbatim into the rendered message AND lost the
+  // verdict, defaulting to requires_revision: true.
+  const raw = '{"message": "Agreed — that fits better.", "requires_revision": false, "reason": ""}\n\nReviewer: Can you add a note?';
+  const r = parseReply(raw);
+  expect(r.message).toBe("Agreed — that fits better.");
+  expect(r.requires_revision).toBe(false);
+  expect(r.reason).toBe("");
+});
+
+test("parseReply: leading text before envelope is also tolerated", () => {
+  const raw = 'Sure thing. {"message":"ok","requires_revision":true,"reason":"r"}';
+  const r = parseReply(raw);
+  expect(r.message).toBe("ok");
+  expect(r.requires_revision).toBe(true);
+});
+
+test("parseReply: nested braces inside message string don't break extraction", () => {
+  // The brace-walker must respect string literals; otherwise a `}` inside a
+  // quoted message would close the object early and the parse would fail.
+  const raw = '{"message": "Use the form {a: 1, b: 2}.", "requires_revision": false, "reason": ""}\nstray';
+  const r = parseReply(raw);
+  expect(r.message).toBe("Use the form {a: 1, b: 2}.");
+  expect(r.requires_revision).toBe(false);
+});
+
+test("parseReply: escaped quotes inside message don't fool the string-literal walker", () => {
+  // \" inside a string must not terminate the string for brace counting.
+  const raw = '{"message": "He said \\"yes\\" — done.", "requires_revision": false, "reason": ""} trailing';
+  const r = parseReply(raw);
+  expect(r.message).toBe('He said "yes" — done.');
+  expect(r.requires_revision).toBe(false);
+});
