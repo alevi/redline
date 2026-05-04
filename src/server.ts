@@ -1622,26 +1622,36 @@ function pageTemplate(
 
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) return;
-        const text = sel.toString().trim();
-        // Require at least 2 characters to avoid accidental single-letter comments
-        // from stray click-drags.
-        if (!text || text.length < 2) return;
-
         const prose = document.getElementById('prose');
         if (!prose.contains(sel.anchorNode)) return;
 
-        const range = sel.getRangeAt(0);
+        let range = sel.getRangeAt(0);
 
-        // Table multi-cell selections produce a range whose toString() interleaves cells with
-        // whitespace that doesn't exist in the flat prose text — the quote can't be relocated and
-        // the highlight scatters across cells. Bail with a friendly hint.
+        // Table cell selections: cross-cell ranges scatter the highlight and break
+        // anchoring (the quote text is interleaved with whitespace that doesn't
+        // exist in the flat prose text). Instead of rejecting an overshoot, clamp
+        // the range to whichever cell anchors the user's intent. The visual
+        // selection collapses back to the cell boundary, which is itself the
+        // signal that something was corrected — no error wall needed.
         const startCell = nearestCell(range.startContainer);
         const endCell = nearestCell(range.endContainer);
-        if (startCell && endCell && startCell !== endCell) {
-          showError('Highlight text within a single cell to comment on a table.');
-          sel.removeAllRanges();
-          return;
+        if ((startCell || endCell) && startCell !== endCell) {
+          const clamped = clampRangeToCell(range, startCell, endCell);
+          if (clamped) {
+            range = clamped;
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+          // If clampRangeToCell returned null we still proceed with the original
+          // range and let captureSelection fail/warn downstream — preserves the
+          // explicit error path for genuinely un-clampable selections.
         }
+
+        const text = sel.toString().trim();
+        // Require at least 2 characters to avoid accidental single-letter comments
+        // from stray click-drags. (Also catches the case where clamping shrank the
+        // selection below the threshold — silent ignore is the right move there.)
+        if (!text || text.length < 2) return;
 
         const captured = captureSelection(sel, text);
         if (!captured) {
@@ -1698,6 +1708,39 @@ function pageTemplate(
     function nearestCell(node) {
       const el = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
       return el && el.closest ? el.closest('td, th') : null;
+    }
+
+    // Clamp a Range so both endpoints land inside the same cell. Returns a new
+    // Range, or null if no meaningful clamp is possible. Called when the user
+    // dragged across a cell boundary by accident — the common case is a slight
+    // overshoot below or to the side of the cell they meant to comment on.
+    function clampRangeToCell(range, startCell, endCell) {
+      // The cell that anchors the user's intent: prefer where the drag started.
+      // (When startCell is null, the drag began outside the table and ended
+      // inside endCell — clamp the start to the beginning of endCell instead.)
+      const cell = startCell || endCell;
+      if (!cell) return null;
+      const newRange = document.createRange();
+      try {
+        if (startCell === cell) {
+          newRange.setStart(range.startContainer, range.startOffset);
+          newRange.setEnd(cell, cell.childNodes.length);
+        } else {
+          newRange.setStart(cell, 0);
+          newRange.setEnd(range.endContainer, range.endOffset);
+        }
+        return newRange;
+      } catch {
+        // setStart/setEnd can throw if the offsets become inconsistent (e.g. the
+        // range was rearranged by a concurrent DOM mutation). Fall back to the
+        // safe whole-cell selection.
+        try {
+          newRange.selectNodeContents(cell);
+          return newRange;
+        } catch {
+          return null;
+        }
+      }
     }
 
     function isFormEmpty() {
