@@ -11,20 +11,41 @@ When you've produced a markdown document that the human needs to read, comment o
 
 The redline binary lives at `__REDLINE_BIN__` (substituted at install time — if you see the literal placeholder string, the skill was installed incorrectly; tell the human to re-run `scripts/install-skill.sh` from the redline repo). Always invoke it by this absolute path. Do not call bare `redline` and do not try to "fix" PATH issues by running `bun link` or guessing where the repo lives.
 
-**Short reviews (≤10 min):** Run `__REDLINE_BIN__ <path-to-file.md>` via the Bash tool with `timeout: 600000`. This call blocks until the human clicks Done or abandons. The blocking behavior is the point — you wait here.
-
-**Long reviews (>10 min):** Use the polling pattern so the Bash timeout doesn't cut you off:
+**Always background the launcher and poll.** Never run `__REDLINE_BIN__` as a foreground/blocking Bash call: the Bash tool buffers stdout until the process exits, so you would never see the URL the human needs to click and your "I'll wait while you review" message would be a lie. Use this pattern:
 
 ```bash
-__REDLINE_BIN__ /abs/path/to/file.md > /tmp/redline.log 2>&1 &
-RESULT_FILE="/abs/path/to/.review/file.md.result"
-until [ -f "$RESULT_FILE" ]; do sleep 30; done
-cat "$RESULT_FILE"
+FILE=/abs/path/to/file.md
+DIR=$(dirname "$FILE"); BASE=$(basename "$FILE")
+STARTUP="$DIR/.review/$BASE.startup.json"
+RESULT="$DIR/.review/$BASE.result"
+LOG=/tmp/redline-$BASE.log
+
+# Kick off the review in the background.
+__REDLINE_BIN__ "$FILE" > "$LOG" 2>&1 &
+
+# Step 1: wait for startup, read the URL.
+for i in $(seq 1 60); do [ -f "$STARTUP" ] && break; sleep 0.5; done
+if [ ! -f "$STARTUP" ]; then
+  echo "redline did not start; check $LOG" >&2
+  exit 1
+fi
+URL=$(grep -o '"url": *"[^"]*"' "$STARTUP" | sed 's/.*"\(http[^"]*\)".*/\1/')
+echo "REDLINE_URL: $URL"
+
+# Step 2: surface the URL to the human (you do this after the Bash call returns
+# — see the next section), then poll for the result file.
+until [ -f "$RESULT" ]; do sleep 30; done
+cat "$RESULT"
 ```
 
-The result file is written at `.review/<basename>.result` (next to the file) when the session ends for any reason. On startup, Redline prints the result file path in its URL banner.
+The startup file at `.review/<basename>.startup.json` is written synchronously when the server begins listening; it contains `url`, `port`, `file`, `result_file`, `started_at`, `pid`. The result file at `.review/<basename>.result` is written when the session ends (approved, abandoned, or error).
 
-If invocation fails (binary missing, permission denied, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run the install script.
+In practice, run the script above as **two separate Bash calls** so you can tell the human the URL between steps:
+1. First call: everything through `echo "REDLINE_URL: $URL"`. Returns in ~1s with the URL on stdout.
+2. Surface the URL to the human in your reply text (see "Surfacing the URL" below).
+3. Second call: just the `until` loop polling for `$RESULT`. Long timeout (`timeout: 1800000` = 30 min, or longer).
+
+If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run the install script.
 
 ### Pass context with `--context`
 
@@ -36,7 +57,7 @@ The context string is shown in the reader's header so the human knows what they'
 
 ### Surfacing the URL
 
-Redline does **not** auto-open a browser — it prints a cmd-clickable URL on startup. You must surface that URL in your text output to the human, otherwise they have no signal that anything is waiting for them. One short sentence:
+After the first Bash call returns with `REDLINE_URL: http://localhost:NNNN`, surface that URL in your reply text. The human has no other signal that something is waiting for them. One short sentence:
 
 > "Opening this in Redline for review at http://localhost:NNNN — cmd-click to open. I'll continue once you click Done."
 
@@ -44,15 +65,7 @@ Redline does **not** auto-open a browser — it prints a cmd-clickable URL on st
 
 ## How to interpret the result
 
-**Blocking mode:** When the Bash call returns, look at the exit code and the last `REDLINE_RESULT:` line in stdout.
-
-| Exit code | Meaning |
-|---|---|
-| `0` | Approved — human clicked Done |
-| `2` | Abandoned — human closed the tab or Ctrl+C'd without signing off |
-| `3` | Revision error — a revision pass failed and was not recovered before the session ended |
-
-**Polling mode:** When the result file appears, read it. It's JSON:
+When the polling loop's Bash call returns, the `cat "$RESULT"` at the end of it has printed the result JSON to stdout.
 
 ```json
 { "status": "approved", "file": "/abs/path/to/file.md", "rounds": 2, "comments": 5 }
@@ -64,18 +77,17 @@ Statuses:
 - **`abandoned`** — Human closed the tab or Ctrl+C'd without clicking Done. The doc is in whatever state it was last revised to, but has not been signed off. Ask the human what they want to do.
 - **`error`** — A revision pass failed. The result file includes a `reason` field with the failure message; `.review/errors.log` next to the file has more detail. Surface both to the human.
 
-The blocking mode also prints `REDLINE_RESULT: approved file=... rounds=N comments=N` (or `REDLINE_RESULT: error reason="..."`) to stdout; you can grep for `^REDLINE_RESULT:` in captured stdout.
-
 ## Outer-agent handoff pattern
 
 The full loop, when you are the outer agent producing the doc:
 
 1. Write the markdown file to disk at an absolute path.
-2. Tell the human in one sentence what's about to happen and surface the URL Redline will print.
-3. Invoke `__REDLINE_BIN__ <abs-path> --context "<one-liner about what they're reviewing>"`. Use blocking for short reviews, the polling pattern for longer ones.
-4. While the session runs, you are idle — do not start unrelated work and do not poll the file system yourself; the result file or the Bash return is your signal.
-5. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
-6. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
+2. Tell the human in one sentence what's about to happen.
+3. First Bash call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>"` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
+4. Surface the URL to the human in your reply text so they can cmd-click to open.
+5. Second Bash call: poll for `.review/<basename>.result` with a long timeout (30+ min). While the session runs, you are idle — do not start unrelated work, do not poll the file system yourself outside the `until` loop, do not run other tools.
+6. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
+7. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
 
 You do not need to reply to comments — Redline spawns its own agent subprocess for that. You do not need to invoke `redline resolve` separately — revisions happen inside the session when the human accepts.
 

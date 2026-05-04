@@ -1,5 +1,5 @@
 import { test, expect, afterEach } from "bun:test";
-import { writeFileSync } from "fs";
+import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
 import {
   createTestFile,
@@ -33,6 +33,48 @@ test("server starts on a free port, not 3000", async () => {
   const { port } = await spawnTracked(filePath);
   expect(port).toBeGreaterThan(0);
   expect(port).not.toBe(3000);
+}, 15_000);
+
+test("startup file appears with URL the moment the server is listening", async () => {
+  // The skill's invocation flow polls for this file to extract the URL —
+  // the Bash-tool stdout buffering means a calling agent can't read the URL
+  // banner until the process exits, so the startup file is the only race-free
+  // way for the agent to surface the URL to the human while the session runs.
+  const { filePath, dir } = createTestFile();
+  const { port } = await spawnTracked(filePath);
+
+  const startupPath = path.join(dir, ".review", path.basename(filePath) + ".startup.json");
+
+  // Helper-promise resolves once spawnCLI sees the URL on stdout, so the
+  // startup file must already exist by that point. Any later wait is belt-and-
+  // suspenders against a race in the cli.ts ordering.
+  expect(existsSync(startupPath)).toBe(true);
+  const data = JSON.parse(readFileSync(startupPath, "utf-8"));
+
+  expect(data.url).toBe(`http://localhost:${port}`);
+  expect(data.port).toBe(port);
+  expect(data.file).toBe(filePath);
+  expect(typeof data.pid).toBe("number");
+  expect(typeof data.started_at).toBe("string");
+  expect(data.result_file).toBe(path.join(dir, ".review", path.basename(filePath) + ".result"));
+}, 15_000);
+
+test("startup file is removed on abandon so a stale one can't fool the next run", async () => {
+  const { filePath, dir } = createTestFile();
+  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
+  await waitForServer(port);
+
+  const startupPath = path.join(dir, ".review", path.basename(filePath) + ".startup.json");
+  expect(existsSync(startupPath)).toBe(true);
+
+  // Trip the abandon timer the same way the tab-close test does.
+  const ac = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  await Bun.sleep(200);
+  ac.abort();
+
+  await waitForExit(proc, 5000);
+  expect(existsSync(startupPath)).toBe(false);
 }, 15_000);
 
 // Note: SIGINT/SIGTERM signal handling is not testable via Bun.spawn's proc.kill() —
