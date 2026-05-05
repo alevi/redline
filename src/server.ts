@@ -2191,7 +2191,97 @@ function pageTemplate(
     }
 
     // ── Comments sidebar ─────────────────────────────────────────────
+
+    // Snapshot the focused textarea (if any) before the sidebar is rebuilt,
+    // and snapshot every open reply form's typed draft. The DOM rebuild
+    // destroys both — without preservation, an SSE event from a different
+    // comment yanks focus and erases the user's mid-typed reply.
+    function captureTypingState() {
+      const state = { focused: null, drafts: [] };
+
+      const active = document.activeElement;
+      if (active && active.tagName === 'TEXTAREA') {
+        const newForm = active.closest('#new-comment-form');
+        const replyForm = active.closest('.reply-form');
+        const card = active.closest('.comment-card');
+        if (newForm) {
+          state.focused = {
+            kind: 'new',
+            value: active.value,
+            selectionStart: active.selectionStart,
+            selectionEnd: active.selectionEnd,
+          };
+        } else if (replyForm && card && card.id) {
+          state.focused = {
+            kind: 'reply',
+            commentId: card.id.replace('card-', ''),
+            value: active.value,
+            selectionStart: active.selectionStart,
+            selectionEnd: active.selectionEnd,
+          };
+        }
+      }
+
+      // Capture every open reply form's draft, not just the focused one — the
+      // user may have multiple drafts open and we shouldn't silently wipe the
+      // ones they aren't currently typing in.
+      document.querySelectorAll('.reply-form.open').forEach(form => {
+        const ta = form.querySelector('.reply-input');
+        const card = form.closest('.comment-card');
+        if (!ta || !card || !card.id) return;
+        if (!ta.value) return;
+        state.drafts.push({
+          commentId: card.id.replace('card-', ''),
+          value: ta.value,
+          selectionStart: ta.selectionStart,
+          selectionEnd: ta.selectionEnd,
+        });
+      });
+
+      return state;
+    }
+
+    function restoreTypingState(state) {
+      // Restore drafts first so the form is open and populated; then restore
+      // focus + selection if applicable.
+      state.drafts.forEach(d => {
+        const card = document.getElementById('card-' + d.commentId);
+        if (!card) return;
+        const form = card.querySelector('.reply-form');
+        if (!form) return;
+        const ta = form.querySelector('.reply-input');
+        if (!ta) return;
+        form.classList.add('open');
+        ta.value = d.value;
+      });
+
+      const f = state.focused;
+      if (!f) return;
+      let target = null;
+      if (f.kind === 'new') {
+        target = document.querySelector('#new-comment-form textarea');
+      } else if (f.kind === 'reply') {
+        const card = document.getElementById('card-' + f.commentId);
+        if (card) {
+          const form = card.querySelector('.reply-form');
+          if (form) {
+            form.classList.add('open');
+            target = form.querySelector('.reply-input');
+          }
+        }
+      }
+      if (!target) return;
+      // Restore the value before setting selection — the textarea is freshly
+      // built and starts empty.
+      target.value = f.value;
+      // preventScroll so re-focusing doesn't scroll the textarea into view
+      // (preserveScroll already pinned the page; we don't want to fight it).
+      try { target.focus({ preventScroll: true }); } catch { target.focus(); }
+      try { target.setSelectionRange(f.selectionStart, f.selectionEnd); } catch {}
+    }
+
     function renderComments() {
+      const typing = captureTypingState();
       preserveScroll(() => {
         const sidebar = document.querySelector('.sidebar-col');
 
@@ -2211,6 +2301,7 @@ function pageTemplate(
           document.querySelectorAll('mark.rl-highlight[data-comment-id="' + activeId + '"]').forEach(el => el.classList.add('active'));
         }
       });
+      restoreTypingState(typing);
     }
 
     function buildCommentCard(comment) {
