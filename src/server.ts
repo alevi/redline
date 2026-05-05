@@ -2346,8 +2346,21 @@ function pageTemplate(
       const thread = document.createElement('div');
       thread.className = 'comment-thread';
       thread.id = 'thread-' + comment.id;
-      comment.thread.forEach(entry => {
-        thread.appendChild(buildThreadEntry(entry));
+      // Find the index of the latest agent reply that carries a verdict — only
+      // that one's footer is "live." Earlier verdict footers describe edits
+      // that have been superseded and would no longer happen at resolve time
+      // (the resolve flow uses latestVerdict()), so showing them lies to the
+      // user about what clicking Resolve will do.
+      let latestVerdictIdx = -1;
+      for (let i = comment.thread.length - 1; i >= 0; i--) {
+        const e = comment.thread[i];
+        if (e.role === 'agent' && typeof e.requires_revision === 'boolean') {
+          latestVerdictIdx = i;
+          break;
+        }
+      }
+      comment.thread.forEach((entry, i) => {
+        thread.appendChild(buildThreadEntry(entry, i === latestVerdictIdx));
       });
       if (thinkingCommentIds.has(comment.id)) {
         const indicator = document.createElement('div');
@@ -2427,17 +2440,18 @@ function pageTemplate(
       return card;
     }
 
-    function buildThreadEntry(entry) {
+    function buildThreadEntry(entry, isLatestVerdict) {
       const role = entry.role ?? 'agent';
       const label = entry.name ?? (role === 'agent' ? 'Agent' : 'Human');
       const div = document.createElement('div');
       div.className = 'thread-entry';
       let verdictHtml = '';
-      // Only show a verdict footer when an edit is queued. The absence of the
-      // warm marker (and the plain Resolve button) is already the signal for
-      // the answered case — adding "Answered here — no edit needed" under
-      // every Q&A reply is just visual noise.
-      if (role === 'agent' && entry.requires_revision === true) {
+      // Only show a verdict footer on the latest verdict-bearing agent reply,
+      // and only when that latest verdict implies an edit. Earlier verdict
+      // footers describe edits that have been superseded by subsequent turns
+      // — keeping them visible would lie about what Resolve will do. Plain
+      // "answered" replies stay footer-less (the absence is the signal).
+      if (role === 'agent' && entry.requires_revision === true && isLatestVerdict) {
         const reason = entry.revision_reason ? escapeHtml(entry.revision_reason) : 'edit queued';
         verdictHtml = \`<div class="verdict revise"><span class="verdict-icon">✎</span><span>\${reason}</span></div>\`;
       }
