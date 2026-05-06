@@ -1,6 +1,6 @@
 # Studio Context
 
-> Canon source: `~/Projects/LeviStudio/canon/docs/`. Last synced: 2026-05-02.
+> Canon source: `~/Projects/LeviStudio/canon/docs/`. Last synced: 2026-05-06.
 >
 > The section above `## Project-specific notes` is a synced index into Levi Studio canon. `LeviStudio/tools/refresh-canon.py` rewrites it on each sync — do not edit it here; local edits are overwritten. If something feels missing or wrong, log a `Canon proposal` entry in `docs/retro.md` (see `canon/docs/13-retro-process.md`).
 >
