@@ -4,6 +4,38 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-04 — M6 close: load-bearing integration
+
+**What shipped.** Redline is now reachable as a global skill from any Claude Code session, agents reach for it automatically when they produce a Markdown doc that needs sign-off, and the invocation flow works end-to-end with no manual nudges. The four work items: skill docs ([#26](https://github.com/alevi/redline/pull/26)), global install + script ([#27](https://github.com/alevi/redline/pull/27)), terse global `~/.claude/CLAUDE.md` rule, and two organic outside-redline validations.
+
+The skill on `main` after #27 actually didn't work — the third commit on that PR (`startup.json` + skill-flow rewrite) didn't make it into the merge because GitHub merged the bottom of the stack before my third push landed. The fix shipped in [#31](https://github.com/alevi/redline/pull/31). Two PATH-related gaps showed up only when an outside session tried to invoke the skill (the redline binary's `bun` shebang, the `~/.bun/bin` directory not being on `$PATH` in non-interactive Bash subprocesses): both fixed in [#29](https://github.com/alevi/redline/pull/29) by generating a self-contained launcher with absolute paths to `bun` and `cli.ts` baked in. Net effect: zero PATH dependency anywhere in the chain.
+
+**Validation 1: surfaced 5 product bugs in one sitting.** First real outside-redline use was a full review of a drift-report M1 prep doc with multiple rounds of comments. Surfaced bugs across the entire flow: `parseReply` leaking the JSON envelope on model-overruns ([#32](https://github.com/alevi/redline/pull/32)), focus stealing while typing across SSE-driven sidebar rebuilds ([#36](https://github.com/alevi/redline/pull/36)), card overlap on async content settle ([#35](https://github.com/alevi/redline/pull/35)), stale verdict footer on superseded agent replies ([#34](https://github.com/alevi/redline/pull/34)), table-cell selection rejecting overshoots that should have clamped ([#33](https://github.com/alevi/redline/pull/33)). All five shipped before validation 2.
+
+**Validation 2: clean accept-doc flow.** Second session, agent reached for `redline-review` automatically, human had no feedback to give and took the "Accept doc" path (renamed from "Skip review" in [#30](https://github.com/alevi/redline/pull/30) after validation 1 surfaced that "Skip review" suggested bailing, not affirmative sign-off). End to end with no friction — exactly the integration M6 was aiming for.
+
+**The polish-forces-end-to-end pattern, restated.** M4 retro called this out: polish forces you to experience the product as a user, which surfaces issues that reading code can't. M6 validation made it sharper: putting the product into another agent's hands forces the *whole flow* through a fresh nervous system. Five distinct bugs in one sitting, none of which I'd have caught reviewing my own usage. The skill-as-distribution-mechanism is itself a polish-forcer for the underlying tool.
+
+**Stacked-PR merge order, again.** Same lesson as the M5 entry — PR #29 was created with PR #26's branch as its base, and when #26 merged first, my subsequent push to #29 landed on a now-stale base, so the merge moved a stale commit and the latest fix never reached `main`. Fixed via cherry-pick into [#31](https://github.com/alevi/redline/pull/31). The memory entry from the M6 prep already captured this; this is its second occurrence in two weeks. Worth re-emphasizing: when stacking PRs, the safe move is *always* (a) wait for the bottom to land, then re-target the top's base to main, or (b) accept noisier diffs and base both on main from the start.
+
+**Local environment friction worth recording.** Twice during this work, my SSH-agent (1Password) flake-failed on commit signing and on `git push`. Recovery was a polite ask + retry; the alternative would have been `--no-gpg-sign` which my global rules block without explicit user consent. The flake doesn't justify a permanent workaround, but if it recurs across more sessions, building a `git-with-retry` shim is worth considering.
+
+**Canon proposal — ready for promotion.**
+
+> **Pattern: make a project's tool the default reach for AI agents in other projects.** When a project produces a tool whose value depends on agents reaching for it automatically across other projects, ship it as three coordinated artifacts:
+>
+> 1. A **global skill** at `~/.claude/skills/<name>/` so the skill is visible to any Claude Code session regardless of working directory.
+> 2. An **in-repo install script** that copies (does not symlink) the skill into `~/.claude/skills/`. Symlinks break when the source repo moves between worktrees or paths; a copy that needs an explicit refresh is the lesser evil. The install script also generates a self-contained launcher with absolute paths to any required runtime (e.g. `bun`) and entry point (e.g. `cli.ts`) baked in — never trust `$PATH` to be the same in non-interactive subprocesses as in the user's interactive shell.
+> 3. A **terse global `~/.claude/CLAUDE.md` rule** that delegates everything else to the skill. Two sentences max — skill content lives in `SKILL.md`, not in `CLAUDE.md`.
+>
+> The skill description (the YAML frontmatter, not the body) is what determines whether agents reach for it; tune that wording specifically for the trigger conditions you want.
+>
+> Validation requires *organic* outside-source-project use, not manufactured tests. Manufactured validation tests the install path, not whether agents will actually reach for the tool when it matters. Wait for two real triggers and observe what happens.
+
+Suggested target: `canon/docs/12-ai-workflow-patterns.md`. The Redline-specific implementation details (launcher script, startup.json, etc.) stay in this repo; canon captures the pattern alone.
+
+---
+
 ## 2026-05-03 — M6 items 1–3: making redline reachable from any project
 
 **What shipped.** Three small things that together turn redline from "a tool I have to remember to use" into "a tool other-project agents reach for on their own":

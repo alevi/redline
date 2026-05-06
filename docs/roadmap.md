@@ -55,13 +55,13 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 ### M6: Load-bearing integration
 
 - **Done when:** Redline is wired into the normal course of work across active projects. Agents reach for it automatically when producing a Markdown proposal for human sign-off — without explicit instruction each time. The invocation path (skill, global guidance, `--context` handoff) is polished and trusted. Used on at least two or three real proposals outside the Redline project itself.
-- **Status:** in progress — items 1–3 shipped; closure gated on item 4 (organic real-usage validation)
+- **Status:** reached
 - **Work items:**
   - ✅ Update the `redline-review` skill to document `--context` and the outer-agent handoff pattern. Shipped in [redline#26](https://github.com/alevi/redline/pull/26).
-  - ✅ Install the skill globally (`~/.claude/skills/`) so it's available in all projects, not just this repo. Install script shipped in [redline#27](https://github.com/alevi/redline/pull/27); copied to `~/.claude/skills/redline-review/` and confirmed visible in Claude Code's available-skills list.
+  - ✅ Install the skill globally (`~/.claude/skills/`) so it's available in all projects, not just this repo. Install script shipped in [redline#27](https://github.com/alevi/redline/pull/27); copied to `~/.claude/skills/redline-review/` and confirmed visible in Claude Code's available-skills list. Patched in [redline#29](https://github.com/alevi/redline/pull/29) and [redline#31](https://github.com/alevi/redline/pull/31) once outside-redline sessions surfaced PATH and URL-surfacing gaps.
   - ✅ Add a short global `~/.claude/CLAUDE.md` rule: when producing a Markdown doc for human sign-off, reach for `redline-review` instead of pasting inline or just linking the file.
-  - ⏳ Validate on real proposals — at least two outside this project — and close any gaps that surface. Waiting on organic doc tasks rather than manufacturing them; this is the closure gate.
-- **Retro:**
+  - ✅ Validate on real proposals — at least two outside this project. **Validation 1** (drift-report M1 prep doc, recurring-merchant): full review with comments and replies; surfaced 5 product bugs that all shipped in [#32–#36](https://github.com/alevi/redline/pulls?q=is%3Apr+is%3Aclosed+%23). **Validation 2** (a doc-accept session with no comments): the agent reached for `redline-review` automatically and the human took the "Accept doc" path with no friction.
+- **Retro:** [docs/retro.md — 2026-05-04 M6 close entry](retro.md).
 
 ### M7: Client-side test coverage
 
