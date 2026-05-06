@@ -66,7 +66,7 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 ### M7: Client-side test coverage
 
 - **Done when:** The browser-side JavaScript currently embedded in `src/server.ts` as a Hono template literal (~half of the file's 2600 lines) is extracted into a real source file with a build/serve path, and is covered by automated tests. The interactions identified in M4 retro as test-blocking — `applyHighlights`, `focusComment`, `updateNav`, selection capture, scroll preservation across rebuilds — have direct test coverage. Any client-side bugs that surface during M6's real-usage validation get tests added at the same time.
-- **Status:** reached
+- **Status:** reached. Shipped in [redline#38](https://github.com/alevi/redline/pull/38).
 - **Work items:**
   - ✅ Extracted the inline `<script>` block (1430 lines) from [src/server.ts](src/server.ts) into [src/client/main.js](src/client/main.js); server-side state moved to a small `window.__REDLINE__` bootstrap injected ahead of the bundle.
   - ✅ Bundle built once at server startup via `Bun.build` and served from memory at `/client.js`. No on-disk cache yet — deferred to M10 since the cost is invisible after the first request.
