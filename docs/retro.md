@@ -4,6 +4,30 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-06 — M7 close: client-side test coverage
+
+**What shipped.** The 1430-line `<script>` body that lived inside `pageTemplate()` in [src/server.ts](src/server.ts) is now [src/client/main.js](src/client/main.js), bundled once at server startup with `Bun.build` and served from memory at `/client.js`. Server-side state moved to a tiny `window.__REDLINE__` bootstrap injected ahead of the bundle. The pure-ish helpers — `escapeHtml`, `latestVerdict`, `nearestCell`, `clampRangeToCell`, `captureSelection`, `highlightText`, `computeNavState`, `preserveScroll` — were lifted into [src/client/lib.ts](src/client/lib.ts) and `main.js` re-imports them. 26 new happy-dom tests in [src/client/lib.test.ts](src/client/lib.test.ts) cover every interaction the M4 retro flagged as test-blocking. Total test count went from 101 to 127. `src/server.ts` shrank from 3035 lines to ~1620.
+
+**What surprised.** Three things.
+
+The mechanical extraction was easier than scoped. A one-shot script ([scripts/extract-client.ts](scripts/extract-client.ts)) walked lines 1604–3031 of `server.ts`, undid two layers of template-literal escaping (`\${` → `${`, `\\` → `\`, `` \` `` → `` ` ``), and routed the four real interpolations (`${commentsJson}`, `${roundResolved}`, `${totalRounds}`, `${JSON.stringify(title)}`) through `window.__REDLINE__`. The whole conversion was ~25 lines and ran clean on the first try. Worth keeping the script in the repo — it's documentation of the migration even though it'll never run again.
+
+`new Window()` from `happy-dom@20` doesn't fully initialize. `typeof w.SyntaxError` was `undefined` even though `Object.getOwnPropertyNames(w)` listed it. This silently broke any test that touched `querySelector`/`closest` (those internally do `new this.window.SyntaxError(...)` to throw on bad selectors, and the constructor was missing). The fix was to switch to `@happy-dom/global-registrator` — register globals once in `beforeAll`, write tests against the real `window`/`document`. Same library, different entry point, completely different reliability. Worth flagging because the failure mode looks like a bug in the helper under test, not a bug in the test environment.
+
+The two-file split (lib.ts vs main.js) was the right shape. The pull was: do I write a parallel set of helpers in lib.ts and accept drift, or refactor main.js to import from lib? Refactoring won — lib.ts is the only definition of each helper, and main.js is the wiring layer that owns the side-effectful bits (click handlers, global state, the `deliberateScrollUntil` timer). `highlightText` is the one place where this split paid off cleanly: lib's version returns the marks, main.js's wrapper attaches the event listeners that need to call `focusComment`/`updateNav` — which the test surface should have no opinion on.
+
+**The bundle-build cost.** Server startup grew from ~200ms to ~220ms in the smoke test — `Bun.build` itself is ~50–100ms, but it now runs lazily on the first request to `/client.js`, so the wall-clock cost shows up as a slightly slower first page load, not a slower CLI start. Caching the bundle to disk keyed on source mtime would eliminate the cost entirely on warm starts; pulled into M10 (Performance pass) rather than addressed here. The hit only stings during Redline-on-Redline development where the server restarts often; in normal use the build runs once per session.
+
+**The test-script gap, finally fixed.** `package.json`'s `"test": "bun test tests/"` was only running 7 of the 11 test files in the repo — `src/render.test.ts`, `src/pickModel.test.ts`, `src/sidecar.test.ts`, and now `src/client/lib.test.ts` were silently skipped because they live next to their source files, not under `tests/`. Tightened the script to `bun test` (no path) so all 127 tests run. Pre-existing oversight; M7 made it visible because the new test file would have been silently skipped.
+
+**Worth promoting to canon (revisit at next close).**
+
+> **Pattern: pure helpers in their own module, wiring in the bundle entry point.** When extracting a fat browser script for testability, don't try to test the whole thing — split out the leaf-pure functions (DOM read/write that takes its container as an argument, no hardcoded `getElementById` calls, no closure references to UI state) into their own typed module, and let the entry point keep the side-effectful wiring (event listeners, globals, framework hooks). The tested surface is the lib; the wired UI lives next to its concerns. Same shape Redline already used for `sidecar.ts` vs `server.ts` on the server side — turning out to apply identically on the client side. Could fit a "code organization for test boundaries" entry in `canon/docs/`. Saved as project memory in the meantime.
+
+> **Default to building+serving from memory for local dev tools, not a precomputed `dist/`.** Trade ~100ms of cold-start for zero "did I rebuild" friction. The `Bun.build` API makes this a 10-line function. Add an on-disk cache only when measurement says you need it. Aligns with Redline's existing "single binary, no setup steps" character — adding a `dist/` to gitignore + a build step + a "did you rebuild?" gotcha would have been a quiet regression in tool ergonomics. Worth a one-liner in `canon/docs/09-product-ui-defaults.md` or wherever local-CLI conventions land.
+
+---
+
 ## 2026-05-04 — M6 close: load-bearing integration
 
 **What shipped.** Redline is now reachable as a global skill from any Claude Code session, agents reach for it automatically when they produce a Markdown doc that needs sign-off, and the invocation flow works end-to-end with no manual nudges. The four work items: skill docs ([#26](https://github.com/alevi/redline/pull/26)), global install + script ([#27](https://github.com/alevi/redline/pull/27)), terse global `~/.claude/CLAUDE.md` rule, and two organic outside-redline validations.
