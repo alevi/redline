@@ -66,13 +66,14 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 ### M7: Client-side test coverage
 
 - **Done when:** The browser-side JavaScript currently embedded in `src/server.ts` as a Hono template literal (~half of the file's 2600 lines) is extracted into a real source file with a build/serve path, and is covered by automated tests. The interactions identified in M4 retro as test-blocking — `applyHighlights`, `focusComment`, `updateNav`, selection capture, scroll preservation across rebuilds — have direct test coverage. Any client-side bugs that surface during M6's real-usage validation get tests added at the same time.
-- **Status:** planned (after M6; deferred from M4 phase 4 + M5 explicitly)
+- **Status:** reached. Shipped in [redline#38](https://github.com/alevi/redline/pull/38).
 - **Work items:**
-  - Extract embedded client JS from `src/server.ts` into a separate file; preserve server-side interpolation where required
-  - Pick a browser test runner (Playwright, happy-dom, or Bun's WebKit equivalent) consistent with the existing Bun test harness
-  - Cover the M4-flagged interactions (highlights, focus, nav, selection, scroll preservation)
-  - Fold in any client-side bugs surfaced by M6 real-usage validation
-- **Retro:**
+  - ✅ Extracted the inline `<script>` block (1430 lines) from [src/server.ts](src/server.ts) into [src/client/main.js](src/client/main.js); server-side state moved to a small `window.__REDLINE__` bootstrap injected ahead of the bundle.
+  - ✅ Bundle built once at server startup via `Bun.build` and served from memory at `/client.js`. No on-disk cache yet — deferred to M10 since the cost is invisible after the first request.
+  - ✅ Pure helpers (`escapeHtml`, `latestVerdict`, `nearestCell`, `clampRangeToCell`, `captureSelection`, `highlightText`, `computeNavState`, `preserveScroll`) extracted to [src/client/lib.ts](src/client/lib.ts) with [src/client/lib.test.ts](src/client/lib.test.ts) covering each via `@happy-dom/global-registrator`. 26 new tests.
+  - ✅ All M4-flagged interactions have direct coverage: highlight wrapping across inline elements, contextBefore disambiguation, image-quote anchoring, nav active-state computation, selection→quote/context capture, scroll preservation including the focus-protection opt-out.
+  - No client-side bugs surfaced during M6 dogfood mapped onto this milestone — M6's five bugs all shipped before M7 started, with their own server/sidecar fixes.
+- **Retro:** [docs/retro.md — 2026-05-06 M7 close entry](retro.md).
 
 ### M8: Multi-file review sessions
 
@@ -89,6 +90,14 @@ Functional milestones for Redline. See `docs/studio-context.md` and `canon/docs/
 
 - **Done when:** The comment grammar supports typed actions (`[expand]`, `[challenge]`, `[cut]`, …) derived from the natural taxonomy that emerged from real usage in M1–M4 (and M6). Free text remains supported.
 - **Status:** planned (waiting on real usage to inform the taxonomy)
+- **Retro:**
+
+### M10: Performance pass
+
+- **Done when:** A focused sweep of performance papercuts is closed. Cold-start, restart-after-edit, and event-roundtrip all stay under the threshold of perceptible. No specific framerate/latency budget yet — we'll measure during scoping.
+- **Status:** planned (collecting items as they surface)
+- **Known items:**
+  - **Cache the client bundle to `.review/.cache/client.js` keyed on source mtime** so only the first run after a code change pays the ~100ms `Bun.build` cost. Surfaced during M7 scoping; deferred because the hit is invisible on the first run of a session and only stings during Redline-on-Redline development. ([M7 thread, 2026-05-06](#m7-client-side-test-coverage))
 - **Retro:**
 
 ## Now

@@ -97,7 +97,7 @@ Redline is the single-player, local, agent-focused version. Markdown Review Room
 
 ## Implementation as built
 
-- Runtime: Bun. Server: Hono. Markdown: marked. Frontend: plain JS embedded in `src/server.ts`.
+- Runtime: Bun. Server: Hono. Markdown: marked. Frontend: plain JS in `src/client/main.js`, bundled at server startup via `Bun.build` and served at `/client.js`. Pure helpers (`escapeHtml`, `latestVerdict`, `nearestCell`, `clampRangeToCell`, `captureSelection`, `highlightText`, `computeNavState`, `preserveScroll`) live in [src/client/lib.ts](src/client/lib.ts) with happy-dom test coverage in [src/client/lib.test.ts](src/client/lib.test.ts).
 - `src/cli.ts` dispatches: bare arg = open reader; `resolve <file>` = run agent revision. The bare-arg path also spawns a dedicated agent subprocess (see below).
 - `src/resolve.ts` and `src/agent.ts` both shell out to the `claude -p` CLI rather than calling the Anthropic SDK — this way the user never needs `ANTHROPIC_API_KEY` set; auth comes from their existing Claude Code session. If you are tempted to switch to the SDK, don't — that was the path that failed.
 - Sidecar shape evolved past the design doc: it now has `rounds[]`, each with `submitted_at` / `agent_replied_at` / `resolved_at` and a `comments[]` where each comment has a `thread[]` of `{ role: human|agent, name?, message, at }`. See [src/sidecar.ts](src/sidecar.ts).
