@@ -4,6 +4,16 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-07 — Patch close: delimiter envelope for agent replies
+
+**What shipped.** [src/agent.ts](src/agent.ts) and [src/parseReply.ts](src/parseReply.ts) no longer use a JSON contract for replies. The agent now emits `REQUIRES_REVISION: <bool>` / `REASON: <line>` headers followed by `---MESSAGE---` / `---END---` delimiters around the free-form prose. `parseReply` tries the delimiter form first and falls back to the JSON path so older traces and tests keep working. New unit tests in [tests/parseReply.test.ts](tests/parseReply.test.ts) cover the format including the original failure mode; new integration tests in [tests/agent.test.ts](tests/agent.test.ts) round-trip the envelope end-to-end through the agent and into the sidecar. Shipped in [redline#42](https://github.com/alevi/redline/pull/42).
+
+**What surprised.** The bug was visible in the dogfooding tab — a reply rendered as ` ```json { "message": "...titled \"Frontend gotchas (paid in blood)\"...", ...} ``` ` with a warm "Resolve → queue edit" button it shouldn't have had. Two separate signals from the same root cause: the verbatim envelope blob, *and* the verdict button defaulting to "revise" instead of the "accept" the model actually chose. Both came from `parseReply` hitting its safe-default fallback (raw text + `requires_revision: true`). Worth noting because the asymmetric-status-as-signal canon (from M5_P1) was load-bearing in the *opposite* direction here: a defensive default that protects against silent skips also makes parse failures look like real "needs revision" verdicts. The right fix wasn't to soften the default — it was to remove the failure mode entirely by picking a serialization the model can't get wrong.
+
+**Worth promoting to canon (revisit at next milestone close).** *When the model owns a structured reply, prefer a delimiter envelope to JSON for any free-form prose field.* JSON requires the model to escape every quote, every newline, every backslash inside the prose; delimiter envelopes need it to do nothing except not type the marker string. The cost is parser flexibility (no nested structures), which doesn't apply when the structured fields are scalars next to one prose blob. Could fit `canon/docs/12-ai-workflow-patterns.md`. Saved as a project-level memory in the meantime.
+
+---
+
 ## 2026-05-06 — M7 close: client-side test coverage
 
 **What shipped.** The 1430-line `<script>` body that lived inside `pageTemplate()` in [src/server.ts](src/server.ts) is now [src/client/main.js](src/client/main.js), bundled once at server startup with `Bun.build` and served from memory at `/client.js`. Server-side state moved to a tiny `window.__REDLINE__` bootstrap injected ahead of the bundle. The pure-ish helpers — `escapeHtml`, `latestVerdict`, `nearestCell`, `clampRangeToCell`, `captureSelection`, `highlightText`, `computeNavState`, `preserveScroll` — were lifted into [src/client/lib.ts](src/client/lib.ts) and `main.js` re-imports them. 26 new happy-dom tests in [src/client/lib.test.ts](src/client/lib.test.ts) cover every interaction the M4 retro flagged as test-blocking. Total test count went from 101 to 127. `src/server.ts` shrank from 3035 lines to ~1620.
