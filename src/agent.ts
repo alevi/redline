@@ -65,8 +65,12 @@ const REPLY_SYSTEM_PROMPT =
   "Good: message: \"Got it.\"  reason: \"Add a third line to the hard line breaks example\"\n" +
   "When requires_revision is false, leave reason empty (or a very short note about why no edit). The reply IS the answer.\n" +
   "\n" +
-  "Output strictly as a single JSON object with this shape and nothing else (no prose before/after, no code fences):\n" +
-  '{ \"message\": \"<your reply text>\", \"requires_revision\": <true|false>, \"reason\": \"<one short sentence describing the edit, or empty>\" }';
+  "Output exactly this format and nothing else (no prose before/after, no code fences). Use these literal markers — do not escape quotes inside the message:\n" +
+  "REQUIRES_REVISION: <true|false>\n" +
+  "REASON: <one short sentence describing the edit, or empty>\n" +
+  "---MESSAGE---\n" +
+  "<your reply text — quotes, punctuation, anything>\n" +
+  "---END---";
 
 const inProgress = new Set<string>();
 

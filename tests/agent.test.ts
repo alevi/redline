@@ -94,6 +94,69 @@ test("agent does not reply twice if comment-added fires multiple times", async (
   expect(thread.filter((e: any) => e.role === "agent")).toHaveLength(1);
 }, 20_000);
 
+// ── Envelope parsing end-to-end ──────────────────────────────────────────
+
+test("delimiter envelope: message with unescaped quotes round-trips intact", async () => {
+  // Replays the failure that motivated switching from JSON to a delimiter
+  // envelope: a model reply whose `message` string contains literal `"..."`
+  // would break JSON.parse, the agent would fall back to raw text, and the
+  // whole envelope (markers and all) would land in the comment thread.
+  //
+  // With the delimiter format, no escaping is needed — the message is taken
+  // verbatim between ---MESSAGE--- and ---END---, and the verdict is read
+  // from REQUIRES_REVISION.
+  const messageWithQuotes =
+    'It\'s a colloquial shorthand for "hard-won through painful debugging." ' +
+    'The CLAUDE.md docs section is literally titled "Frontend gotchas (paid in blood)".';
+  const envelope =
+    "REQUIRES_REVISION: false\n" +
+    "REASON: \n" +
+    "---MESSAGE---\n" +
+    messageWithQuotes + "\n" +
+    "---END---";
+
+  const { filePath, shim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+
+  const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
+  await repliedP.ready;
+  await postComment(port, { quote: "First paragraph" }, "elaborate?");
+  await repliedP;
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const reply = sidecar.rounds[0].comments[0].thread[1];
+  expect(reply.role).toBe("agent");
+  expect(reply.message).toBe(messageWithQuotes);
+  // No envelope leakage into the rendered message
+  expect(reply.message).not.toContain("---MESSAGE---");
+  expect(reply.message).not.toContain("REQUIRES_REVISION");
+  // Verdict honored, not the safe-default fallback to true
+  expect(reply.requires_revision).toBe(false);
+}, 20_000);
+
+test("delimiter envelope: revise verdict + reason flow through to the sidecar", async () => {
+  const envelope =
+    "REQUIRES_REVISION: true\n" +
+    "REASON: drop the offline-first framing\n" +
+    "---MESSAGE---\n" +
+    "Got it.\n" +
+    "---END---";
+
+  const { filePath, shim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+
+  const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
+  await repliedP.ready;
+  await postComment(port, { quote: "First paragraph" }, "rephrase this");
+  await repliedP;
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const reply = sidecar.rounds[0].comments[0].thread[1];
+  expect(reply.message).toBe("Got it.");
+  expect(reply.requires_revision).toBe(true);
+  expect(reply.revision_reason).toBe("drop the offline-first framing");
+}, 20_000);
+
 // ── Resolve / revision flow ──────────────────────────────────────────────
 
 test("accept triggers revision; revised file is written and round 2 opens", async () => {
