@@ -1198,9 +1198,56 @@ import {
     }
 
     let sseHasConnectedOnce = false;
+    let currentEs = null;
+    let lastEventAt = Date.now();
+
+    // Force-reconnect helper: closes the current EventSource so the existing
+    // onerror → setTimeout(connectEvents, 3000) chain takes over. We schedule
+    // connectEvents directly here in case the EventSource is a zombie that
+    // never fires onerror.
+    function forceReconnect(reason) {
+      try { console.warn('[redline] forcing SSE reconnect:', reason); } catch {}
+      if (currentEs) { try { currentEs.close(); } catch {} currentEs = null; }
+    }
+
+    // ── Zombie-SSE recovery ──────────────────────────────────────────
+    // If the tab was backgrounded during a long revision, the browser may
+    // hold the SSE connection open but stop delivering events — neither
+    // `onerror` nor any handler fires, so the existing reconnect-on-error
+    // path doesn't recover. Two layered defenses:
+    //   1. Visibility/focus → softRefresh: when the tab regains focus,
+    //      reconcile state via /api/comments. softRefresh's totalRounds
+    //      check force-reloads if a `reload` event was missed.
+    //   2. Heartbeat watchdog: while a revision is actively running
+    //      (.revising banner visible), the server streams revision-chunk
+    //      events constantly. If we haven't seen ANY event for >30s in
+    //      that state, the connection is a zombie — force a reconnect.
+    function onVisibleOrFocus() {
+      if (document.visibilityState === 'visible') {
+        softRefresh({ rehighlight: true });
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibleOrFocus);
+    window.addEventListener('focus', onVisibleOrFocus);
+
+    setInterval(() => {
+      const banner = document.getElementById('sidebar-status-banner');
+      const revising = banner?.classList.contains('revising');
+      if (!revising) return; // idle session — silence is fine
+      const silenceMs = Date.now() - lastEventAt;
+      if (silenceMs > 30_000) {
+        forceReconnect(`no events for ${Math.round(silenceMs/1000)}s during revision`);
+      }
+    }, 5000);
+
     (function connectEvents() {
       const es = new EventSource('/api/events?client=browser');
+      currentEs = es;
+      lastEventAt = Date.now();
+      // Wrap addEventListener so every event resets the heartbeat tracker.
+      const on = (name, fn) => es.addEventListener(name, (e) => { lastEventAt = Date.now(); fn(e); });
       es.onopen = () => {
+        lastEventAt = Date.now();
         if (sseHasConnectedOnce) {
           // Reconnected after a drop. Reconcile state — softRefresh will full-reload
           // if a new round was created while we were disconnected (missed reload event).
@@ -1208,21 +1255,21 @@ import {
         }
         sseHasConnectedOnce = true;
       };
-      es.addEventListener('comment-thinking', (e) => {
+      on('comment-thinking', (e) => {
         try { thinkingCommentIds.add(JSON.parse(e.data).commentId); } catch {}
         renderComments();
         positionCards();
         updateNav();
       });
-      es.addEventListener('agent-replied', () => { thinkingCommentIds.clear(); softRefresh(); });
-      es.addEventListener('comment-added', () => softRefresh({ rehighlight: true }));
-      es.addEventListener('comment-reply', (e) => {
+      on('agent-replied', () => { thinkingCommentIds.clear(); softRefresh(); });
+      on('comment-added', () => softRefresh({ rehighlight: true }));
+      on('comment-reply', (e) => {
         try { thinkingCommentIds.delete(JSON.parse(e.data).commentId); } catch {}
         softRefresh();
       });
-      es.addEventListener('comment-resolved', () => softRefresh({ rehighlight: true }));
-      es.addEventListener('reload', () => { sessionStorage.setItem('just-revised', '1'); window.location.reload(); });
-      es.addEventListener('revision-chunk', (e) => {
+      on('comment-resolved', () => softRefresh({ rehighlight: true }));
+      on('reload', () => { sessionStorage.setItem('just-revised', '1'); window.location.reload(); });
+      on('revision-chunk', (e) => {
         try {
           const { text, kind } = JSON.parse(e.data);
           const stream = document.getElementById('revision-stream');
@@ -1236,7 +1283,7 @@ import {
           }
         } catch {}
       });
-      es.addEventListener('revision-error', (e) => {
+      on('revision-error', (e) => {
         let msg = 'Revision failed.';
         try { msg = 'Revision failed: ' + (JSON.parse(e.data).message ?? 'unknown error'); } catch {}
         softRefresh();
@@ -1248,7 +1295,7 @@ import {
           banner.style.display = 'block';
         }
       });
-      es.addEventListener('revision-stalled', (e) => {
+      on('revision-stalled', (e) => {
         // Watchdog tripped — server has un-resolved the round and broadcast.
         // Reuse the revision-error UI path so the banner reads consistently.
         let msg = 'Revision did not complete.';
@@ -1262,14 +1309,14 @@ import {
           banner.style.display = 'block';
         }
       });
-      es.addEventListener('revision-no-changes', () => {
+      on('revision-no-changes', () => {
         // Stash the message and reload so the round badge / state catches up.
         // The init code below picks up the flag and surfaces the banner briefly.
         try { sessionStorage.setItem('rl-no-changes', '1'); } catch {}
         window.location.reload();
       });
-      es.addEventListener('finished', () => {
+      on('finished', () => {
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;flex-direction:column;gap:16px;color:#374151"><div style="font-size:48px">✓</div><div style="font-size:20px;font-weight:600">Review complete</div><div style="color:#6b7280">You can close this tab and continue in Claude Code.</div></div>';
       });
-      es.onerror = () => { es.close(); setTimeout(connectEvents, 3000); };
+      es.onerror = () => { es.close(); if (currentEs === es) currentEs = null; setTimeout(connectEvents, 3000); };
     })();
