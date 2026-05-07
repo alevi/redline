@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { readFile } from "fs/promises";
 import path from "path";
 import { renderMarkdown } from "./render";
+import { renderDocDiff } from "./diff";
 import {
   loadSidecar,
   saveSidecar,
@@ -542,91 +543,6 @@ function escapeHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function splitBlocks(text: string): string[] {
-  const lines = text.split('\n');
-  const blocks: string[] = [];
-  let current: string[] = [];
-  let inFence = false;
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) inFence = !inFence;
-    if (!inFence && line.trim() === '') {
-      if (current.length > 0) { blocks.push(current.join('\n')); current = []; }
-    } else {
-      current.push(line);
-    }
-  }
-  if (current.length > 0) blocks.push(current.join('\n'));
-  return blocks.filter(b => b.trim().length > 0);
-}
-
-function lcsOps<T>(a: T[], b: T[], eq: (x: T, y: T) => boolean): Array<{type: 'equal'|'insert'|'delete', aVal?: T, bVal?: T}> {
-  const m = a.length, n = b.length;
-  const dp: number[][] = Array.from({length: m+1}, () => new Array(n+1).fill(0));
-  for (let i = m-1; i >= 0; i--)
-    for (let j = n-1; j >= 0; j--)
-      dp[i][j] = eq(a[i], b[j]) ? dp[i+1][j+1] + 1 : Math.max(dp[i+1][j], dp[i][j+1]);
-  const ops: Array<{type: 'equal'|'insert'|'delete', aVal?: T, bVal?: T}> = [];
-  let i = 0, j = 0;
-  while (i < m || j < n) {
-    if (i < m && j < n && eq(a[i], b[j])) { ops.push({type: 'equal', aVal: a[i], bVal: b[j]}); i++; j++; }
-    else if (j < n && (i >= m || dp[i][j+1] >= dp[i+1][j])) { ops.push({type: 'insert', bVal: b[j]}); j++; }
-    else { ops.push({type: 'delete', aVal: a[i]}); i++; }
-  }
-  return ops;
-}
-
-function wordDiffMarkdown(oldStr: string, newStr: string): string {
-  const tokens = (s: string) => s.match(/\S+|\s+/g) ?? [];
-  const ops = lcsOps(tokens(oldStr), tokens(newStr), (a, b) => a === b);
-  return ops.map(op => {
-    if (op.type === 'equal') return op.aVal!;
-    if (op.type === 'insert') return `<ins class="diff-word-add">${escapeHtml(op.bVal!)}</ins>`;
-    return `<del class="diff-word-del">${escapeHtml(op.aVal!)}</del>`;
-  }).join('');
-}
-
-function renderDocDiff(oldText: string, newText: string): string {
-  const oldBlocks = splitBlocks(oldText);
-  const newBlocks = splitBlocks(newText);
-  const raw = lcsOps(oldBlocks, newBlocks, (a, b) => a === b);
-
-  // Merge adjacent delete+insert into a single modify op
-  type MergedOp = {type: 'equal'|'insert'|'delete'|'modify', a?: string, b?: string};
-  const ops: MergedOp[] = [];
-  for (let i = 0; i < raw.length; i++) {
-    if (raw[i].type === 'delete' && i+1 < raw.length && raw[i+1].type === 'insert') {
-      ops.push({type: 'modify', a: raw[i].aVal, b: raw[i+1].bVal}); i++;
-    } else {
-      ops.push({type: raw[i].type as any, a: raw[i].aVal, b: raw[i].bVal});
-    }
-  }
-
-  if (ops.every(op => op.type === 'equal')) {
-    return '<div class="diff-no-changes">No changes between versions.</div>';
-  }
-
-  let html = '<div class="diff-prose">';
-  for (const op of ops) {
-    if (op.type === 'equal') {
-      html += renderMarkdown(op.b!);
-    } else if (op.type === 'insert') {
-      html += `<div class="diff-block diff-block-add">${renderMarkdown(op.b!)}</div>`;
-    } else if (op.type === 'delete') {
-      html += `<div class="diff-block diff-block-del">${renderMarkdown(op.a!)}</div>`;
-    } else {
-      const isCode = op.a!.trimStart().startsWith('```') || op.b!.trimStart().startsWith('```');
-      if (isCode) {
-        html += `<div class="diff-block diff-block-del">${renderMarkdown(op.a!)}</div>`;
-        html += `<div class="diff-block diff-block-add">${renderMarkdown(op.b!)}</div>`;
-      } else {
-        html += `<div class="diff-block diff-block-mod">${renderMarkdown(wordDiffMarkdown(op.a!, op.b!))}</div>`;
-      }
-    }
-  }
-  html += '</div>';
-  return html;
 }
 
 function pageTemplate(
