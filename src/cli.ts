@@ -1,9 +1,42 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync, statSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createServer } from "./server";
 import { resolve } from "./resolve";
+
+// Walk up from `start` looking for a git root (a `.git` directory or file —
+// worktrees use a file). Returns the directory containing it, or null.
+function findGitRoot(start: string): string | null {
+  let dir = start;
+  while (true) {
+    if (existsSync(path.join(dir, ".git"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// If the file lives inside a git repo and `.review/` isn't already ignored,
+// print a one-line hint. We don't edit .gitignore — just nudge.
+function maybePrintGitignoreHint(filePath: string) {
+  const root = findGitRoot(path.dirname(filePath));
+  if (!root) return;
+  const gitignorePath = path.join(root, ".gitignore");
+  let contents = "";
+  try {
+    if (existsSync(gitignorePath) && statSync(gitignorePath).isFile()) {
+      contents = readFileSync(gitignorePath, "utf-8");
+    }
+  } catch { /* unreadable — fall through and hint */ }
+  const lines = contents.split("\n").map((l) => l.trim());
+  const ignored = lines.some((l) =>
+    l === ".review" || l === ".review/" || l === "**/.review" || l === "**/.review/"
+  );
+  if (ignored) return;
+  console.log(`\n  Tip: redline writes to .review/ next to your file. Add this to ${path.relative(process.cwd(), gitignorePath) || ".gitignore"} to keep it out of git:`);
+  console.log(`    .review/`);
+}
 
 const args = process.argv.slice(2);
 
@@ -88,6 +121,8 @@ if (args[0] === "resolve") {
   console.log(`${bar}`);
   if (!autoOpen) console.log(`\n  → cmd-click the URL when you're ready to review\n`);
   else console.log("");
+
+  maybePrintGitignoreHint(resolved);
 
   // Auto-restart the agent if it dies unexpectedly (harness reaping, OOM,
   // a transient claude-CLI auth blip, etc). Capped to MAX_RESTARTS within
