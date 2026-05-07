@@ -4,6 +4,16 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-07 — Fix close: zombie SSE missed `reload` after long revision
+
+**What broke.** Reviewer left comments on a doc in a sibling project, clicked "Revise document," waited ~2:40 for the revision to complete. File was rewritten on disk and a new round was opened in the sidecar — but the browser tab kept showing the old document until a manual hard-refresh. The server-side flow was clean; `event: reload` was broadcast on `/api/reload` exactly as designed.
+
+**Root cause.** Zombie EventSource. During a long revision the tab was likely backgrounded/throttled; when the connection became silently un-deliverable, neither `onerror` nor any other handler fired on the client. The existing recovery path ([src/client/main.js:1186-1188](src/client/main.js:1186-1188)) only runs on `onopen` after a reconnect — and a zombie never reconnects because it never errors. Every layer assumed `onerror` would tell us when the stream went dead. When it doesn't, the reload event is lost forever.
+
+**What prevents recurrence.** Two layered defenses in [src/client/main.js](src/client/main.js): (1) `visibilitychange` + `focus` listeners that run `softRefresh({rehighlight:true})` whenever the tab regains attention — softRefresh's `totalRounds` check then full-reloads if a `reload` was missed during the backgrounded interval; (2) a heartbeat watchdog (5s tick) that, while the `.revising` banner is showing, force-closes the EventSource if no event has arrived for >30s — reliable because the server streams `revision-chunk` events constantly during revision, so 30s of silence is unambiguously a dead connection. Conservative by design: idle sessions don't churn connections because the watchdog only fires while we're actively expecting events. Shipped in [redline#41](https://github.com/alevi/redline/pull/41).
+
+---
+
 ## 2026-05-07 — Fix: coarse compare-with-previous diffs
 
 - **What broke.** "Compare with previous" rendered any sentence-level rewording as a wall of green followed by a wall of red instead of inline word-level edits. On a representative RFC-style revision, 14 paragraph-sized red/green chunks with zero word marks. Visually you could see *that* something changed; you could not see *what*.
