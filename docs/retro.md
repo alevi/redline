@@ -4,6 +4,14 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-07 — Fix: coarse compare-with-previous diffs
+
+- **What broke.** "Compare with previous" rendered any sentence-level rewording as a wall of green followed by a wall of red instead of inline word-level edits. On a representative RFC-style revision, 14 paragraph-sized red/green chunks with zero word marks. Visually you could see *that* something changed; you could not see *what*.
+- **Root cause.** Two compounding things in [src/server.ts](src/server.ts)'s old `renderDocDiff`. (1) The merger only collapsed *adjacent* `delete`+`insert` pairs into a word-level modify. (2) LCS over paragraph blocks, when consecutive paragraphs share little verbatim text, produces all `insert`s ahead of all `delete`s rather than alternating — so the adjacent-only merger almost never fired in the realistic case (multiple reworded paragraphs in a row).
+- **What prevents recurrence.** Diff logic moved to [src/diff.ts](src/diff.ts) with [src/diff.test.ts](src/diff.test.ts) (8 tests, including the multi-paragraph rewording case that triggered this). Pairs `delete`+`insert` inside any non-equal run by Jaccard similarity over normalized word tokens (greedy best-first, threshold 0.25). Genuinely new or removed paragraphs stay as pure add/remove blocks. [scripts/diff-compare.ts](../scripts/diff-compare.ts) renders both algorithms side-by-side so the threshold can be re-tuned against real before/after pairs without guessing. Shipped in [redline#40](https://github.com/alevi/redline/pull/40).
+
+---
+
 ## 2026-05-06 — M7 close: client-side test coverage
 
 **What shipped.** The 1430-line `<script>` body that lived inside `pageTemplate()` in [src/server.ts](src/server.ts) is now [src/client/main.js](src/client/main.js), bundled once at server startup with `Bun.build` and served from memory at `/client.js`. Server-side state moved to a tiny `window.__REDLINE__` bootstrap injected ahead of the bundle. The pure-ish helpers — `escapeHtml`, `latestVerdict`, `nearestCell`, `clampRangeToCell`, `captureSelection`, `highlightText`, `computeNavState`, `preserveScroll` — were lifted into [src/client/lib.ts](src/client/lib.ts) and `main.js` re-imports them. 26 new happy-dom tests in [src/client/lib.test.ts](src/client/lib.test.ts) cover every interaction the M4 retro flagged as test-blocking. Total test count went from 101 to 127. `src/server.ts` shrank from 3035 lines to ~1620.
