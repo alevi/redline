@@ -16,6 +16,22 @@ import {
     let comments = /** @type {any[]} */ ((window).__REDLINE__.comments);
     let roundResolved = (window).__REDLINE__.roundResolved;
     let totalRounds = (window).__REDLINE__.totalRounds;
+    const CSRF_TOKEN = (window).__REDLINE__.csrfToken || '';
+
+    /**
+     * Wrap fetch to attach the CSRF token on mutating requests. The server
+     * rejects POST/DELETE/PUT/PATCH on /api/* without a matching
+     * X-Redline-Token header — defends against a malicious page in another
+     * tab firing no-cors POSTs at the loopback server.
+     */
+    function apiFetch(url, init) {
+      init = init || {};
+      const m = (init.method || 'GET').toUpperCase();
+      if (m !== 'GET' && m !== 'HEAD') {
+        init.headers = Object.assign({}, init.headers || {}, { 'X-Redline-Token': CSRF_TOKEN });
+      }
+      return fetch(url, init);
+    }
     const thinkingCommentIds = new Set();
     let pendingSelection = null;
     let selectionTimer = null;
@@ -270,7 +286,7 @@ import {
       }
 
       try {
-        const res = await fetch('/api/comment', {
+        const res = await apiFetch('/api/comment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...selection, message }),
@@ -819,7 +835,7 @@ import {
     async function submitReply(id, message) {
       if (!message) return;
       try {
-        const res = await fetch('/api/comment/' + id + '/reply', {
+        const res = await apiFetch('/api/comment/' + id + '/reply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ role: 'human', message }),
@@ -842,7 +858,7 @@ import {
 
     async function resolveComment(id) {
       try {
-        const res = await fetch('/api/comment/' + id + '/resolve', { method: 'POST' });
+        const res = await apiFetch('/api/comment/' + id + '/resolve', { method: 'POST' });
         const data = await res.json();
         if (data.ok) {
           const c = comments.find(c => c.id === id);
@@ -867,7 +883,7 @@ import {
 
     async function reopenComment(id) {
       try {
-        const res = await fetch('/api/comment/' + id + '/reopen', { method: 'POST' });
+        const res = await apiFetch('/api/comment/' + id + '/reopen', { method: 'POST' });
         const data = await res.json();
         if (data.ok) {
           const idx = comments.findIndex(c => c.id === id);
@@ -1028,7 +1044,7 @@ import {
         banner.textContent = '';
       }
       const endpoint = mode === 'finish' ? '/api/finish' : '/api/accept';
-      const res = await fetch(endpoint, { method: 'POST' });
+      const res = await apiFetch(endpoint, { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
         roundResolved = true;
@@ -1085,7 +1101,7 @@ import {
 
     document.getElementById('diff-btn-accept').addEventListener('click', async () => {
       document.getElementById('diff-overlay').classList.remove('open');
-      await fetch('/api/finish', { method: 'POST' });
+      await apiFetch('/api/finish', { method: 'POST' });
       const btnAccept = document.getElementById('btn-accept');
       if (btnAccept) { btnAccept.disabled = true; btnAccept.textContent = '✓ Done'; }
       const banner = document.getElementById('sidebar-status-banner');

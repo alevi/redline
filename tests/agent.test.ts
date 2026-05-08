@@ -13,7 +13,10 @@ import {
   postComment,
   waitForEvent,
   installClaudeShim,
+  TEST_CSRF_TOKEN,
 } from "./helpers";
+
+const CSRF_HEADERS = { "X-Redline-Token": TEST_CSRF_TOKEN };
 
 const procs: ReturnType<typeof Bun.spawn>[] = [];
 const dirs: string[] = [];
@@ -172,13 +175,13 @@ test("accept triggers revision; revised file is written and round 2 opens", asyn
   await repliedP.ready;
   const c = await postComment(port, { quote: "First paragraph" }, "fix this");
   await repliedP;
-  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
 
   // Accept fires "accepted" → agent runs the resolve flow → reload broadcasts
   // when the revised file is written. Subscribe to reload before triggering.
   const reloadP = waitForEvent(port, "reload", { timeoutMs: 15000 });
   await reloadP.ready;
-  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
   await reloadP;
 
   // The shim appends a "Revised by shim" section. Verify the file changed.
@@ -211,11 +214,11 @@ test("revision producing no changes broadcasts revision-no-changes (not reload)"
   await repliedP.ready;
   const c = await postComment(port, { quote: "First paragraph" }, "...");
   await repliedP;
-  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
 
   const noChangeP = waitForEvent(port, "revision-no-changes", { timeoutMs: 15000 });
   await noChangeP.ready;
-  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
   await noChangeP;
 
   // The file should be untouched.
@@ -234,11 +237,11 @@ test("revision failure broadcasts revision-error and writes errors.log", async (
   await repliedP.ready;
   const c = await postComment(port, { quote: "First paragraph" }, "...");
   await repliedP;
-  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
 
   const errP = waitForEvent(port, "revision-error", { timeoutMs: 15000 });
   await errP.ready;
-  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await errP;
   expect(ev.data.message).toMatch(/exited with code 1/);
 

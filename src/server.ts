@@ -31,9 +31,31 @@ function getClientBundle(): Promise<string> {
   return clientBundlePromise;
 }
 
-export function createServer(filePath: string, opts: { context?: string } = {}) {
+export function createServer(
+  filePath: string,
+  opts: { context?: string; csrfToken?: string } = {}
+) {
   const app = new Hono();
   const fileName = path.basename(filePath);
+
+  // CSRF token. Issued at server start, embedded in the rendered page, passed
+  // to the agent subprocess via env, required as `X-Redline-Token` on every
+  // mutating /api request. Defends against a malicious page in another tab
+  // firing no-cors POSTs at the loopback server — a custom request header
+  // forces a CORS preflight that the server doesn't honor, so the actual POST
+  // never lands. The browser's same-origin policy already blocks reads cross-
+  // origin; the token closes the write side.
+  const csrfToken = opts.csrfToken ?? crypto.randomUUID();
+
+  app.use("/api/*", async (c, next) => {
+    const m = c.req.method;
+    if (m === "GET" || m === "HEAD" || m === "OPTIONS") return next();
+    const got = c.req.header("X-Redline-Token");
+    if (got !== csrfToken) {
+      return new Response("forbidden: missing or wrong X-Redline-Token", { status: 403 });
+    }
+    return next();
+  });
 
   // Kick off the bundle build immediately so it's ready by the time the
   // browser hits /. In practice the build finishes long before the browser
@@ -187,7 +209,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
     const agentRepliedAt = latestRound?.agent_replied_at ?? null;
     const roundNumber = latestRound?.round ?? 1;
     const totalRounds = sidecar.rounds.length;
-    return c.html(pageTemplate(fileName, html, comments, roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context));
+    return c.html(pageTemplate(fileName, html, comments, roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken));
   });
 
   // Add a comment to the active round
@@ -466,7 +488,8 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
       n,
       sidecar.rounds.length,
       sidecar.context,
-      true    // readOnly
+      true,   // readOnly
+      csrfToken
     ));
   });
 
@@ -527,6 +550,7 @@ export function createServer(filePath: string, opts: { context?: string } = {}) 
 
   return {
     fetch: app.fetch.bind(app),
+    csrfToken,
     onAbandon(cb: () => void) { onAbandonCallback = cb; },
     onFinished(cb: (payload: { totalRounds: number; totalComments: number }) => void) {
       onFinishedCallback = cb;
@@ -553,7 +577,8 @@ function pageTemplate(
   roundNumber: number,
   totalRounds: number,
   context?: string,
-  readOnly = false
+  readOnly = false,
+  csrfToken = ""
 ): string {
   const commentsJson = JSON.stringify(comments);
 
@@ -1552,6 +1577,7 @@ function pageTemplate(
       roundResolved: ${roundResolved},
       totalRounds: ${totalRounds},
       contextTitle: ${JSON.stringify(title)},
+      csrfToken: ${JSON.stringify(csrfToken)},
     };
   </script>
   <script src="/client.js" defer></script>

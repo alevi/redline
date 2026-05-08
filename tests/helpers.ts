@@ -20,9 +20,24 @@ export function installClaudeShim(dir: string): string {
 export const CLI = path.join(import.meta.dir, "../src/cli.ts");
 export const BUN = process.execPath;
 
+// Pinned token across all spawned CLIs so tests can sign their POSTs without
+// reading startup.json on every call. Production code still mints a random
+// UUID per server when REDLINE_TOKEN isn't set.
+export const TEST_CSRF_TOKEN = "test-token-fixed-for-the-suite";
+
 export const TEST_ENV = {
   ...process.env,
+  REDLINE_TOKEN: TEST_CSRF_TOKEN,
 };
+
+/** Wrap fetch to attach X-Redline-Token on mutating tests. */
+export function mut(port: number, urlPath: string, init: RequestInit = {}): Promise<Response> {
+  const m = (init.method || "GET").toUpperCase();
+  if (m === "GET" || m === "HEAD") return fetch(`http://localhost:${port}${urlPath}`, init);
+  const headers: Record<string, string> = { "X-Redline-Token": TEST_CSRF_TOKEN };
+  if (init.headers) Object.assign(headers, init.headers as Record<string, string>);
+  return fetch(`http://localhost:${port}${urlPath}`, { ...init, headers });
+}
 
 export function createTestFile(content = "# Test Document\n\nThis is a test.\n"): {
   filePath: string;
@@ -317,7 +332,7 @@ export async function postComment(
 ): Promise<{ id: string; quote: string; thread: any[]; resolved: boolean }> {
   const res = await fetch(`http://localhost:${port}/api/comment`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Redline-Token": TEST_CSRF_TOKEN },
     body: JSON.stringify({
       quote: selection.quote,
       context_before: selection.context_before ?? "",

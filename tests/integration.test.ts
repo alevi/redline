@@ -9,7 +9,11 @@ import {
   waitForServer,
   readResult,
   waitForExit,
+  TEST_CSRF_TOKEN,
 } from "./helpers";
+
+const CSRF_HEADERS = { "X-Redline-Token": TEST_CSRF_TOKEN };
+const CSRF_JSON_HEADERS = { "Content-Type": "application/json", "X-Redline-Token": TEST_CSRF_TOKEN };
 
 const procs: ReturnType<typeof Bun.spawn>[] = [];
 afterEach(() => {
@@ -34,6 +38,40 @@ test("server starts on a free port, not 3000", async () => {
   const { port } = await spawnTracked(filePath);
   expect(port).toBeGreaterThan(0);
   expect(port).not.toBe(3000);
+}, 15_000);
+
+test("mutating /api requests are rejected without X-Redline-Token", async () => {
+  const { filePath } = createTestFile();
+  const { port } = await spawnTracked(filePath);
+
+  // No header: expect 403. Defends against a malicious page in another tab
+  // firing no-cors POSTs at the loopback server.
+  const noHeader = await fetch(`http://localhost:${port}/api/comment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ quote: "test", context_before: "", context_after: "", message: "x" }),
+  });
+  expect(noHeader.status).toBe(403);
+
+  // Wrong header value: also 403.
+  const wrongHeader = await fetch(`http://localhost:${port}/api/comment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Redline-Token": "not-the-real-one" },
+    body: JSON.stringify({ quote: "test", context_before: "", context_after: "", message: "x" }),
+  });
+  expect(wrongHeader.status).toBe(403);
+
+  // Correct header: 200. Confirms the test fixture token is valid end-to-end.
+  const ok = await fetch(`http://localhost:${port}/api/comment`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({ quote: "test", context_before: "", context_after: "", message: "x" }),
+  });
+  expect(ok.status).toBe(200);
+
+  // GETs are not gated — reading state was never the CSRF concern.
+  const readOk = await fetch(`http://localhost:${port}/api/comments`);
+  expect(readOk.ok).toBe(true);
 }, 15_000);
 
 test("server binds to loopback only, not all interfaces", async () => {
@@ -143,7 +181,7 @@ test("revision crash → abandon writes error result, not abandoned", async () =
   // Simulate a revision crash: agent posts /api/revision-error with the failure reason.
   const errRes = await fetch(`http://localhost:${port}/api/revision-error`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ message: "claude CLI exited with code 1 — boom" }),
   });
   expect(errRes.status).toBe(200);
@@ -170,11 +208,11 @@ test("revision crash → recovered → abandon writes abandoned, not error", asy
   // Crash...
   await fetch(`http://localhost:${port}/api/revision-error`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ message: "boom" }),
   });
   // ...then a successful revision lands (clears the error).
-  await fetch(`http://localhost:${port}/api/reload`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/reload`, { method: "POST", headers: CSRF_HEADERS });
 
   const ac = new AbortController();
   fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
@@ -264,7 +302,7 @@ test("/api/finish writes approved result file and exits 0", async () => {
   await waitForServer(port);
 
   // Server auto-creates an open round on startup — /api/finish should work
-  const res = await fetch(`http://localhost:${port}/api/finish`, { method: "POST" });
+  const res = await fetch(`http://localhost:${port}/api/finish`, { method: "POST", headers: CSRF_HEADERS });
   expect(res.status).toBe(200);
 
   const code = await waitForExit(proc, 5000);
