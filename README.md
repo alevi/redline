@@ -72,6 +72,10 @@ This copies `skills/redline-review/` into `~/.claude/skills/` and substitutes th
 bun test
 ```
 
+## Security
+
+Single-player, localhost-only. The server binds to `127.0.0.1`; rendered Markdown is sanitized. Prompt-injection in adversarial document content is **not** defended against — run Redline on docs you trust. See [SECURITY.md](SECURITY.md) for the full threat model and disclosure path.
+
 ## License
 
 [MIT](LICENSE)
