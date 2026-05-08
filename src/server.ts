@@ -20,7 +20,7 @@ let clientBundlePromise: Promise<string> | null = null;
 function getClientBundle(): Promise<string> {
   if (!clientBundlePromise) {
     clientBundlePromise = (async () => {
-      const entrypoint = path.resolve(import.meta.dir, "client/main.js");
+      const entrypoint = path.resolve(import.meta.dir, "client/main.ts");
       const result = await Bun.build({ entrypoints: [entrypoint], target: "browser", minify: false });
       if (!result.success) {
         const errs = result.logs.map((l) => l.message).join("\n");
@@ -67,6 +67,17 @@ export function createServer(
     const js = await getClientBundle();
     return new Response(js, {
       headers: { "Content-Type": "application/javascript; charset=utf-8" },
+    });
+  });
+
+  // Serve extracted CSS — read once and cache in memory like the JS bundle.
+  let cssCache: string | null = null;
+  app.get("/styles.css", async (c) => {
+    if (!cssCache) {
+      cssCache = await readFile(path.resolve(import.meta.dir, "client/styles.css"), "utf-8");
+    }
+    return new Response(cssCache, {
+      headers: { "Content-Type": "text/css; charset=utf-8" },
     });
   });
 
