@@ -1,0 +1,20 @@
+{
+  "name": "redline",
+  "version": "0.1.0",
+  "bin": {
+    "redline": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun src/cli.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "marked": "^15.0.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.9.0",
+    "@types/bun": "latest",
+    "happy-dom": "^20.9.0"
+  }
+}

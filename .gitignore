@@ -1,0 +1,31 @@
+node_modules/
+.env
+.env.local
+dist/
+.DS_Store
+.claude/worktrees/
+
+# Review sidecars — gitignore these if you don't want reviews in the repo
+# (remove this line if you want to commit review files)
+.review/
+
+# Private dev notes — retros, internal scoping, working docs. Kept on
+# local disk for development context but excluded from the public repo.
+docs/roadmap.md
+docs/retro.md
+docs/retros/
+docs/studio-context.md
+docs/m4-polish-punch-list.md
+docs/investigations/
+docs/deferred-browser-open.md
+docs/m8-scoping.md
+docs/m8-audit.md
+docs/agent-handoff.md
+
+# Sample/dogfood markdown files used during development. sample.md is the
+# canonical first-run example and stays tracked.
+birthday-party.md
+expedition.md
+
+# One-time M7 extraction script — its job is done.
+scripts/extract-client.ts
