@@ -36,7 +36,7 @@ test("POST /api/comment creates a comment and persists to sidecar", async () => 
   const { port } = await start(filePath);
 
   const c = await postComment(port, { quote: "first paragraph" }, "fix this");
-  expect(c.id).toMatch(/^c\d+$/);
+  expect(c.id).toMatch(/^c[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   expect(c.quote).toBe("first paragraph");
   expect(c.resolved).toBe(false);
   expect(c.thread).toHaveLength(1);

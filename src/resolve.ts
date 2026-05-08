@@ -87,6 +87,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   // Call the claude CLI (inherits auth from the user's Claude Code session — no API key needed)
   console.log(`Revising with ${chosenModel}...\n`);
   console.log("─".repeat(60));
+  const revisionStartedAt = Date.now();
 
   const cliBin = process.env.CLAUDE_CODE_EXECPATH ?? "claude";
   const proc = Bun.spawn(
@@ -151,7 +152,10 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   }
 
   const exitCode = await proc.exited;
-  console.log("\n" + "─".repeat(60) + "\n");
+  const revisionDurationMs = Date.now() - revisionStartedAt;
+  console.log("\n" + "─".repeat(60));
+  console.log(`Model: ${chosenModel}  ·  Duration: ${(revisionDurationMs / 1000).toFixed(1)}s  ·  Exit: ${exitCode}`);
+  console.log("─".repeat(60) + "\n");
 
   const fail = async (reason: string) => {
     await logRevisionFailure(filePath, {

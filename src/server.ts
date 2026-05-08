@@ -123,17 +123,32 @@ export function createServer(
     ? parseInt(process.env.REDLINE_REVISION_TIMEOUT_MS, 10)
     : 3 * 60 * 1000;
   let revisionWatchdog: ReturnType<typeof setTimeout> | null = null;
+  // Token bumped on every clear/start. The async setTimeout callback compares
+  // against this token before mutating the sidecar and broadcasting — a
+  // /api/reload that arrives between "timer fires" and "callback finishes its
+  // await" must NOT have its un-resolve / revision-stalled side effects land,
+  // because the round is already legitimately resolved by the new revision.
+  // Without the token, the watchdog and reload race: clearTimeout on an
+  // already-fired timer is a no-op, so the in-flight callback completes its
+  // sidecar mutation and broadcasts a spurious revision-stalled event.
+  let revisionWatchdogId = 0;
   function clearRevisionWatchdog() {
     if (revisionWatchdog) { clearTimeout(revisionWatchdog); revisionWatchdog = null; }
+    revisionWatchdogId += 1;
   }
   function startRevisionWatchdog() {
     clearRevisionWatchdog();
+    const myId = revisionWatchdogId;
     revisionWatchdog = setTimeout(async () => {
       revisionWatchdog = null;
       const reason = `revision did not complete within ${REVISION_TIMEOUT_MS / 1000}s`;
       console.error(`[redline] ${reason} — un-resolving round and notifying browser.`);
       try {
         await withSidecar(filePath, (sidecar) => {
+          // Re-check inside the lock: another endpoint may have bumped
+          // revisionWatchdogId after this callback was queued (the race the
+          // token is here to close).
+          if (myId !== revisionWatchdogId) return false as const;
           const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
           if (!lastResolved) return false as const;
           lastResolved.resolved_at = null;
@@ -141,6 +156,9 @@ export function createServer(
       } catch (e) {
         console.error("[redline] watchdog: failed to un-resolve round:", e);
       }
+      // Same race-check before broadcasting + telling the calling agent: if
+      // /api/reload landed first, this watchdog is stale and silent.
+      if (myId !== revisionWatchdogId) return;
       broadcast("revision-stalled", { message: reason });
       // Same recovery semantics as a revision crash — calling agent should see
       // the session as errored if it abandons in this state.
@@ -223,10 +241,12 @@ export function createServer(
 
     const { comment, roundNumber } = await withSidecar(filePath, (sidecar) => {
       const round = getOrCreateActiveRound(sidecar);
-      // Two comments POSTed within the same millisecond would collide on Date.now() alone.
-      // The 4-digit random suffix makes per-ms collision functionally impossible.
       const comment: Comment = {
-        id: `c${Date.now()}${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
+        // crypto.randomUUID() — collision-free without depending on
+        // single-process timestamp resolution (the prior `c<Date.now()>
+        // <random4>` shape relied on the 4-digit suffix to dodge per-ms
+        // collisions, which gets statistically thin under any concurrency).
+        id: `c${crypto.randomUUID()}`,
         quote: body.quote,
         context_before: body.context_before,
         context_after: body.context_after,
