@@ -14,6 +14,14 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-07 — Fix close: 30s polling lag between human Accept and calling-agent wake
+
+- **What broke.** After clicking Accept doc / Done in the reader, control didn't return to the calling Claude Code session for up to 30 seconds. Long enough to interrupt flow back to the terminal.
+- **Root cause.** The redline-review skill's outer-agent wait loop used `until [ -f "$RESULT" ]; do sleep 30; done` — coarse file-existence polling on a 30s tick. The redline server itself exits cleanly within ~500ms of `/api/finish` (writes the `.result` file, fires `onFinished`, `process.exit(0)`); the lag was entirely in the calling session's polling cadence, not the server.
+- **What prevents recurrence.** Skill now waits on the redline process directly via the `pid` already exposed in `.review/<file>.startup.json`: `while kill -0 "$PID" 2>/dev/null; do sleep 0.5; done`. `kill -0` is a signal-permission check, essentially free, so a 0.5s tick is fine. Latency: up-to-30s → ≤0.5s. Edits in [skills/redline-review/SKILL.md](skills/redline-review/SKILL.md) (source of truth — `scripts/install-skill.sh` re-copies into `~/.claude/skills/`). Same edits applied to the installed copy so the win lands without a re-install.
+
+---
+
 ## 2026-05-07 — Fix close: zombie SSE missed `reload` after long revision
 
 **What broke.** Reviewer left comments on a doc in a sibling project, clicked "Revise document," waited ~2:40 for the revision to complete. File was rewritten on disk and a new round was opened in the sidecar — but the browser tab kept showing the old document until a manual hard-refresh. The server-side flow was clean; `event: reload` was broadcast on `/api/reload` exactly as designed.
