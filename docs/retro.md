@@ -4,6 +4,18 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-07 — Canon proposal: Run the change before claiming it works
+
+**Observation.** During the PID-wait fix ([redline#43](https://github.com/alevi/redline/pull/43)) I edited the redline-review skill, committed, opened the PR, and described the latency improvement to Alon — all without ever running the change. He asked "Did you test all of this?" and the honest answer was no. When I actually ran it after, the fix did work (~534ms vs. the up-to-30s claim), but that was luck of the easy case, not validation. The same shape recurs: agent reads the diff, concludes "this looks right," ships. The gap between mental model and runtime is exactly where the failures hide — process boundaries, subprocess lifecycle, IPC, env differences — and is invisible from the diff alone.
+
+**Proposed canon change.** Add a new top-level section to `canon/docs/15-agent-collaboration.md` (after "Commands that live on a branch or worktree") titled **Run the change before claiming it works**. Content: before claiming a code change works, opening a PR, or describing the new behavior, the agent must exercise the change end-to-end at least once. Acceptable forms: a unit/integration test, a real run with a curl + assertion, a manual end-to-end session, or (for visual fixes) an old-vs-new harness with metrics reported in chat before pointing the human at the artifact. Not acceptable: "the code path looks right." If a real run isn't possible, say so explicitly instead of letting silence imply "tested." Full proposed wording surfaced inline in the conversation that produced this entry.
+
+**Why universal.** Every Levi Studio project that uses coding agents hits this exact failure mode — a confident-looking diff that the agent never ran. Cost per instance is small but corrosive: each unverified PR costs Alon a round-trip to ask "did you test this?" The trust budget is finite. The rule is portable across runtimes, languages, and project shapes — it's about agent self-discipline, not project specifics.
+
+**Status.** Proposed.
+
+---
+
 ## 2026-05-07 — Patch close: delimiter envelope for agent replies
 
 **What shipped.** [src/agent.ts](src/agent.ts) and [src/parseReply.ts](src/parseReply.ts) no longer use a JSON contract for replies. The agent now emits `REQUIRES_REVISION: <bool>` / `REASON: <line>` headers followed by `---MESSAGE---` / `---END---` delimiters around the free-form prose. `parseReply` tries the delimiter form first and falls back to the JSON path so older traces and tests keep working. New unit tests in [tests/parseReply.test.ts](tests/parseReply.test.ts) cover the format including the original failure mode; new integration tests in [tests/agent.test.ts](tests/agent.test.ts) round-trip the envelope end-to-end through the agent and into the sidecar. Shipped in [redline#42](https://github.com/alevi/redline/pull/42).
