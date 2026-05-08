@@ -2,7 +2,9 @@
 // over fetch, asserts response shape and (where relevant) sidecar persistence.
 
 import { test, expect, afterEach } from "bun:test";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, writeFile, mkdir, symlink } from "fs/promises";
+import { writeFileSync } from "fs";
+import os from "os";
 import path from "path";
 import {
   createTestFile,
@@ -236,6 +238,48 @@ test("POST /api/agent-replied succeeds (broadcast hook)", async () => {
   await postComment(port, { quote: "first paragraph" }, "x");
   const res = await fetch(`http://localhost:${port}/api/agent-replied`, { method: "POST", headers: CSRF_HEADERS });
   expect(res.status).toBe(200);
+}, 15_000);
+
+// ── Static asset path traversal & symlink safety ────────────────────────
+
+test("GET /<traversal> with .. is rejected", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+  // The server's path-resolve check should normalize this back inside docDir
+  // and fall through to a missing-file 404 — but it must NOT serve /etc/passwd.
+  const res = await fetch(`http://localhost:${port}/../../../../etc/passwd`);
+  expect(res.status).toBe(404);
+}, 15_000);
+
+test("GET /<symlink> pointing outside docDir is rejected (realpath check)", async () => {
+  const { filePath, dir } = createTestFile(SAMPLE);
+
+  // Create a "secret" file outside the doc directory, then a symlink inside
+  // the doc directory pointing to it. A naive prefix check on the resolved
+  // path before symlink resolution would say "yep, inside docDir" and serve
+  // the secret. realpath catches it.
+  const secretDir = path.join(os.tmpdir(), `redline-secret-${Date.now()}`);
+  await mkdir(secretDir, { recursive: true });
+  const secretFile = path.join(secretDir, "secret.png");
+  writeFileSync(secretFile, "this should never be served");
+
+  const linkPath = path.join(dir, "leak.png");
+  await symlink(secretFile, linkPath);
+
+  const { port } = await start(filePath);
+  const res = await fetch(`http://localhost:${port}/leak.png`);
+  expect(res.status).toBe(404);
+}, 15_000);
+
+test("GET /<legit-image> in docDir is still served (no false positive on realpath)", async () => {
+  const { filePath, dir } = createTestFile(SAMPLE);
+  const imgPath = path.join(dir, "ok.png");
+  writeFileSync(imgPath, "fake-png-bytes");
+
+  const { port } = await start(filePath);
+  const res = await fetch(`http://localhost:${port}/ok.png`);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("image/png");
 }, 15_000);
 
 // ── /api/sidecar ──────────────────────────────────────────────────────────
