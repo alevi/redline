@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { readFile } from "fs/promises";
+import { readFile, realpath } from "fs/promises";
 import path from "path";
 import { renderMarkdown } from "./render";
 import { renderDocDiff } from "./diff";
@@ -518,7 +518,11 @@ export function createServer(
 
   // Static asset fallback: serve sibling files (images, etc.) from the doc's
   // directory so relative `![alt](./diagram.png)` works. Path-traversal guard:
-  // resolved path must stay under the doc directory; the .review subdir is off limits.
+  // resolved path must stay under the doc directory; the .review subdir is
+  // off limits. Symlink guard: a `path.resolve` prefix check is sound against
+  // `../foo` but not against a symlink IN the doc directory pointing outside
+  // — the resolved path looks safe, but readFile follows the link. We re-
+  // check after `realpath` so the *real* destination has to be inside docDir.
   app.get("*", async (c) => {
     const docDir = path.resolve(path.dirname(filePath));
     let urlPath: string;
@@ -531,9 +535,28 @@ export function createServer(
     if (!requested.startsWith(docDir + path.sep) && requested !== docDir) return c.notFound();
     if (requested.startsWith(path.join(docDir, ".review") + path.sep)) return c.notFound();
     if (requested === path.resolve(filePath)) return c.notFound(); // the markdown itself is served at "/"
+
+    // Resolve symlinks before reading. If `requested` is a symlink (or any
+    // ancestor is) that points outside docDir, realpath returns the true
+    // location and we reject. Also defends against the docDir itself being
+    // symlinked, since we realpath docDir for the comparison.
+    let realDocDir: string;
+    let realRequested: string;
     try {
-      const data = await readFile(requested);
-      const ext = path.extname(requested).toLowerCase();
+      realDocDir = await realpath(docDir);
+      realRequested = await realpath(requested);
+    } catch {
+      // realpath errors when the path doesn't exist (404 territory) or when a
+      // symlink target is missing (also 404). Either way: 404.
+      return c.notFound();
+    }
+    if (!realRequested.startsWith(realDocDir + path.sep) && realRequested !== realDocDir) {
+      return c.notFound();
+    }
+
+    try {
+      const data = await readFile(realRequested);
+      const ext = path.extname(realRequested).toLowerCase();
       const ct =
         ext === ".png" ? "image/png" :
         ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
