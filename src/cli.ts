@@ -190,7 +190,25 @@ if (args[0] === "resolve") {
     });
   }
   spawnAgent();
-  const killAgent = () => { try { agentProc?.kill(); } catch { /* already dead */ } };
+
+  // Graceful shutdown: SIGTERM first so agent.ts can flush in-flight HTTP
+  // posts and close its SSE connection cleanly, then SIGKILL after 2s if
+  // the agent is still alive (broken handler, stuck syscall, etc.).
+  // Async-aware version for the abandon/finish paths; the sync version
+  // (`killAgentSync`) is used inside `process.on("exit")` where we can't await.
+  const SHUTDOWN_GRACE_MS = 2000;
+  async function killAgent() {
+    if (!agentProc) return;
+    try { agentProc.kill("SIGTERM"); } catch { return; /* already dead */ }
+    const deadline = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_GRACE_MS));
+    await Promise.race([agentProc.exited.then(() => undefined), deadline]);
+    if (agentProc && agentProc.exitCode === null) {
+      try { agentProc.kill("SIGKILL"); } catch { /* already dead */ }
+    }
+  }
+  function killAgentSync() {
+    try { agentProc?.kill("SIGTERM"); } catch { /* already dead */ }
+  }
   // Tracks the last unrecovered revision failure. If the session abandons while
   // this is set, the result file reports "error" instead of "abandoned" so a
   // calling agent can distinguish "user walked away" from "revision broke."
@@ -199,7 +217,7 @@ if (args[0] === "resolve") {
   const abandon = () => {
     if (serverExiting) return;
     serverExiting = true;
-    killAgent();
+    killAgent().catch(() => { /* shutdown already in flight */ });
     try { unlinkSync(startupFile); } catch { /* best effort */ }
     const status = lastRevisionError ? "error" : "abandoned";
     const payload: Record<string, unknown> = { status, file: resolved };
@@ -218,7 +236,7 @@ if (args[0] === "resolve") {
   // Happy-path finish: human clicked Done.
   app.onFinished(({ totalRounds, totalComments }) => {
     serverExiting = true;
-    killAgent();
+    killAgent().catch(() => { /* shutdown already in flight */ });
     try { unlinkSync(startupFile); } catch { /* best effort */ }
     const line = "─".repeat(60);
     console.log(`\n${line}`);
@@ -247,7 +265,7 @@ if (args[0] === "resolve") {
     lastRevisionError = null;
   });
 
-  process.on("exit", () => { serverExiting = true; killAgent(); });
+  process.on("exit", () => { serverExiting = true; killAgentSync(); });
   // SIGINT/SIGTERM = abandoned session. Exit 2 so a calling agent can
   // distinguish "user gave up" from "user clicked Done" (exit 0).
   process.on("SIGINT", abandon);
