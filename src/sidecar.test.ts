@@ -7,6 +7,7 @@ import {
   saveSidecar,
   activeRound,
   getOrCreateActiveRound,
+  withSidecar,
   type Sidecar,
 } from "./sidecar";
 
@@ -131,4 +132,52 @@ describe("getOrCreateActiveRound", () => {
     expect(r.round).toBe(1);
     expect(s.rounds.length).toBe(1);
   });
+});
+
+describe("withSidecar — concurrency", () => {
+  test("intra-process: 50 parallel mutations all land", async () => {
+    // Even before the file lock, the in-memory queue serialized intra-
+    // process calls; this is the regression guard.
+    const promises = [];
+    for (let i = 0; i < 50; i++) {
+      promises.push(withSidecar(docPath, (s) => {
+        const r = getOrCreateActiveRound(s);
+        r.comments.push({
+          id: `c${i}`, quote: "x", context_before: "", context_after: "",
+          thread: [], resolved: false,
+        });
+      }));
+    }
+    await Promise.all(promises);
+    const final = await loadSidecar(docPath);
+    expect(final.rounds[0].comments.length).toBe(50);
+  });
+
+  test("cross-process: two redline-shaped processes don't trample each other's writes", async () => {
+    // Spawn two Bun processes that each append 25 comments to the same
+    // sidecar concurrently. Without a file lock, ~half the writes get
+    // dropped because each process's load → mutate → save cycle reads
+    // a stale view of the other's last save.
+    const fixture = path.resolve(import.meta.dir, "..", "tests", "fixtures", "sidecar-writer.ts");
+    const a = Bun.spawn([process.execPath, "run", fixture, docPath, "A", "25"], {
+      stdout: "pipe", stderr: "pipe",
+    });
+    const b = Bun.spawn([process.execPath, "run", fixture, docPath, "B", "25"], {
+      stdout: "pipe", stderr: "pipe",
+    });
+    const [aCode, bCode] = await Promise.all([a.exited, b.exited]);
+    expect(aCode).toBe(0);
+    expect(bCode).toBe(0);
+
+    const final = await loadSidecar(docPath);
+    expect(final.rounds.length).toBe(1);
+    expect(final.rounds[0].comments.length).toBe(50);
+
+    // Every ID from both writers is present (proves no write was dropped).
+    const ids = new Set(final.rounds[0].comments.map((c) => c.id));
+    for (let i = 0; i < 25; i++) {
+      expect(ids.has(`A-${i}`)).toBe(true);
+      expect(ids.has(`B-${i}`)).toBe(true);
+    }
+  }, 30_000);
 });
