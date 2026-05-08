@@ -9,6 +9,7 @@ import {
   highlightText,
   computeNavState,
   preserveScroll,
+  syncBottomRoundActions,
   type ClientComment,
 } from "./lib";
 
@@ -301,5 +302,118 @@ describe("preserveScroll", () => {
     );
     expect(ran).toBe(true);
     expect(blurred).toBe(false);
+  });
+});
+
+describe("syncBottomRoundActions", () => {
+  function scaffold(opts: {
+    topText?: string;
+    topDisabled?: boolean;
+    topMode?: string;
+    topReviseTinted?: boolean;
+    secondaryHTML?: string | null;
+    bottomPresent?: boolean;
+  } = {}) {
+    const {
+      topText = "Revise document",
+      topDisabled = false,
+      topMode = "accept",
+      topReviseTinted = false,
+      secondaryHTML = null,
+      bottomPresent = true,
+    } = opts;
+    const tintClass = topReviseTinted ? " revise-tinted" : "";
+    const secondaryHtml = secondaryHTML
+      ? `<div id="round-secondary" class="round-secondary">${secondaryHTML}</div>`
+      : "";
+    const bottomHtml = bottomPresent
+      ? `<div id="round-actions-bottom" class="round-actions-bottom">
+          <button class="btn-accept" id="btn-accept-bottom" disabled>Revise document</button>
+          <div id="round-secondary-bottom" class="round-secondary" style="display:none"></div>
+        </div>`
+      : "";
+    setBody(`
+      <button class="btn-accept${tintClass}" id="btn-accept" data-mode="${topMode}" ${topDisabled ? "disabled" : ""}>${topText}</button>
+      ${secondaryHtml}
+      ${bottomHtml}
+    `);
+  }
+
+  test("mirrors text/disabled/mode/tint from top onto bottom", () => {
+    scaffold({ topText: "Revise document", topMode: "accept", topReviseTinted: true });
+    syncBottomRoundActions();
+    const bottom = document.getElementById("btn-accept-bottom") as HTMLButtonElement;
+    expect(bottom.textContent).toBe("Revise document");
+    expect(bottom.disabled).toBe(false);
+    expect(bottom.dataset.mode).toBe("accept");
+    expect(bottom.classList.contains("revise-tinted")).toBe(true);
+  });
+
+  test("disables bottom when top is disabled (open comments, no action allowed)", () => {
+    scaffold({ topText: "Revise document", topDisabled: true });
+    syncBottomRoundActions();
+    const bottom = document.getElementById("btn-accept-bottom") as HTMLButtonElement;
+    expect(bottom.disabled).toBe(true);
+    const wrap = document.getElementById("round-actions-bottom") as HTMLElement;
+    // Disabled-but-not-terminal still shows — disabled is the active "waiting on you to resolve"
+    // affordance, not the post-action state.
+    expect(wrap.style.display).not.toBe("none");
+  });
+
+  test("hides the wrap once the top has collapsed to a terminal ✓ state", () => {
+    scaffold({ topText: "✓ Done", topDisabled: true, topMode: "finish" });
+    syncBottomRoundActions();
+    const wrap = document.getElementById("round-actions-bottom") as HTMLElement;
+    expect(wrap.style.display).toBe("none");
+  });
+
+  test("clears revise-tinted on bottom when top has dropped it", () => {
+    scaffold({ topReviseTinted: false });
+    const bottom = document.getElementById("btn-accept-bottom") as HTMLButtonElement;
+    bottom.classList.add("revise-tinted"); // stale state from a previous round
+    syncBottomRoundActions();
+    expect(bottom.classList.contains("revise-tinted")).toBe(false);
+  });
+
+  test("clones the secondary link onto the bottom slot with a remapped id", () => {
+    scaffold({
+      secondaryHTML: 'or <button id="round-secondary-btn">accept as-is without revising</button>',
+    });
+    syncBottomRoundActions();
+    const secBot = document.getElementById("round-secondary-bottom") as HTMLElement;
+    expect(secBot.style.display).toBe("");
+    expect(secBot.querySelector("#round-secondary-btn-bottom")?.textContent).toBe(
+      "accept as-is without revising",
+    );
+    // The original id is namespaced, not duplicated — duplicate ids would break getElementById.
+    expect(secBot.querySelector("#round-secondary-btn")).toBeNull();
+  });
+
+  test("bottom secondary click forwards to the canonical top secondary", () => {
+    scaffold({
+      secondaryHTML: 'or <button id="round-secondary-btn">revise the document anyway</button>',
+    });
+    let topClicks = 0;
+    document.getElementById("round-secondary-btn")?.addEventListener("click", () => {
+      topClicks++;
+    });
+    syncBottomRoundActions();
+    (document.getElementById("round-secondary-btn-bottom") as HTMLButtonElement).click();
+    expect(topClicks).toBe(1);
+  });
+
+  test("hides the bottom secondary slot when the top has no secondary", () => {
+    scaffold({ secondaryHTML: null });
+    const secBot = document.getElementById("round-secondary-bottom") as HTMLElement;
+    secBot.innerHTML = "<span>stale</span>";
+    secBot.style.display = "";
+    syncBottomRoundActions();
+    expect(secBot.style.display).toBe("none");
+    expect(secBot.innerHTML).toBe("");
+  });
+
+  test("no-ops in read-only views where the bottom block was omitted", () => {
+    scaffold({ bottomPresent: false });
+    expect(() => syncBottomRoundActions()).not.toThrow();
   });
 });

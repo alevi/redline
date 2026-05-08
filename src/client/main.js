@@ -10,6 +10,7 @@ import {
   highlightText as _highlightText,
   computeNavState,
   preserveScroll as _preserveScroll,
+  syncBottomRoundActions,
 } from "./lib";
 
     // ── State ────────────────────────────────────────────────────────
@@ -1056,38 +1057,7 @@ import {
       triggerRoundAction(btnAccept.dataset.mode);
     });
 
-    // Mirror the top-of-doc round controls onto a copy at the bottom of the
-    // doc, so a long read doesn't force a scroll back to the header to act.
-    // Called as a tail step from applyRoundState.
-    function syncBottomRoundActions() {
-      const top = document.getElementById('btn-accept');
-      const bottom = document.getElementById('btn-accept-bottom');
-      const bottomWrap = document.getElementById('round-actions-bottom');
-      if (!top || !bottom || !bottomWrap) return;
-      // Hide the bottom mirror once the round is past actionable state — the
-      // top button has already collapsed to "✓ Accepted" / "✓ Done" and
-      // surfacing it again at the bottom would just look like a stale control.
-      const isTerminal = top.disabled && /^✓/.test(top.textContent || '');
-      bottomWrap.style.display = isTerminal ? 'none' : '';
-      bottom.textContent = top.textContent;
-      bottom.disabled = top.disabled;
-      bottom.dataset.mode = top.dataset.mode || '';
-      bottom.classList.toggle('revise-tinted', top.classList.contains('revise-tinted'));
-
-      const secTop = document.getElementById('round-secondary');
-      const secBot = document.getElementById('round-secondary-bottom');
-      if (!secBot) return;
-      if (secTop) {
-        secBot.innerHTML = secTop.innerHTML.replace('id="round-secondary-btn"', 'id="round-secondary-btn-bottom"');
-        secBot.style.display = '';
-        secBot.querySelector('#round-secondary-btn-bottom')?.addEventListener('click', () => {
-          document.getElementById('round-secondary-btn')?.click();
-        });
-      } else {
-        secBot.innerHTML = '';
-        secBot.style.display = 'none';
-      }
-    }
+    // syncBottomRoundActions lives in ./lib so it has direct test coverage.
     document.getElementById('btn-accept-bottom')?.addEventListener('click', () => {
       const btn = document.getElementById('btn-accept-bottom');
       if (btn?.disabled) return;

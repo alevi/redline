@@ -287,3 +287,42 @@ export function preserveScroll(
     });
   });
 }
+
+// Mirror the top-of-doc round-action button (and its optional secondary
+// "or …" link) onto a copy at the foot of the document so a long read
+// doesn't force a scroll back to the header to act.
+//
+// The top button (#btn-accept) is canonical — this helper only reads it
+// and writes onto #btn-accept-bottom / #round-secondary-bottom. The
+// bottom mirror is hidden once the top collapses to "✓ Accepted" /
+// "✓ Done" so it doesn't surface as a stale control.
+export function syncBottomRoundActions(doc: Document = document): void {
+  const top = doc.getElementById("btn-accept") as HTMLButtonElement | null;
+  const bottom = doc.getElementById("btn-accept-bottom") as HTMLButtonElement | null;
+  const bottomWrap = doc.getElementById("round-actions-bottom") as HTMLElement | null;
+  if (!top || !bottom || !bottomWrap) return;
+
+  const isTerminal = top.disabled && /^✓/.test(top.textContent || "");
+  bottomWrap.style.display = isTerminal ? "none" : "";
+  bottom.textContent = top.textContent;
+  bottom.disabled = top.disabled;
+  bottom.dataset.mode = top.dataset.mode || "";
+  bottom.classList.toggle("revise-tinted", top.classList.contains("revise-tinted"));
+
+  const secTop = doc.getElementById("round-secondary");
+  const secBot = doc.getElementById("round-secondary-bottom");
+  if (!secBot) return;
+  if (secTop) {
+    secBot.innerHTML = secTop.innerHTML.replace(
+      'id="round-secondary-btn"',
+      'id="round-secondary-btn-bottom"',
+    );
+    secBot.style.display = "";
+    secBot.querySelector("#round-secondary-btn-bottom")?.addEventListener("click", () => {
+      (doc.getElementById("round-secondary-btn") as HTMLButtonElement | null)?.click();
+    });
+  } else {
+    secBot.innerHTML = "";
+    secBot.style.display = "none";
+  }
+}
