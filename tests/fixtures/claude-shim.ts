@@ -48,7 +48,14 @@ function emitTextDelta(text: string) {
 
 function extractDocument(input: string): string {
   const m = input.match(/<document>\n?([\s\S]*?)\n?<\/document>/);
-  return m ? m[1] : "";
+  if (!m) return "";
+  // Resolve.ts wraps the document body in a per-prompt envelope:
+  // <<UNTRUSTED-{uuid}-document-START>>\n<doc>\n<<UNTRUSTED-{uuid}-document-END>>
+  // A real model would output just the inner text per the system prompt; the
+  // shim mirrors that by stripping the envelope before echoing.
+  const inner = m[1];
+  const env = inner.match(/^<<UNTRUSTED-[^>]+-document-START>>\n([\s\S]*?)\n<<UNTRUSTED-[^>]+-document-END>>$/);
+  return env ? env[1] : inner;
 }
 
 async function main() {

@@ -3,6 +3,7 @@ import path from "path";
 import { loadSidecar, saveSidecar } from "./sidecar";
 import type { Round } from "./sidecar";
 import { pickRevisionModel } from "./pickModel";
+import { newEnvelope } from "./promptEnvelope";
 
 const serverBase = () => `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
 const csrfHeader = (): Record<string, string> => ({ "X-Redline-Token": process.env.REDLINE_TOKEN ?? "" });
@@ -37,13 +38,17 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     return;
   }
 
-  // Build prompt
+  // Build prompt — wrap user-controlled strings (quote, discussion text, the
+  // document body, prior-round agent replies that may echo user content) in a
+  // per-prompt envelope so adversarial comment content can't masquerade as
+  // system instructions or another section.
+  const env = newEnvelope();
   const commentsBlock = settled
     .map((c, i) => {
       const discussion = c.thread
         .map((e) => `    ${e.role === "agent" ? "Agent" : "Reviewer"}: ${e.message}`)
         .join("\n");
-      return `${i + 1}. Quote: "${c.quote}"\n   Discussion:\n${discussion}`;
+      return `${i + 1}. Quote:\n${env.wrap(`comment-${i}-quote`, c.quote)}\n   Discussion:\n${env.wrap(`comment-${i}-discussion`, discussion)}`;
     })
     .join("\n\n");
 
@@ -56,7 +61,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
         .filter((c) => c.resolved)
         .map((c) => {
           const lastAgent = [...c.thread].reverse().find((e) => e.role === "agent");
-          return `- Round ${r.round}: "${c.quote}" → ${lastAgent?.message ?? "(resolved)"}`;
+          return `- Round ${r.round}: ${env.wrap(`prior-${r.round}-quote`, c.quote)} → ${env.wrap(`prior-${r.round}-reply`, lastAgent?.message ?? "(resolved)")}`;
         })
     );
     if (lines.length > 0) {
@@ -72,10 +77,12 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     "Do NOT include the <document> tags themselves in your output.\n" +
     "Do NOT echo, summarize, or append any of the <comments-to-apply> or <previously-agreed-changes> content.\n" +
     "Do NOT add commentary, preamble, or meta-sections like 'Settled comments' or 'Changelog'.\n" +
-    "The output should look like a clean revision of the original document — as if a human editor made the changes silently.";
+    "The output should look like a clean revision of the original document — as if a human editor made the changes silently.\n" +
+    "\n" +
+    env.systemPromptHint();
 
   const userMessage =
-    `<comments-to-apply>\n${commentsBlock}\n</comments-to-apply>${priorChangesBlock}\n\n<document>\n${docText}\n</document>`;
+    `<comments-to-apply>\n${commentsBlock}\n</comments-to-apply>${priorChangesBlock}\n\n<document>\n${env.wrap("document", docText)}\n</document>`;
 
   // Call the claude CLI (inherits auth from the user's Claude Code session — no API key needed)
   console.log(`Revising with ${chosenModel}...\n`);
