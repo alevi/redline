@@ -1,8 +1,23 @@
-// Parse the agent's JSON reply. Robust to:
+// Parse the agent's reply.
+//
+// Preferred format is a delimiter envelope — chosen over JSON because the
+// `message` field is free-form prose and reliably contains double quotes,
+// which the model would have to escape inside a JSON string. It often
+// doesn't, and JSON.parse then fails on the whole envelope, dumping the raw
+// text into the UI. The delimiter form needs no escaping:
+//
+//   REQUIRES_REVISION: <true|false>
+//   REASON: <one short sentence, or empty>
+//   ---MESSAGE---
+//   <free-form prose, may contain anything>
+//   ---END---
+//
+// JSON form is still accepted as a fallback for older traces and for the case
+// where the model regresses to it. JSON parsing tolerates:
 //   - a ```json ... ``` (or bare ```) code fence wrapping the envelope
-//   - trailing text after the JSON object (model overrun: it emits the
-//     envelope and keeps generating, e.g. hallucinating the next prompt)
-//   - leading text before the JSON object (less common but symmetric)
+//   - trailing text after the JSON object (model overrun)
+//   - leading text before the JSON object
+//
 // On any failure to find a usable envelope, fall back to the raw text as the
 // message and requires_revision: true (safe default — we'd rather run an
 // unnecessary revision pass than silently skip one).
@@ -10,6 +25,24 @@ export interface ParsedReply {
   message: string;
   requires_revision: boolean;
   reason: string;
+}
+
+function tryDelimiterEnvelope(s: string): ParsedReply | null {
+  const msgStart = s.indexOf("---MESSAGE---");
+  const msgEnd = s.indexOf("---END---", msgStart === -1 ? 0 : msgStart);
+  if (msgStart === -1 || msgEnd === -1) return null;
+
+  const header = s.slice(0, msgStart);
+  const message = s.slice(msgStart + "---MESSAGE---".length, msgEnd).trim();
+
+  const reqMatch = header.match(/REQUIRES_REVISION\s*:\s*(true|false)\b/i);
+  const reasonMatch = header.match(/REASON\s*:\s*(.*?)\s*(?:\n|$)/i);
+
+  return {
+    message,
+    requires_revision: reqMatch ? reqMatch[1].toLowerCase() === "true" : true,
+    reason: reasonMatch ? reasonMatch[1].trim() : "",
+  };
 }
 
 // Find the first balanced JSON object in `s` and return [start, endExclusive),
@@ -41,6 +74,11 @@ function findFirstObject(s: string): [number, number] | null {
 
 export function parseReply(raw: string): ParsedReply {
   const trimmed = raw.trim();
+
+  // Preferred path: delimiter envelope.
+  const delim = tryDelimiterEnvelope(trimmed);
+  if (delim) return delim;
+
   let body = trimmed;
   // Strip a single ```json ... ``` or ``` ... ``` fence if the model wrapped.
   const fence = body.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
