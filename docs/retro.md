@@ -12,7 +12,7 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 **Why universal.** Every Levi Studio project that uses coding agents hits this exact failure mode — a confident-looking diff that the agent never ran. Cost per instance is small but corrosive: each unverified PR costs Alon a round-trip to ask "did you test this?" The trust budget is finite. The rule is portable across runtimes, languages, and project shapes — it's about agent self-discipline, not project specifics.
 
-**Status.** Proposed.
+**Status.** Accepted — merged in [levi-studio#21](https://github.com/alevi/levi-studio/pull/21) (2026-05-07).
 
 ---
 
