@@ -16,6 +16,15 @@ Running log per `canon/docs/13-retro-process.md`. Entries land here as work happ
 
 ---
 
+## 2026-05-07 — Patch close: bottom-of-doc round-action mirror
+
+- **What shipped.** A second copy of the round-level primary action (Revise document / Accept as-is / Accept doc) and its secondary "or …" link now sit at the foot of the document, below the prose article. `applyRoundState` still drives the top button as the source of truth and a new `syncBottomRoundActions()` mirrors text/disabled/mode/tint and the optional secondary onto the bottom; the bottom mirror auto-hides once the top collapses to `✓ Accepted` / `✓ Done` so it doesn't read as a stale control. Edits in [src/server.ts](src/server.ts) (markup + footer styling) and [src/client/main.js](src/client/main.js) (sync + click handler).
+- **What surprised.** The "doc-shaped surface" mental model had been pulling the round controls toward the document header from the start, but the cost of that placement only surfaces once a doc is long enough that you've forgotten the header exists. A reading surface needs decisions to be reachable from where the reader actually lands — which is rarely the top.
+- **Worth promoting to canon (revisit at next milestone close).** *For long reading surfaces with a header-anchored primary action, mirror the action at the foot of the content.* Generalizes beyond Redline (any review/approval surface where the reader scrolls through the artifact before deciding). The mirror should be driven from the canonical control, not duplicated state, and should fade once the action is no longer available so it doesn't look like a second chance. Could fit `canon/docs/09-product-ui-defaults.md`. Saved here as a project-level note in the meantime.
+- **Verification.** Bundle build passes (`bun build src/client/main.js`); end-to-end exercise deferred to the dogfooding tab — flagging per the run-before-claiming-it-works canon rule rather than letting silence imply tested.
+
+---
+
 ## 2026-05-07 — Patch close: delimiter envelope for agent replies
 
 **What shipped.** [src/agent.ts](src/agent.ts) and [src/parseReply.ts](src/parseReply.ts) no longer use a JSON contract for replies. The agent now emits `REQUIRES_REVISION: <bool>` / `REASON: <line>` headers followed by `---MESSAGE---` / `---END---` delimiters around the free-form prose. `parseReply` tries the delimiter form first and falls back to the JSON path so older traces and tests keep working. New unit tests in [tests/parseReply.test.ts](tests/parseReply.test.ts) cover the format including the original failure mode; new integration tests in [tests/agent.test.ts](tests/agent.test.ts) round-trip the envelope end-to-end through the agent and into the sidecar. Shipped in [redline#42](https://github.com/alevi/redline/pull/42).

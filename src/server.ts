@@ -1064,6 +1064,19 @@ function pageTemplate(
     }
     .round-secondary button:hover { color: #c2410c; }
 
+    /* Bottom-of-doc mirror of the round-level actions, so a long doc doesn't
+       force the reader back to the top to act. */
+    .round-actions-bottom {
+      margin: 32px 0 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .round-actions-bottom .btn-accept { font-size: 14px; padding: 8px 16px; }
+
     .thinking-dots { display: flex; gap: 4px; align-items: center; padding: 2px 0; }
     .thinking-dots span {
       width: 6px; height: 6px; border-radius: 50%;
@@ -1520,6 +1533,10 @@ function pageTemplate(
       <article class="prose" id="prose">
         ${content}
       </article>
+      ${readOnly ? '' : `<div class="round-actions-bottom" id="round-actions-bottom">
+        <button class="btn-accept" id="btn-accept-bottom" disabled>Revise document</button>
+        <div id="round-secondary-bottom" class="round-secondary" style="display:none"></div>
+      </div>`}
     </div>
 
     <div class="sidebar-col">
