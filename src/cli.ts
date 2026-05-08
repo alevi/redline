@@ -1,9 +1,39 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync, statSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
+import { spawnSync } from "child_process";
 import path from "path";
-import { createServer } from "./server";
-import { resolve } from "./resolve";
+
+// Ensure redline's own dependencies are installed in this checkout before any
+// third-party imports load. `redline` is invoked from arbitrary projects, but
+// its imports resolve against THIS checkout's node_modules. When package.json
+// gains a dep upstream and the user pulls without re-installing, every import
+// below would otherwise blow up with a raw module-not-found and no hint that
+// `bun install` is the fix.
+function preflightDependencies() {
+  const root = path.resolve(import.meta.dir, "..");
+  const pkgPath = path.join(root, "package.json");
+  // Compiled single-file binaries have no package.json next to the script —
+  // skip the check entirely in that case.
+  if (!existsSync(pkgPath)) return;
+  let pkg: { dependencies?: Record<string, string> };
+  try { pkg = JSON.parse(readFileSync(pkgPath, "utf8")); } catch { return; }
+  const deps = Object.keys(pkg.dependencies ?? {});
+  const missing = deps.filter((d) => !existsSync(path.join(root, "node_modules", d)));
+  if (missing.length === 0) return;
+  console.log(`[redline] Dependencies missing from ${root}/node_modules: ${missing.join(", ")}`);
+  console.log(`[redline] Running \`bun install\` in the redline checkout…`);
+  const r = spawnSync("bun", ["install"], { cwd: root, stdio: "inherit" });
+  if (r.status !== 0) {
+    console.error(`\n[redline] \`bun install\` failed. Run it manually in ${root} and retry.`);
+    process.exit(1);
+  }
+}
+preflightDependencies();
+
+// Dynamic imports so preflight runs before module resolution pulls in third-party deps.
+const { createServer } = await import("./server");
+const { resolve } = await import("./resolve");
 
 // Verify the `claude` CLI is reachable before we start, so first-run users
 // without Claude Code installed get a clear message instead of a silent agent
