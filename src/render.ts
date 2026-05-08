@@ -1,12 +1,57 @@
 import { marked } from "marked";
+import sanitizeHtml from "sanitize-html";
 
 marked.setOptions({ gfm: true });
 
+// Marked v9 dropped its built-in sanitizer and now passes raw HTML in markdown
+// straight through to output. Without a post-render pass, a <script> tag, an
+// <img onerror="...">, or a [link](javascript:alert(1)) in a reviewed document
+// executes against the local API origin — read the doc, post comments (billing
+// the user's Claude credits), trigger a revision overwrite. Defense is a
+// sanitize-html pass over marked's output.
+//
+// Allowlist is the default markdown shape plus h1/h2/img/del/sup/sub. Code
+// blocks need to keep their `language-*` class and the `data-language` attr
+// render.ts attaches below for the syntax-tag CSS badge.
+const SANITIZE_OPTS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "blockquote", "hr", "br",
+    "ul", "ol", "li",
+    "a", "strong", "em", "del", "ins", "code", "pre", "sup", "sub",
+    "img",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "div", "span",
+  ],
+  allowedAttributes: {
+    a: ["href", "title", "name"],
+    img: ["src", "alt", "title", "width", "height"],
+    code: ["class"],
+    pre: ["data-language"],
+    th: ["align"],
+    td: ["align"],
+  },
+  allowedSchemes: ["http", "https", "mailto"],
+  allowedSchemesAppliedToAttributes: ["href", "src"],
+  allowProtocolRelative: false,
+  // Marked emits `class="language-foo"` on <code> for syntax tagging; the
+  // diff overlay (src/diff.ts wordDiffMarkdown) emits `<ins class="diff-word-add">`
+  // and `<del class="diff-word-del">` for inline word-level edits. Anything
+  // else gets stripped.
+  allowedClasses: {
+    code: [/^language-[\w-]+$/],
+    ins: ["diff-word-add"],
+    del: ["diff-word-del"],
+  },
+};
+
 export function renderMarkdown(content: string): string {
-  const html = marked.parse(content) as string;
+  const dirty = marked.parse(content) as string;
+  const clean = sanitizeHtml(dirty, SANITIZE_OPTS);
   // Surface the language tag on the <pre> so CSS can render a small badge.
-  // Marked emits <pre><code class="language-foo">...</code></pre>.
-  return html.replace(
+  // Sanitizer keeps `language-foo` on the <code>; we re-derive the data-attr
+  // on the <pre> here so it survives the sanitize pass.
+  return clean.replace(
     /<pre><code class="language-([^"]+)">/g,
     '<pre data-language="$1"><code class="language-$1">'
   );

