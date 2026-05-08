@@ -112,7 +112,7 @@ if (args[0] === "resolve") {
   }
 
   const app = createServer(resolved, { context });
-  const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch, idleTimeout: 0 });
   const url = `http://localhost:${server.port}`;
 
   // Surface the URL to a calling agent that can't read this process's stdout.
