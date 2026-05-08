@@ -1,0 +1,1028 @@
+import type { Comment } from "./sidecar";
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function pageTemplate(
+  title: string,
+  content: string,
+  comments: Comment[],
+  roundResolved: boolean,
+  agentRepliedAt: string | null,
+  roundNumber: number,
+  totalRounds: number,
+  context?: string,
+  readOnly = false,
+  csrfToken = ""
+): string {
+  const commentsJson = JSON.stringify(comments);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(title)} — Redline</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #fafaf8;
+      --surface: #ffffff;
+      --border: #e8e6e1;
+      --text: #1a1a1a;
+      --text-muted: #6b6b6b;
+      --accent: #d97706;
+      --accent-light: #fff7ed;
+      --highlight: #fff3cd;
+      --highlight-active: #ffe8a0;
+      --thread-bg: #f7f7f5;
+      --agent-bg: #f0f4ff;
+      --radius: 6px;
+      --shadow: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 48px 24px;
+      gap: 32px;
+      align-items: stretch;
+    }
+
+    .reader-col {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .sidebar-col {
+      width: 300px;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    /* ── Header ── */
+    .doc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+    }
+
+    .doc-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .round-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--thread-bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      text-transform: none;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+    .round-badge.repeat {
+      background: #fff3e0;
+      border-color: #ffcc80;
+      color: #e65100;
+    }
+    .round-badge.clickable { cursor: pointer; user-select: none; }
+    .round-badge.clickable:hover { filter: brightness(0.95); }
+
+    .round-picker {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      z-index: 50;
+      min-width: 220px;
+      overflow: hidden;
+    }
+    .round-picker-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 14px;
+      font-size: 13px;
+      color: var(--text);
+      text-decoration: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .round-picker-item:last-child { border-bottom: none; }
+    .round-picker-item:hover { background: var(--thread-bg); }
+    .round-picker-item.current { font-weight: 600; pointer-events: none; color: var(--text-muted); }
+    .round-picker-meta { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+    .btn-resolve {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-resolve:hover { opacity: 0.85; }
+    .btn-resolve:disabled { opacity: 0.4; cursor: default; }
+
+    .btn-accept {
+      background: white;
+      color: #374151;
+      border: 1.5px solid #d1d5db;
+      padding: 8px 18px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      min-width: 168px;
+      text-align: center;
+    }
+    .btn-accept:hover:not(:disabled) { border-color: #9ca3af; color: #111827; }
+    .btn-accept:disabled { opacity: 0.4; cursor: default; }
+
+    .header-actions { display: flex; gap: 8px; }
+
+    /* ── Prose ── */
+    .prose {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 48px 56px;
+      user-select: text;
+    }
+
+    .prose h1, .prose h2, .prose h3, .prose h4 {
+      font-weight: 600;
+      line-height: 1.3;
+      margin: 1.8em 0 0.6em;
+      color: var(--text);
+    }
+    .prose h1 { font-size: 1.9em; margin-top: 0; }
+    .prose h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .prose h3 { font-size: 1.22em; margin-top: 2em; }
+    .prose h4 {
+      font-size: 0.85em;
+      margin-top: 1.6em;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    .prose p { margin: 0.9em 0; }
+    .prose img { max-width: 100%; height: auto; display: block; margin: 1.2em auto; border-radius: 4px; }
+    .prose .broken-img {
+      display: block;
+      padding: 14px 18px;
+      margin: 1.2em auto;
+      background: var(--thread-bg);
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      font-style: italic;
+    }
+    .prose ul, .prose ol { margin: 0.9em 0; padding-left: 1.6em; }
+    .prose li { margin: 0.3em 0; }
+    .prose li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.4em; }
+    .prose li > input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border: 1.5px solid #c5c5bf;
+      border-radius: 3px;
+      vertical-align: -2px;
+      margin-right: 7px;
+      cursor: default;
+      background: white;
+    }
+    .prose li > input[type="checkbox"]:checked {
+      background-color: var(--accent);
+      border-color: var(--accent);
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><path d='M3 7l3 3 5-6' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+    .prose blockquote {
+      border-left: 3px solid var(--border);
+      margin: 1em 0;
+      padding: 0.4em 1em;
+      color: var(--text-muted);
+    }
+    .prose code {
+      font-family: "SF Mono", "Fira Code", Menlo, monospace;
+      font-size: 0.875em;
+      background: #f0efeb;
+      padding: 0.15em 0.4em;
+      border-radius: 3px;
+    }
+    .prose pre {
+      background: #f6f8fa;
+      color: #24292f;
+      /* Right padding bumped to give the language label its own visual gutter
+         so code content doesn't appear to crowd the right edge. */
+      padding: 1em 1.6em 1em 1.2em;
+      border-radius: var(--radius);
+      border: 1px solid #e1e4e8;
+      overflow-x: auto;
+      margin: 1.2em 0;
+      position: relative;
+    }
+    .prose pre[data-language]::before {
+      content: attr(data-language);
+      position: absolute;
+      top: 0.4em;
+      right: 0.6em;
+      font-family: "SF Mono", "Fira Code", Menlo, monospace;
+      font-size: 0.7em;
+      color: #6e7781;
+      text-transform: lowercase;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+    }
+    .prose pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.85em;
+      color: inherit;
+    }
+    .prose a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
+    .prose a:hover { color: #1e40af; }
+    .prose hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+    .prose table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 1.2em 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 14px;
+    }
+    .prose th, .prose td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+    .prose th { background: #f5f5f3; font-weight: 600; }
+    .prose tr:last-child td { border-bottom: none; }
+    .prose tbody tr:nth-child(even) td { background: #fafaf9; }
+    .prose strong { font-weight: 600; }
+    .prose del, .prose s { color: #94a3b8; }
+
+    /* ── Highlights — box-shadow underline avoids any layout shift ── */
+    mark.rl-highlight {
+      background: rgba(255, 236, 153, 0.45);
+      box-shadow: inset 0 -1.5px 0 0 #e8b84b;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    mark.rl-highlight:hover {
+      background: rgba(255, 220, 100, 0.65);
+    }
+    /* Active highlight: amber ring traces the exact span tied to the active card.
+       Works for overlapping highlights too — the ring outlines whichever <mark>
+       is active, even when nested inside another. */
+    mark.rl-highlight.active {
+      background: rgba(255, 220, 100, 0.65);
+      box-shadow: inset 0 -1.5px 0 0 #e8b84b, 0 0 0 1.5px var(--accent);
+      border-radius: 2px;
+    }
+    mark.rl-highlight.resolved {
+      background: rgba(200, 230, 201, 0.45);
+      box-shadow: inset 0 -1.5px 0 0 #81c784;
+    }
+    mark.rl-highlight.rl-pending {
+      background: rgba(255, 183, 77, 0.55);
+      box-shadow: inset 0 -2px 0 0 #e65100;
+      border-radius: 2px;
+      cursor: default;
+    }
+    /* Image-wrapping marks: use a ring instead of underline since images are blocks */
+    mark.rl-highlight.rl-img {
+      display: block;
+      width: fit-content;
+      margin: 1.2em auto;
+      background: transparent;
+      box-shadow: 0 0 0 3px #e8b84b;
+      border-radius: 4px;
+      line-height: 0;
+      padding: 0;
+    }
+    mark.rl-highlight.rl-img > img { margin: 0; }
+    mark.rl-highlight.rl-img.resolved { box-shadow: 0 0 0 3px #81c784; }
+    mark.rl-highlight.rl-img.rl-pending { box-shadow: 0 0 0 3px #e65100; }
+    mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
+      box-shadow: 0 0 0 3px #c0392b;
+    }
+    /* Hover affordance on images so it's discoverable that you can comment */
+    .prose img { cursor: pointer; transition: box-shadow 0.15s; }
+    .prose img:hover { box-shadow: 0 0 0 2px rgba(217,119,6,0.4); border-radius: 4px; }
+
+
+    /* ── Sidebar ── */
+    .sidebar-empty {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 24px 0;
+    }
+
+    .comment-card {
+      position: absolute;
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .comment-card.active { border-color: var(--accent); box-shadow: 0 2px 8px rgba(217,119,6,0.12); }
+    .comment-card.resolved { opacity: 0.55; }
+    .comment-card.resolved .comment-body { display: none; }
+    .comment-card.resolved.expanded .comment-body { display: block; }
+    .comment-card.resolved .comment-quote { cursor: pointer; }
+    .comment-card.resolved .comment-quote::after {
+      content: '▸';
+      float: right;
+      margin-left: 8px;
+      opacity: 0.5;
+      font-style: normal;
+    }
+    .comment-card.resolved.expanded .comment-quote::after { content: '▾'; }
+
+    .comment-quote {
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      background: var(--thread-bg);
+      border-bottom: 1px solid var(--border);
+      font-style: italic;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .comment-card.resolved .comment-quote { border-bottom: none; }
+    .comment-card.resolved.expanded .comment-quote { border-bottom: 1px solid var(--border); }
+
+    /* Last agent reply shown on collapsed resolved cards */
+    .card-commitment {
+      padding: 7px 14px 9px;
+      font-size: 12px;
+      color: #3b5bdb;
+      line-height: 1.5;
+      border-top: 1px solid var(--border);
+    }
+    .comment-card.resolved.expanded .card-commitment { display: none; }
+
+    .comment-thread { padding: 10px 14px; }
+
+    /* ── Comment navigator ── */
+    #comment-nav {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    #comment-nav .nav-count {
+      flex: 1;
+      font-weight: 500;
+    }
+    #comment-nav button {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 3px 9px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text);
+      line-height: 1.4;
+    }
+    #comment-nav button:hover { background: var(--thread-bg); }
+    #comment-nav button:disabled { opacity: 0.3; cursor: default; }
+
+    /* Soften the swap when the nav hides and the status banner appears
+       (and vice versa) — display can't transition, so just fade the
+       *appearance* with a brief animation. */
+    #comment-nav, #sidebar-status-banner { animation: rl-fade-in 0.18s ease-out; }
+    @keyframes rl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+    .thread-entry {
+      margin-bottom: 10px;
+    }
+    .thread-entry:last-child { margin-bottom: 0; }
+
+    .thread-role {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 3px;
+    }
+    .thread-role.human { color: var(--accent); }
+    .thread-role.agent { color: #3b5bdb; }
+
+    .thread-message {
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    /* ── Verdict footer on agent replies ── */
+    .verdict {
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.45;
+      display: flex;
+      gap: 6px;
+      align-items: baseline;
+    }
+    .verdict-icon {
+      font-size: 11px;
+      flex-shrink: 0;
+      line-height: 1.5;
+    }
+    .verdict.revise { color: #92400e; }
+
+    /* Warm-tinted resolve button when the latest verdict implies an edit */
+    .btn-resolve-comment.revise {
+      border-color: #f59e0b;
+      color: #92400e;
+    }
+    .btn-resolve-comment.revise:hover {
+      background: #fffbeb;
+      border-color: #d97706;
+    }
+
+    /* Per-card verdict badge on resolved cards (next to ✓ Resolved) */
+    .verdict-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      padding: 1px 6px;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-radius: 3px;
+      font-style: normal;
+    }
+    .verdict-badge.revise { background: #fef3c7; color: #92400e; }
+    .verdict-badge.accept { background: #e5e7eb; color: var(--text-muted); }
+
+    /* Round-level secondary action (under the primary banner button) */
+    .round-secondary {
+      margin-top: 8px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .round-secondary button {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--accent);
+      cursor: pointer;
+      font: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .round-secondary button:hover { color: #c2410c; }
+
+    .thinking-dots { display: flex; gap: 4px; align-items: center; padding: 2px 0; }
+    .thinking-dots span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #3b5bdb; opacity: 0.4;
+      animation: thinking-bounce 1.2s infinite ease-in-out;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes thinking-bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+      40% { transform: translateY(-4px); opacity: 1; }
+    }
+
+    .comment-actions {
+      display: flex;
+      gap: 8px;
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .btn-reply {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: white;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.1s;
+    }
+    .btn-reply:hover { border-color: var(--text-muted); color: var(--text); }
+
+    .btn-reopen {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: var(--radius);
+      border: 1px solid #3b5bdb;
+      background: white;
+      cursor: pointer;
+      color: #3b5bdb;
+      transition: all 0.1s;
+    }
+    .btn-reopen:hover { background: #eef2ff; }
+
+    .btn-resolve-comment {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      background: #e8f5e9;
+      color: #2e7d32;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+    .btn-resolve-comment:hover { background: #c8e6c9; }
+
+    /* ── Reply input ── */
+    .reply-form {
+      display: none;
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--thread-bg);
+    }
+    .reply-form.open { display: block; }
+
+    .reply-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 64px;
+      background: white;
+    }
+    .reply-input:focus { outline: none; border-color: var(--accent); }
+
+    .reply-submit {
+      margin-top: 6px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 5px 12px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .reply-submit:hover { opacity: 0.85; }
+
+    /* ── New comment form in sidebar ── */
+    .new-comment-form {
+      position: absolute;
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(217,119,6,0.12);
+      z-index: 10;
+    }
+
+    .new-comment-quote {
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      background: var(--accent-light);
+      border-bottom: 1px solid var(--border);
+      font-style: italic;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .new-comment-body {
+      padding: 10px 14px;
+    }
+
+    .new-comment-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn-cancel-inline {
+      background: none;
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+
+    /* ── kbd shortcut label ── */
+    .reply-submit kbd {
+      display: inline-block;
+      font-size: 10px;
+      font-family: inherit;
+      opacity: 0.7;
+      margin-left: 5px;
+      font-style: normal;
+    }
+
+    /* ── Resolved badge ── */
+    .resolved-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #2e7d32;
+      background: #e8f5e9;
+      padding: 2px 7px;
+      border-radius: 10px;
+      float: right;
+      margin-left: 8px;
+    }
+
+    /* ── Review submitted sidebar banner ── */
+    #sidebar-status-banner {
+      display: none;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      background: #e8f5e9;
+      border-bottom: 1px solid #a5d6a7;
+      color: #2e7d32;
+      font-size: 13px;
+      font-weight: 500;
+      align-items: center;
+      gap: 8px;
+    }
+    #sidebar-status-banner.revising {
+      background: #fff3e0;
+      border-bottom-color: #ffb74d;
+      color: #e65100;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+    }
+    #sidebar-status-banner.error {
+      background: #fdecea;
+      border-bottom-color: #f5c2c0;
+      color: #a01818;
+    }
+    .revising-header { display: flex; align-items: center; gap: 8px; }
+    #revision-stream {
+      display: none;
+      margin-top: 8px;
+      width: 100%;
+      max-height: 220px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.05);
+      border-radius: 4px;
+      padding: 7px 9px;
+      font-family: 'Menlo','Monaco',monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.5;
+      box-sizing: border-box;
+    }
+    #revision-stream .rs-thinking { color: #9a7b3f; font-style: italic; opacity: 0.75; }
+    #revision-stream .rs-text { color: #5a3a00; }
+    .revising-spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid #ffb74d;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spinner-rotate 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spinner-rotate { to { transform: rotate(360deg); } }
+    .revising-dots span {
+      animation: dot-blink 1.4s infinite both;
+      opacity: 0;
+    }
+    .revising-dots span:nth-child(1) { animation-delay: 0s; }
+    .revising-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .revising-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dot-blink {
+      0%, 60%, 100% { opacity: 0; }
+      30% { opacity: 1; }
+    }
+
+    /* ── Done banner ── */
+    #done-banner { display: none; }
+
+    /* ── Diff overlay ── */
+    #diff-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 100;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 24px;
+      overflow-y: auto;
+    }
+    #diff-overlay.open { display: flex; }
+    #diff-panel {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+      width: 100%;
+      max-width: 820px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #diff-panel-header {
+      display: flex;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    #diff-panel-header h2 {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0;
+    }
+    #diff-panel-body {
+      overflow-y: auto;
+      max-height: 65vh;
+      padding: 8px 40px 40px;
+    }
+    .diff-prose { max-width: 660px; margin: 0 auto; }
+    .diff-prose h1 { font-size: 2em; font-weight: 700; margin: 1.5em 0 0.5em; }
+    .diff-prose h2 { font-size: 1.4em; font-weight: 700; margin: 1.4em 0 0.4em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
+    .diff-prose h3 { font-size: 1.1em; font-weight: 600; margin: 1.2em 0 0.3em; }
+    .diff-prose p { margin: 0.8em 0; line-height: 1.7; }
+    .diff-prose pre { background: #f6f8fa; border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-size: 13px; }
+    .diff-prose code { font-family: 'Menlo','Monaco',monospace; font-size: 0.875em; background: #f0f0ed; padding: 1px 4px; border-radius: 3px; }
+    .diff-prose pre code { background: none; padding: 0; }
+    .diff-prose a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
+    .diff-prose a:hover { color: #1e40af; }
+    .diff-prose ul, .diff-prose ol { padding-left: 1.5em; margin: 0.8em 0; }
+    .diff-prose li { margin: 0.3em 0; line-height: 1.7; }
+    .diff-block { border-radius: 4px; margin: 2px -12px; padding: 2px 12px; }
+    .diff-block-add { background: #e6ffed; border-left: 3px solid #28a745; }
+    .diff-block-del { background: #ffeef0; border-left: 3px solid #d73a49; opacity: 0.8; }
+    .diff-block-mod { background: #fffbe6; border-left: 3px solid #f0ad00; }
+    ins.diff-word-add { background: #acf2bd; text-decoration: none; border-radius: 2px; padding: 0 1px; }
+    del.diff-word-del { background: #fdb8c0; border-radius: 2px; padding: 0 1px; }
+    .diff-no-changes { padding: 24px 0; color: var(--text-muted); }
+    .btn-diff-compare {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: white;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.1s;
+    }
+    .btn-diff-compare:hover { color: var(--text); border-color: #aaa; }
+    .btn-diff-accept {
+      background: #2e7d32;
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-diff-accept:hover { opacity: 0.85; }
+    .btn-diff-feedback {
+      background: none;
+      border: 1px solid var(--border);
+      padding: 8px 18px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .btn-diff-feedback:hover { background: var(--thread-bg); }
+    .btn-diff-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 16px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .btn-diff-close:hover { background: var(--thread-bg); color: var(--text); }
+
+    /* ── Empty-rail hint (cold-open only) ── */
+    .empty-rail-hint {
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      font-style: italic;
+      text-align: center;
+      opacity: 0.75;
+    }
+
+    /* ── Revision banner ── */
+    .revision-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      font-size: 13.5px;
+      color: #1e40af;
+    }
+    .revision-banner-text { flex: 1; }
+    .revision-banner-link {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #1d4ed8;
+      font-size: 13.5px;
+      font-weight: 500;
+      padding: 0;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .revision-banner-link:hover { color: #1e40af; }
+    .revision-banner-dismiss {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #60a5fa;
+      font-size: 13px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      line-height: 1;
+      opacity: 0.7;
+      flex-shrink: 0;
+    }
+    .revision-banner-dismiss:hover { opacity: 1; background: rgba(96,165,250,0.15); }
+
+    /* ── Context banner ── */
+    .context-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 14px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      font-size: 13.5px;
+      color: #78350f;
+      line-height: 1.5;
+    }
+    .context-label {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 10.5px;
+      color: #b45309;
+      white-space: nowrap;
+      padding-top: 2px;
+      flex-shrink: 0;
+    }
+    .context-text { flex: 1; }
+    .context-dismiss {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #b45309;
+      font-size: 13px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      line-height: 1;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+    .context-dismiss:hover { opacity: 1; background: rgba(180,83,9,0.1); }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="reader-col">
+      <div class="doc-header">
+        <span class="doc-title">
+          ${escapeHtml(title)}
+          <span style="position:relative">
+            <span class="round-badge${totalRounds > 1 ? ' repeat' : ''}${totalRounds > 1 ? ' clickable' : ''}" id="round-badge">Round ${roundNumber} of ${totalRounds}</span>
+            ${totalRounds > 1 ? `<div class="round-picker" id="round-picker" style="display:none">${
+              Array.from({length: totalRounds}, (_, i) => i + 1).map(n => {
+                const isCurrent = n === roundNumber;
+                const href = n === totalRounds ? '/' : `/round/${n}`;
+                const label = n === totalRounds ? 'Round ' + n + ' — current' : 'Round ' + n;
+                return `<a class="round-picker-item${isCurrent ? ' current' : ''}" href="${href}">${label}</a>`;
+              }).join('')
+            }</div>` : ''}
+          </span>
+        </span>
+        <div class="header-actions">
+          ${readOnly
+            ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
+            : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>
+               ${totalRounds > 1 ? `<button class="btn-diff-compare" id="btn-compare">Compare with previous</button>` : ''}`
+          }
+        </div>
+      </div>
+      ${context ? `<div class="context-banner" id="context-banner">
+        <span class="context-label">Context</span>
+        <span class="context-text">${escapeHtml(context)}</span>
+        <button class="context-dismiss" onclick="dismissContextBanner()" aria-label="Dismiss">✕</button>
+      </div>` : ''}
+      <article class="prose" id="prose">
+        ${content}
+      </article>
+    </div>
+
+    <div class="sidebar-col">
+      <div id="sidebar-status-banner"></div>
+      <div id="comment-nav" style="display:none">
+        <span class="nav-count" id="nav-count"></span>
+        <button id="nav-prev">↑ Prev</button>
+        <button id="nav-next">Next ↓</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="done-banner"></div>
+  <div id="diff-overlay">
+    <div id="diff-panel">
+      <div id="diff-panel-header">
+        <h2>Review changes</h2>
+        <button class="btn-diff-feedback" id="diff-btn-feedback">Give more feedback</button>
+        <button class="btn-diff-accept" id="diff-btn-accept">Looks good — close session</button>
+        <button class="btn-diff-close" id="diff-btn-close" aria-label="Close">✕</button>
+      </div>
+      <div id="diff-panel-body"></div>
+    </div>
+  </div>
+  <div id="error-banner" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#b71c1c;color:white;padding:12px 24px;border-radius:6px;font-size:14px;font-weight:500;box-shadow:0 1px 4px rgba(0,0,0,0.08);z-index:999;white-space:nowrap;"></div>
+
+  <script>
+    window.__REDLINE__ = {
+      comments: ${commentsJson},
+      roundResolved: ${roundResolved},
+      totalRounds: ${totalRounds},
+      contextTitle: ${JSON.stringify(title)},
+      csrfToken: ${JSON.stringify(csrfToken)},
+    };
+  </script>
+  <script src="/client.js" defer></script>
+</body>
+</html>`;
+}
+
+export { escapeHtml, pageTemplate };
