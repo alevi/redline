@@ -1,6 +1,7 @@
 import { test, expect, afterEach } from "bun:test";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
+import os from "os";
 import {
   createTestFile,
   spawnCLI,
@@ -33,6 +34,37 @@ test("server starts on a free port, not 3000", async () => {
   const { port } = await spawnTracked(filePath);
   expect(port).toBeGreaterThan(0);
   expect(port).not.toBe(3000);
+}, 15_000);
+
+test("server binds to loopback only, not all interfaces", async () => {
+  const { filePath } = createTestFile();
+  const { port } = await spawnTracked(filePath);
+
+  // Loopback must work — that's the whole point of the tool.
+  const loopback = await fetch(`http://127.0.0.1:${port}/`);
+  expect(loopback.status).toBeLessThan(500);
+
+  // Find a non-loopback IPv4 interface. Most dev machines and CI runners
+  // have one (en0, eth0, etc.). If we somehow don't, the assertion below
+  // is vacuous but the loopback assertion above is still meaningful.
+  const externalIp = Object.values(os.networkInterfaces())
+    .flat()
+    .find((i) => i && i.family === "IPv4" && !i.internal)?.address;
+
+  if (externalIp) {
+    let refused = false;
+    try {
+      await fetch(`http://${externalIp}:${port}/`, {
+        signal: AbortSignal.timeout(1500),
+      });
+    } catch {
+      // ECONNREFUSED, timeout, or any other failure to reach the port from
+      // a non-loopback interface is the success signal. Binding to 0.0.0.0
+      // would have made this fetch succeed.
+      refused = true;
+    }
+    expect(refused).toBe(true);
+  }
 }, 15_000);
 
 test("startup file appears with URL the moment the server is listening", async () => {
