@@ -31,6 +31,7 @@ test("POST /api/comment broadcasts comment-added", async () => {
   const { port } = await start(filePath);
 
   const evP = waitForEvent(port, "comment-added");
+  await evP.ready;
   const c = await postComment(port, { quote: "First paragraph" }, "msg");
   const ev = await evP;
 
@@ -47,12 +48,14 @@ test("POST /api/comment/:id/resolve broadcasts comment-resolved with allResolved
 
   // Resolving one of two: allResolved=false
   const ev1P = waitForEvent(port, "comment-resolved", { predicate: (d) => d.commentId === a.id });
+  await ev1P.ready;
   await fetch(`http://localhost:${port}/api/comment/${a.id}/resolve`, { method: "POST" });
   const ev1 = await ev1P;
   expect(ev1.data.allResolved).toBe(false);
 
   // Resolving the second: allResolved=true
   const ev2P = waitForEvent(port, "comment-resolved", { predicate: (d) => d.commentId === b.id });
+  await ev2P.ready;
   await fetch(`http://localhost:${port}/api/comment/${b.id}/resolve`, { method: "POST" });
   const ev2 = await ev2P;
   expect(ev2.data.allResolved).toBe(true);
@@ -68,6 +71,7 @@ test("POST /api/comment/:id/reopen broadcasts comment-resolved with recomputed a
   // Reopen path uses the same comment-resolved event so existing UI handlers re-render.
   // allResolved must flip back to false because the only comment is no longer resolved.
   const evP = waitForEvent(port, "comment-resolved", { predicate: (d) => d.commentId === c.id });
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reopen`, { method: "POST" });
   const ev = await evP;
   expect(ev.data.allResolved).toBe(false);
@@ -83,6 +87,7 @@ test("POST /api/comment/:id/reply broadcasts comment-reply for human replies", a
   // to respond again). Agent replies skip the broadcast — agent-replied
   // is what clears UI state after the agent finishes.
   const evP = waitForEvent(port, "comment-reply", { predicate: (d) => d.commentId === c.id });
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -103,6 +108,7 @@ test("POST /api/comment/:id/reply does NOT broadcast for agent replies", async (
     predicate: (d) => d.commentId === c.id,
     timeoutMs: 500,
   });
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -118,6 +124,7 @@ test("POST /api/comment/:id/thinking broadcasts comment-thinking", async () => {
   const c = await postComment(port, { quote: "First paragraph" }, "x");
 
   const evP = waitForEvent(port, "comment-thinking", { predicate: (d) => d.commentId === c.id });
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/comment/${c.id}/thinking`, { method: "POST" });
   const ev = await evP;
   expect(ev.data.commentId).toBe(c.id);
@@ -129,6 +136,7 @@ test("POST /api/agent-replied broadcasts agent-replied", async () => {
   await postComment(port, { quote: "First paragraph" }, "x");
 
   const evP = waitForEvent(port, "agent-replied");
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/agent-replied`, { method: "POST" });
   const ev = await evP;
   expect(ev.data.round).toBe(1);
@@ -142,6 +150,7 @@ test("POST /api/accept broadcasts accepted", async () => {
   await postComment(port, { quote: "First paragraph" }, "x");
 
   const evP = waitForEvent(port, "accepted");
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
   const ev = await evP;
   expect(ev.data.round).toBe(1);
@@ -152,6 +161,7 @@ test("POST /api/reload broadcasts reload (revision-finish trigger)", async () =>
   const { port } = await start(filePath);
 
   const evP = waitForEvent(port, "reload");
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/reload`, { method: "POST" });
   const ev = await evP;
   expect(ev.event).toBe("reload");
@@ -218,6 +228,7 @@ test("POST /api/revision-no-changes broadcasts revision-no-changes", async () =>
   const { port } = await start(filePath);
 
   const evP = waitForEvent(port, "revision-no-changes");
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/revision-no-changes`, { method: "POST" });
   const ev = await evP;
   expect(ev.event).toBe("revision-no-changes");
@@ -228,6 +239,7 @@ test("POST /api/revision-chunk broadcasts revision-chunk with text + kind", asyn
   const { port } = await start(filePath);
 
   const evP = waitForEvent(port, "revision-chunk");
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/revision-chunk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -243,6 +255,7 @@ test("POST /api/revision-error broadcasts revision-error with message", async ()
   const { port } = await start(filePath);
 
   const evP = waitForEvent(port, "revision-error");
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/revision-error`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -261,6 +274,7 @@ test("POST /api/submit broadcasts submitted with comment count", async () => {
   await postComment(port, { quote: "Second paragraph" }, "2");
 
   const evP = waitForEvent(port, "submitted");
+  await evP.ready;
   await fetch(`http://localhost:${port}/api/submit`, { method: "POST" });
   const ev = await evP;
   expect(ev.data.round).toBe(1);
@@ -275,6 +289,7 @@ test("disconnecting an SSE client doesn't break later broadcasts to other client
 
   // Briefly connect and disconnect a first client.
   const earlyP = waitForEvent(port, "comment-added", { client: "early" });
+  await earlyP.ready;
   await postComment(port, { quote: "First paragraph" }, "first");
   await earlyP;
   earlyP.stop();
@@ -282,6 +297,7 @@ test("disconnecting an SSE client doesn't break later broadcasts to other client
 
   // A second client should still receive future broadcasts.
   const lateP = waitForEvent(port, "comment-added", { client: "late" });
+  await lateP.ready;
   const c2 = await postComment(port, { quote: "Second paragraph" }, "second");
   const ev = await lateP;
   expect(ev.data.commentId).toBe(c2.id);

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, readFileSync, existsSync, statSync } from "fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, statSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { spawnSync } from "child_process";
@@ -66,7 +66,8 @@ test("install-skill.sh fails if the source SKILL.md has no placeholder", () => {
   const fakeSkillDir = path.join(fakeRepo, "skills/redline-review");
   spawnSync("mkdir", ["-p", fakeSkillDir]);
   spawnSync("cp", [path.join(REPO_ROOT, "skills/redline-review/SKILL.md"), fakeSkillDir]);
-  spawnSync("sed", ["-i", "", "s|__REDLINE_BIN__|redline|g", path.join(fakeSkillDir, "SKILL.md")]);
+  const skillFile = path.join(fakeSkillDir, "SKILL.md");
+  writeFileSync(skillFile, readFileSync(skillFile, "utf-8").replaceAll("__REDLINE_BIN__", "redline"));
 
   // Stage src/cli.ts and the script so REPO_ROOT resolution works.
   spawnSync("mkdir", ["-p", path.join(fakeRepo, "src"), path.join(fakeRepo, "scripts")]);
