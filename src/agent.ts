@@ -4,6 +4,7 @@ import { appendFile, mkdir, readFile } from "fs/promises";
 import { resolve } from "./resolve";
 import { pickReplyModel } from "./pickModel";
 import { parseReply } from "./parseReply";
+import { newEnvelope } from "./promptEnvelope";
 
 const filePath = process.argv[2];
 if (!filePath) {
@@ -53,7 +54,11 @@ async function logReplyFailure(commentId: string, err: unknown) {
   }
 }
 
-const REPLY_SYSTEM_PROMPT =
+function replySystemPrompt(envelopeHint: string): string {
+  return REPLY_SYSTEM_PROMPT_BODY + "\n\n" + envelopeHint;
+}
+
+const REPLY_SYSTEM_PROMPT_BODY =
   "You are an AI writing assistant responding to inline review comments on a Markdown document. " +
   "The reviewer has selected a passage and left a comment or question. Reply in the cards rail — keep it tight.\n" +
   "- Match reply length to the reviewer's comment. A one-line comment gets a one-line reply. A typo flag gets \"Got it\" or similar.\n" +
@@ -128,14 +133,18 @@ async function handleComment(commentId: string) {
     await postThinking(commentId);
 
     const docText = await readFile(path.resolve(filePath), "utf-8");
+    const env = newEnvelope();
     const threadText = thread
       .map((e: any) => `${e.role === "human" ? "Reviewer" : "Agent"}: ${e.message}`)
       .join("\n");
 
+    // Wrap every user-controlled string (document, quote, thread) in a
+    // per-prompt UUID-anchored envelope so adversarial content inside any
+    // of them can't masquerade as system instructions or as another section.
     const userMessage =
-      `## Document\n\n${docText}\n\n---\n\n` +
-      `## Comment\n\nQuoted passage: "${comment.quote}"\n\n` +
-      `Thread:\n${threadText}`;
+      `## Document\n\n${env.wrap("document", docText)}\n\n---\n\n` +
+      `## Comment\n\nQuoted passage:\n${env.wrap("quote", comment.quote)}\n\n` +
+      `Thread:\n${env.wrap("thread", threadText)}`;
 
     const lastMessage = thread[thread.length - 1].message as string;
     const model = pickReplyModel(lastMessage);
@@ -143,7 +152,7 @@ async function handleComment(commentId: string) {
 
     const cliBin = process.env.CLAUDE_CODE_EXECPATH ?? "claude";
     const proc = Bun.spawn(
-      [cliBin, "-p", "--system-prompt", REPLY_SYSTEM_PROMPT, "--model", model],
+      [cliBin, "-p", "--system-prompt", replySystemPrompt(env.systemPromptHint()), "--model", model],
       { stdin: "pipe", stdout: "pipe", stderr: "inherit" }
     );
     proc.stdin.write(userMessage);
