@@ -5,6 +5,7 @@ import type { Round } from "./sidecar";
 import { pickRevisionModel } from "./pickModel";
 
 const serverBase = () => `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
+const csrfHeader = (): Record<string, string> => ({ "X-Redline-Token": process.env.REDLINE_TOKEN ?? "" });
 
 export async function resolve(filePath: string, options: { model?: string } = {}) {
   const model = options.model ?? null;
@@ -32,7 +33,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   if (settled.length === 0) {
     console.log("No settled comments — no revision needed.");
     await openNextRound(sidecar, filePath);
-    try { await fetch(`${serverBase()}/api/reload`, { method: "POST" }); } catch { /* non-fatal */ }
+    try { await fetch(`${serverBase()}/api/reload`, { method: "POST", headers: csrfHeader() }); } catch { /* non-fatal */ }
     return;
   }
 
@@ -114,7 +115,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   const broadcastChunk = (text: string, kind: "thinking" | "text") => {
     fetch(`${serverBase()}/api/revision-chunk`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
       body: JSON.stringify({ text, kind }),
     }).catch(() => {});
   };
@@ -194,7 +195,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   if (trimmed === docText.trim()) {
     console.log("No changes — output identical to input. Skipping file write.");
     await openNextRound(sidecar, filePath);
-    try { await fetch(`${serverBase()}/api/revision-no-changes`, { method: "POST" }); } catch { /* non-fatal */ }
+    try { await fetch(`${serverBase()}/api/revision-no-changes`, { method: "POST", headers: csrfHeader() }); } catch { /* non-fatal */ }
     return;
   }
 
@@ -209,7 +210,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
 
   // Notify browser to reload
   try {
-    await fetch(`${serverBase()}/api/reload`, { method: "POST" });
+    await fetch(`${serverBase()}/api/reload`, { method: "POST", headers: csrfHeader() });
   } catch { /* server may not be running — non-fatal */ }
 }
 

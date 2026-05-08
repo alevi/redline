@@ -8,7 +8,11 @@ import {
   createTestFile,
   startServer,
   postComment,
+  TEST_CSRF_TOKEN,
 } from "./helpers";
+
+const CSRF_HEADERS = { "X-Redline-Token": TEST_CSRF_TOKEN };
+const CSRF_JSON_HEADERS = { "Content-Type": "application/json", "X-Redline-Token": TEST_CSRF_TOKEN };
 
 const stops: Array<() => void> = [];
 afterEach(() => {
@@ -57,7 +61,7 @@ test("POST /api/comment serializes 20 concurrent writes with no losses", async (
     Array.from({ length: N }, (_, i) =>
       fetch(`http://localhost:${port}/api/comment`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: CSRF_JSON_HEADERS,
         body: JSON.stringify({
           quote: "first paragraph",
           context_before: "",
@@ -120,13 +124,13 @@ test("POST /api/comment/:id/resolve marks resolved and reports allResolved", asy
   const b = await postComment(port, { quote: "second paragraph" }, "second");
 
   // Resolving only one → allResolved should be false
-  const r1 = await fetch(`http://localhost:${port}/api/comment/${a.id}/resolve`, { method: "POST" });
+  const r1 = await fetch(`http://localhost:${port}/api/comment/${a.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
   const d1 = await r1.json();
   expect(d1.ok).toBe(true);
   expect(d1.allResolved).toBe(false);
 
   // Resolving the second → allResolved flips true
-  const r2 = await fetch(`http://localhost:${port}/api/comment/${b.id}/resolve`, { method: "POST" });
+  const r2 = await fetch(`http://localhost:${port}/api/comment/${b.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
   const d2 = await r2.json();
   expect(d2.allResolved).toBe(true);
 }, 15_000);
@@ -136,9 +140,9 @@ test("POST /api/comment/:id/reopen flips resolved back to false", async () => {
   const { port } = await start(filePath);
 
   const c = await postComment(port, { quote: "first paragraph" }, "x");
-  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
 
-  const reopened = await fetch(`http://localhost:${port}/api/comment/${c.id}/reopen`, { method: "POST" });
+  const reopened = await fetch(`http://localhost:${port}/api/comment/${c.id}/reopen`, { method: "POST", headers: CSRF_HEADERS });
   const data = await reopened.json();
   expect(data.ok).toBe(true);
   expect(data.comment.resolved).toBe(false);
@@ -149,7 +153,7 @@ test("POST /api/comment/:id/resolve returns 404 for unknown comment", async () =
   const { port } = await start(filePath);
   // No comment exists yet → no round either, server returns 400 "No active round"
   await postComment(port, { quote: "first paragraph" }, "x"); // ensure round exists
-  const res = await fetch(`http://localhost:${port}/api/comment/c999999/resolve`, { method: "POST" });
+  const res = await fetch(`http://localhost:${port}/api/comment/c999999/resolve`, { method: "POST", headers: CSRF_HEADERS });
   expect(res.status).toBe(404);
 }, 15_000);
 
@@ -163,7 +167,7 @@ test("POST /api/comment/:id/reply appends to the thread", async () => {
 
   const replyRes = await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ role: "agent", name: "Claude", message: "ack" }),
   });
   expect(replyRes.status).toBe(200);
@@ -182,7 +186,7 @@ test("POST /api/comment/:id/reply persists agent verdict (requires_revision + re
 
   const replyRes = await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({
       role: "agent",
       name: "Claude",
@@ -208,7 +212,7 @@ test("POST /api/comment/:id/reply ignores verdict on human entries", async () =>
   // Human entries shouldn't carry a verdict even if one is sent.
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ role: "human", message: "follow-up", requires_revision: true }),
   });
 
@@ -222,7 +226,7 @@ test("POST /api/comment/:id/thinking succeeds (broadcast hook)", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);
   const c = await postComment(port, { quote: "first paragraph" }, "x");
-  const res = await fetch(`http://localhost:${port}/api/comment/${c.id}/thinking`, { method: "POST" });
+  const res = await fetch(`http://localhost:${port}/api/comment/${c.id}/thinking`, { method: "POST", headers: CSRF_HEADERS });
   expect(res.status).toBe(200);
 }, 15_000);
 
@@ -230,7 +234,7 @@ test("POST /api/agent-replied succeeds (broadcast hook)", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);
   await postComment(port, { quote: "first paragraph" }, "x");
-  const res = await fetch(`http://localhost:${port}/api/agent-replied`, { method: "POST" });
+  const res = await fetch(`http://localhost:${port}/api/agent-replied`, { method: "POST", headers: CSRF_HEADERS });
   expect(res.status).toBe(200);
 }, 15_000);
 

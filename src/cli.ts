@@ -111,7 +111,13 @@ if (args[0] === "resolve") {
     }
   }
 
-  const app = createServer(resolved, { context });
+  // CSRF token threaded through to: createServer (mints from this), the agent
+  // subprocess (via REDLINE_TOKEN env), and startup.json (so a calling skill
+  // or test runner can read it). `REDLINE_TOKEN` from env wins so an outer
+  // caller can pin the token if it needs to.
+  const csrfToken = process.env.REDLINE_TOKEN ?? crypto.randomUUID();
+
+  const app = createServer(resolved, { context, csrfToken });
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch, idleTimeout: 0 });
   const url = `http://localhost:${server.port}`;
 
@@ -128,6 +134,7 @@ if (args[0] === "resolve") {
       result_file: resultFile,
       started_at: new Date().toISOString(),
       pid: process.pid,
+      csrf_token: csrfToken,
     }, null, 2));
   } catch (e) {
     console.error("[redline] Failed to write startup file:", e);
@@ -159,7 +166,7 @@ if (args[0] === "resolve") {
       [process.execPath, "run", path.join(import.meta.dir, "agent.ts"), resolved],
       {
         stdout: "inherit", stderr: "inherit", stdin: "ignore",
-        env: { ...process.env, REDLINE_PORT: String(server.port) },
+        env: { ...process.env, REDLINE_PORT: String(server.port), REDLINE_TOKEN: csrfToken },
       }
     );
     agentProc = proc;

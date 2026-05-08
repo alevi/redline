@@ -27,6 +27,12 @@ if (crashFile) {
 }
 
 const BASE_URL = `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
+const CSRF_TOKEN = process.env.REDLINE_TOKEN ?? "";
+
+// Inject `X-Redline-Token` on every mutating call back to the server. The
+// server rejects unauthenticated POST/DELETE/PUT/PATCH on /api/*; without
+// this header the agent's replies would be silently 403'd.
+const CSRF_HEADER = { "X-Redline-Token": CSRF_TOKEN };
 
 async function logReplyFailure(commentId: string, err: unknown) {
   const logDir = path.join(path.dirname(path.resolve(filePath)), ".review");
@@ -80,7 +86,10 @@ async function fetchComments() {
 }
 
 async function postThinking(commentId: string) {
-  await fetch(`${BASE_URL}/api/comment/${commentId}/thinking`, { method: "POST" });
+  await fetch(`${BASE_URL}/api/comment/${commentId}/thinking`, {
+    method: "POST",
+    headers: CSRF_HEADER,
+  });
 }
 
 async function postReply(
@@ -91,13 +100,16 @@ async function postReply(
 ) {
   await fetch(`${BASE_URL}/api/comment/${commentId}/reply`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...CSRF_HEADER },
     body: JSON.stringify({ role: "agent", name: "Claude", message, requires_revision, revision_reason }),
   });
 }
 
 async function postAgentReplied() {
-  await fetch(`${BASE_URL}/api/agent-replied`, { method: "POST" });
+  await fetch(`${BASE_URL}/api/agent-replied`, {
+    method: "POST",
+    headers: CSRF_HEADER,
+  });
 }
 
 async function handleComment(commentId: string) {
@@ -171,7 +183,7 @@ async function handleAccepted() {
     try {
       await fetch(`${BASE_URL}/api/revision-error`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...CSRF_HEADER },
         body: JSON.stringify({ message: msg }),
       });
     } catch { /* server may be down — non-fatal */ }

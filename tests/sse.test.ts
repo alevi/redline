@@ -9,7 +9,11 @@ import {
   startServer,
   postComment,
   waitForEvent,
+  TEST_CSRF_TOKEN,
 } from "./helpers";
+
+const CSRF_HEADERS = { "X-Redline-Token": TEST_CSRF_TOKEN };
+const CSRF_JSON_HEADERS = { "Content-Type": "application/json", "X-Redline-Token": TEST_CSRF_TOKEN };
 
 const stops: Array<() => void> = [];
 afterEach(() => {
@@ -49,14 +53,14 @@ test("POST /api/comment/:id/resolve broadcasts comment-resolved with allResolved
   // Resolving one of two: allResolved=false
   const ev1P = waitForEvent(port, "comment-resolved", { predicate: (d) => d.commentId === a.id });
   await ev1P.ready;
-  await fetch(`http://localhost:${port}/api/comment/${a.id}/resolve`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${a.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
   const ev1 = await ev1P;
   expect(ev1.data.allResolved).toBe(false);
 
   // Resolving the second: allResolved=true
   const ev2P = waitForEvent(port, "comment-resolved", { predicate: (d) => d.commentId === b.id });
   await ev2P.ready;
-  await fetch(`http://localhost:${port}/api/comment/${b.id}/resolve`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${b.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
   const ev2 = await ev2P;
   expect(ev2.data.allResolved).toBe(true);
 }, 15_000);
@@ -66,13 +70,13 @@ test("POST /api/comment/:id/reopen broadcasts comment-resolved with recomputed a
   const { port } = await start(filePath);
 
   const c = await postComment(port, { quote: "First paragraph" }, "x");
-  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
 
   // Reopen path uses the same comment-resolved event so existing UI handlers re-render.
   // allResolved must flip back to false because the only comment is no longer resolved.
   const evP = waitForEvent(port, "comment-resolved", { predicate: (d) => d.commentId === c.id });
   await evP.ready;
-  await fetch(`http://localhost:${port}/api/comment/${c.id}/reopen`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reopen`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await evP;
   expect(ev.data.allResolved).toBe(false);
 }, 15_000);
@@ -90,7 +94,7 @@ test("POST /api/comment/:id/reply broadcasts comment-reply for human replies", a
   await evP.ready;
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ role: "human", message: "follow up" }),
   });
   const ev = await evP;
@@ -111,7 +115,7 @@ test("POST /api/comment/:id/reply does NOT broadcast for agent replies", async (
   await evP.ready;
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ role: "agent", name: "Claude", message: "ack" }),
   });
   await expect(evP).rejects.toThrow(/Timed out/);
@@ -125,7 +129,7 @@ test("POST /api/comment/:id/thinking broadcasts comment-thinking", async () => {
 
   const evP = waitForEvent(port, "comment-thinking", { predicate: (d) => d.commentId === c.id });
   await evP.ready;
-  await fetch(`http://localhost:${port}/api/comment/${c.id}/thinking`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/thinking`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await evP;
   expect(ev.data.commentId).toBe(c.id);
 }, 15_000);
@@ -137,7 +141,7 @@ test("POST /api/agent-replied broadcasts agent-replied", async () => {
 
   const evP = waitForEvent(port, "agent-replied");
   await evP.ready;
-  await fetch(`http://localhost:${port}/api/agent-replied`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/agent-replied`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await evP;
   expect(ev.data.round).toBe(1);
 }, 15_000);
@@ -151,7 +155,7 @@ test("POST /api/accept broadcasts accepted", async () => {
 
   const evP = waitForEvent(port, "accepted");
   await evP.ready;
-  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await evP;
   expect(ev.data.round).toBe(1);
 }, 15_000);
@@ -162,7 +166,7 @@ test("POST /api/reload broadcasts reload (revision-finish trigger)", async () =>
 
   const evP = waitForEvent(port, "reload");
   await evP.ready;
-  await fetch(`http://localhost:${port}/api/reload`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/reload`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await evP;
   expect(ev.event).toBe("reload");
 }, 15_000);
@@ -176,7 +180,7 @@ test("watchdog broadcasts revision-stalled and un-resolves the round on timeout"
   const { createServer } = await import("../src/server");
   const { filePath, dir } = createTestFile(SAMPLE);
   process.env.REDLINE_REVISION_TIMEOUT_MS = "500";
-  const app = createServer(filePath);
+  const app = createServer(filePath, { csrfToken: TEST_CSRF_TOKEN });
   const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
   delete process.env.REDLINE_REVISION_TIMEOUT_MS;
   stops.push(() => { try { server.stop(true); } catch {} });
@@ -189,7 +193,7 @@ test("watchdog broadcasts revision-stalled and un-resolves the round on timeout"
   await stall.ready;
 
   // /api/accept marks the round resolved AND starts the watchdog.
-  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
 
   // Watchdog fires after ~500ms with no terminal event arriving.
   const ev = await stall;
@@ -205,16 +209,16 @@ test("watchdog is cleared by /api/reload", async () => {
   const { createServer } = await import("../src/server");
   const { filePath } = createTestFile(SAMPLE);
   process.env.REDLINE_REVISION_TIMEOUT_MS = "500";
-  const app = createServer(filePath);
+  const app = createServer(filePath, { csrfToken: TEST_CSRF_TOKEN });
   const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
   delete process.env.REDLINE_REVISION_TIMEOUT_MS;
   stops.push(() => { try { server.stop(true); } catch {} });
   const port = server.port;
 
   await postComment(port, { quote: "First paragraph" }, "x");
-  await fetch(`http://localhost:${port}/api/accept`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
   // Successful revision lands.
-  await fetch(`http://localhost:${port}/api/reload`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/reload`, { method: "POST", headers: CSRF_HEADERS });
 
   // Now wait past the watchdog window. If the timer wasn't cleared, we'd see
   // a (spurious) revision-stalled event.
@@ -229,7 +233,7 @@ test("POST /api/revision-no-changes broadcasts revision-no-changes", async () =>
 
   const evP = waitForEvent(port, "revision-no-changes");
   await evP.ready;
-  await fetch(`http://localhost:${port}/api/revision-no-changes`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/revision-no-changes`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await evP;
   expect(ev.event).toBe("revision-no-changes");
 }, 15_000);
@@ -242,7 +246,7 @@ test("POST /api/revision-chunk broadcasts revision-chunk with text + kind", asyn
   await evP.ready;
   await fetch(`http://localhost:${port}/api/revision-chunk`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ text: "thinking out loud", kind: "thinking" }),
   });
   const ev = await evP;
@@ -258,7 +262,7 @@ test("POST /api/revision-error broadcasts revision-error with message", async ()
   await evP.ready;
   await fetch(`http://localhost:${port}/api/revision-error`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: CSRF_JSON_HEADERS,
     body: JSON.stringify({ message: "claude blew up" }),
   });
   const ev = await evP;
@@ -275,7 +279,7 @@ test("POST /api/submit broadcasts submitted with comment count", async () => {
 
   const evP = waitForEvent(port, "submitted");
   await evP.ready;
-  await fetch(`http://localhost:${port}/api/submit`, { method: "POST" });
+  await fetch(`http://localhost:${port}/api/submit`, { method: "POST", headers: CSRF_HEADERS });
   const ev = await evP;
   expect(ev.data.round).toBe(1);
   expect(ev.data.comments).toBe(2);
