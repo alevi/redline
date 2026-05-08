@@ -30,20 +30,24 @@ if [ ! -f "$STARTUP" ]; then
   exit 1
 fi
 URL=$(grep -o '"url": *"[^"]*"' "$STARTUP" | sed 's/.*"\(http[^"]*\)".*/\1/')
+PID=$(grep -o '"pid": *[0-9]*' "$STARTUP" | grep -o '[0-9]*')
 echo "REDLINE_URL: $URL"
+echo "REDLINE_PID: $PID"
 
 # Step 2: surface the URL to the human (you do this after the Bash call returns
-# — see the next section), then poll for the result file.
-until [ -f "$RESULT" ]; do sleep 30; done
+# — see the next section), then wait for the redline process to exit. Watching
+# the PID (essentially free) instead of polling for the result file means you
+# wake up within ~0.5s of the human clicking Done, not up to 30s later.
+while kill -0 "$PID" 2>/dev/null; do sleep 0.5; done
 cat "$RESULT"
 ```
 
 The startup file at `.review/<basename>.startup.json` is written synchronously when the server begins listening; it contains `url`, `port`, `file`, `result_file`, `started_at`, `pid`. The result file at `.review/<basename>.result` is written when the session ends (approved, abandoned, or error).
 
 In practice, run the script above as **two separate Bash calls** so you can tell the human the URL between steps:
-1. First call: everything through `echo "REDLINE_URL: $URL"`. Returns in ~1s with the URL on stdout.
+1. First call: everything through `echo "REDLINE_PID: $PID"`. Returns in ~1s with the URL and PID on stdout.
 2. Surface the URL to the human in your reply text (see "Surfacing the URL" below).
-3. Second call: just the `until` loop polling for `$RESULT`. Long timeout (`timeout: 1800000` = 30 min, or longer).
+3. Second call: just the `while kill -0` loop waiting for the PID, then `cat "$RESULT"`. Long timeout (`timeout: 1800000` = 30 min, or longer).
 
 If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run the install script.
 
@@ -85,7 +89,7 @@ The full loop, when you are the outer agent producing the doc:
 2. Tell the human in one sentence what's about to happen.
 3. First Bash call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>"` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
 4. Surface the URL to the human in your reply text so they can cmd-click to open.
-5. Second Bash call: poll for `.review/<basename>.result` with a long timeout (30+ min). While the session runs, you are idle — do not start unrelated work, do not poll the file system yourself outside the `until` loop, do not run other tools.
+5. Second Bash call: wait on the redline PID (`while kill -0 "$PID" 2>/dev/null; do sleep 0.5; done`) then `cat "$RESULT"`, with a long timeout (30+ min). While the session runs, you are idle — do not start unrelated work, do not run other tools.
 6. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
 7. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
 
