@@ -4,6 +4,7 @@ import { loadSidecar, saveSidecar } from "./sidecar";
 import type { Round } from "./sidecar";
 import { pickRevisionModel } from "./pickModel";
 import { newEnvelope } from "./promptEnvelope";
+import { contextBlock } from "./contextBlock";
 
 const serverBase = () => `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
 const csrfHeader = (): Record<string, string> => ({ "X-Redline-Token": process.env.REDLINE_TOKEN ?? "" });
@@ -81,7 +82,11 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     "\n" +
     env.systemPromptHint();
 
+  // Prepend the reviewer's stated focus when --context was set; the helper
+  // returns empty otherwise. Goes before the comments so the model reads the
+  // user's lens first and weights the revision accordingly.
   const userMessage =
+    contextBlock(sidecar.context, env) +
     `<comments-to-apply>\n${commentsBlock}\n</comments-to-apply>${priorChangesBlock}\n\n<document>\n${env.wrap("document", docText)}\n</document>`;
 
   // Call the claude CLI (inherits auth from the user's Claude Code session — no API key needed)

@@ -30,11 +30,21 @@ ThreadEntry { role: human|agent, name?, message, at, requires_revision?, revisio
 ### CLI shape
 
 ```
-redline <file>           # opens the review reader; URL is printed and written to .review/<file>.startup.json
-redline resolve <file>   # one-shot: read the sidecar, run the revision pass, write back
+redline <file>                 # opens the review reader; URL is printed and written to .review/<file>.startup.json
+redline <file> --context "..." # opens with a reviewer-supplied focus statement (see "Context-aware prompts" below)
+redline resolve <file>         # one-shot: read the sidecar, run the revision pass, write back
 ```
 
 The bare-arg path also spawns a dedicated agent subprocess alongside the server — see "The dedicated agent process" below.
+
+### Context-aware prompts
+
+When the user passes `--context "..."` (or the sidecar already has `context` set from a prior run), the string is rendered above the doc as a banner *and* prepended to both prompt builders:
+
+- [src/agent.ts](src/agent.ts) calls `loadSidecar` per reply and prepends a `Reviewer's stated focus` block to the user message before the document/comment sections.
+- [src/resolve.ts](src/resolve.ts) prepends the same block to the revision user message.
+
+The shared helper is [src/contextBlock.ts](src/contextBlock.ts) — a one-liner that returns either the formatted block or empty string. It wraps the context through the same UUID-anchored envelope as the document and comment text, so adversarial context content can't escape its envelope to pose as system instructions.
 
 ### Frontend
 

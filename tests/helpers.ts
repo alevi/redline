@@ -59,9 +59,10 @@ export type SpawnedCLI = {
 
 export async function spawnCLI(
   filePath: string,
-  extraEnv: Record<string, string> = {}
+  extraEnv: Record<string, string> = {},
+  extraArgs: string[] = []
 ): Promise<SpawnedCLI> {
-  const proc = Bun.spawn([BUN, "run", CLI, filePath], {
+  const proc = Bun.spawn([BUN, "run", CLI, filePath, ...extraArgs], {
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
