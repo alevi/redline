@@ -27,6 +27,17 @@ if (crashFile) {
   }, 500);
 }
 
+// Test-only "always crash" hook: every spawn exits non-zero after a short
+// delay, so the cli's restart cap can be exercised end-to-end. Unlike the
+// crash-file hook above, this leaves no trigger to delete — every spawn
+// crashes until the cli gives up.
+if (process.env.REDLINE_AGENT_CRASH_ALWAYS === "1") {
+  setTimeout(() => {
+    console.log("[agent] crash-always hook fired — exiting");
+    process.exit(99);
+  }, 100);
+}
+
 const BASE_URL = `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
 const CSRF_TOKEN = process.env.REDLINE_TOKEN ?? "";
 

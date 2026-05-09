@@ -186,7 +186,9 @@ if (args[0] === "resolve") {
   // a transient claude-CLI auth blip, etc). Capped to MAX_RESTARTS within
   // RESTART_WINDOW_MS so a permanently-broken environment doesn't loop forever.
   const RESTART_WINDOW_MS = 60_000;
-  const MAX_RESTARTS = 5;
+  // Cap is overrideable via env so integration tests can exercise the
+  // give-up path without spawning the agent six times.
+  const MAX_RESTARTS = Number(process.env.REDLINE_MAX_RESTARTS ?? 5);
   const restartTimes: number[] = [];
   let agentProc: ReturnType<typeof Bun.spawn>;
   let serverExiting = false;
