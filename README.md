@@ -63,6 +63,20 @@ bunx @alevi/redline ./api-rfc.md --context "Looking for missing security conside
 
 The context is persisted in the sidecar on first run, so it carries across rounds and is available the next time you reopen the same review.
 
+## Manual annotation (no agent)
+
+If you just want inline comments on a Markdown file without a Claude conversation, pass `--no-agent`:
+
+```sh
+bunx @alevi/redline ./spec.md --no-agent
+```
+
+The server still runs, you can still leave comments and resolve them, but no agent process is spawned and no `claude` binary is required on your PATH. The header shows a "Manual mode" pill so the absence of replies is intentional, not broken. Useful for:
+
+- Annotating a doc you don't want sent to Claude
+- Trying Redline before configuring Claude Code
+- Quick inline-comment passes where you don't want a revision step
+
 ## One-shot revision
 
 If you already have a sidecar with resolved comments and just want to apply the revision without the live UI:

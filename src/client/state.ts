@@ -8,6 +8,7 @@ declare global {
       totalRounds: number;
       contextTitle: string;
       csrfToken: string;
+      noAgent?: boolean;
     };
     hljs?: { highlightElement(el: HTMLElement): void };
     dismissContextBanner?: () => void;
@@ -19,6 +20,7 @@ export const state = {
   roundResolved: window.__REDLINE__.roundResolved,
   totalRounds: window.__REDLINE__.totalRounds,
   csrfToken: window.__REDLINE__.csrfToken || "",
+  noAgent: window.__REDLINE__.noAgent === true,
   thinkingCommentIds: new Set<string>(),
   pendingSelection: null as PendingSelection | null,
   navIdx: 0,

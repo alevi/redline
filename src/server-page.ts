@@ -18,7 +18,8 @@ function pageTemplate(
   totalRounds: number,
   context?: string,
   readOnly = false,
-  csrfToken = ""
+  csrfToken = "",
+  noAgent = false
 ): string {
   const commentsJson = JSON.stringify(comments);
 
@@ -52,6 +53,7 @@ function pageTemplate(
         </span>
         <div class="header-actions">
           <span id="agent-status" class="agent-status" hidden></span>
+          ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No Claude replies, no revision pass.">Manual mode</span>` : ''}
           ${readOnly
             ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
             : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>
@@ -101,6 +103,7 @@ function pageTemplate(
       totalRounds: ${totalRounds},
       contextTitle: ${JSON.stringify(title)},
       csrfToken: ${JSON.stringify(csrfToken)},
+      noAgent: ${JSON.stringify(noAgent)},
     };
   </script>
   <script src="/client.js" defer></script>
