@@ -1,8 +1,54 @@
 {
-  "name": "redline",
+  "name": "@alevi/redline",
   "version": "0.1.0",
+  "description": "A local review UI for AI-generated Markdown docs. Highlight text, leave inline comments, discuss with Claude, apply accepted revisions back to the file.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai-agents",
+    "markdown",
+    "markdown-review",
+    "document-review",
+    "inline-comments",
+    "human-in-the-loop",
+    "ai-docs",
+    "spec-review",
+    "docs-as-code",
+    "local-first",
+    "developer-tools",
+    "technical-writing",
+    "bun",
+    "review-tool"
+  ],
+  "homepage": "https://github.com/alevi/redline#readme",
+  "bugs": {
+    "url": "https://github.com/alevi/redline/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alevi/redline.git"
+  },
+  "license": "MIT",
+  "author": "alevi",
   "bin": {
-    "redline": "src/cli.ts"
+    "redline": "bin/redline.cjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "scripts/install-skill.sh",
+    "skills",
+    "README.md",
+    "SECURITY.md",
+    "ROADMAP.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "start": "bun src/cli.ts",
