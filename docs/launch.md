@@ -36,35 +36,28 @@ Order is by **shippability × discoverability impact**. Top items can ship today
 
 ## 2. GitHub repo metadata
 
-### Description (single line, ≤ 350 chars — GitHub limit is 350)
+### Description (single line)
 
-> A local review UI for AI-generated Markdown docs. Highlight text, leave inline comments, discuss with Claude, apply accepted revisions back to the file. Local-first, single-player, runs on your laptop.
+The canonical repo description, set when the repo flipped public:
+
+> Inline comments on Markdown files, for human-in-the-loop AI doc review.
+
+(Source: `canon/m8-scoping.md` § "Repo metadata". Don't drift from this without a canon update.)
 
 ### Topics
 
-Pick from these — GitHub allows up to 20. Recommended top set, ordered by discoverability:
+The canonical six, set on repo flip:
 
 ```
-claude-code
-ai-agents
-markdown-review
-document-review
-inline-comments
-human-in-the-loop
-ai-docs
-spec-review
-docs-as-code
-local-first
-developer-tools
-technical-writing
 markdown
-documentation
+code-review
 ai
-bun
 claude
+bun
+documentation
 ```
 
-The same list is mirrored in `package.json#keywords` so npm search picks them up too.
+(Source: same canon entry. The canonical set is intentionally short — broad terms a stranger would actually search for, not a long-tail of marketing keywords.) `package.json#keywords` mirrors this exact list.
 
 ### Repo settings worth flipping
 
@@ -116,7 +109,7 @@ npx @alevi/redline ./sample.md    # should also boot the reader (via the Node la
 
 ## 4. Demo GIF — what to capture
 
-The current `docs/assets/demo.gif` is a placeholder. The replacement should land the magic moment in the first 5 seconds.
+The current `docs/assets/demo.gif` is a placeholder. The replacement should make the round-trip legible in the first 5 seconds: comment in, agent reply, edit applied.
 
 **Storyboard (≤ 15 seconds total):**
 
@@ -157,9 +150,9 @@ Single static HTML page. No build step needed; one file, one CSS block, one inli
 
 ### Copy
 
-Hero tagline (matches README):
+Hero tagline (matches README, prescribed by `canon/m8-scoping.md`):
 
-> A local review UI for AI-generated Markdown docs.
+> Inline comments on Markdown files, designed for human-in-the-loop AI doc review.
 
 Hero subtitle:
 
@@ -178,51 +171,46 @@ Primary CTA button: `bunx @alevi/redline ./spec.md` (rendered as a copy-to-clipb
 
 ### Show HN
 
-> **Show HN: Redline – inline review for AI-generated Markdown docs, with Claude in the thread**
+> **Show HN: Redline — inline comments on Markdown files, with Claude in the thread**
 >
-> AI agents are getting good at writing docs — PRDs, RFCs, READMEs, architecture specs. Reviewing those docs still feels awkward: chat threads scroll out from under the text, "fix paragraph 3" loses its anchor after the first edit, and Google-Docs-style tools don't speak the file on disk.
+> A lot of recent specs and PRDs start as a Claude draft. Reviewing those drafts in a chat window is the awkward part. Comments scroll out from under the text. "Fix paragraph 3" loses its anchor as soon as the doc is rewritten. Google-Docs-style tools don't speak the file on disk.
 >
-> Redline is a local review UI for Markdown. You point it at a `.md`, it opens a browser-based reader, you highlight text and leave inline comments, and a Claude agent replies in the thread within ~2 seconds. Resolve the comments, click **Revise document**, and the agent applies the agreed edits back to the file on disk.
+> Redline points at a local `.md`, opens a browser-based reader, and lets you highlight any text and leave an inline comment. A Claude agent replies in the thread within a couple of seconds. Resolve the comments, click **Revise document**, and the agent applies the agreed edits back to the file.
 >
-> A few design notes:
+> Design notes:
 >
-> - Single-player. The server binds to 127.0.0.1; no auth, no cloud. Designed for one human and one agent on the developer's laptop.
-> - The agent shells out to the `claude -p` CLI rather than the SDK, so you only need an authenticated Claude Code session — no extra API key.
-> - Review state lives in a sidecar JSON next to the doc (`.review/<file>.json`). Per-round history snapshots are kept, so you can re-open a review and see what changed.
-> - Every agent reply carries a `requires_revision` verdict, so the round-level button auto-picks "Revise document" vs "Accept as-is" based on what was discussed.
+> - Single-player. The server binds to 127.0.0.1. No auth, no cloud. One human, one agent, on the developer's laptop.
+> - The agent shells out to the `claude -p` CLI rather than the SDK. No `ANTHROPIC_API_KEY` — it inherits your Claude Code session.
+> - Review state lives in a sidecar JSON next to the doc (`.review/<file>.json`). Per-round history snapshots are kept, so you can reopen a review and see what changed.
+> - Every agent reply carries a `requires_revision` verdict. The round-level button auto-picks "Revise document" or "Accept as-is" based on what the conversation actually settled.
 >
 > Try it: `bunx @alevi/redline ./spec.md`
 >
 > Repo: https://github.com/alevi/redline
->
-> Curious whether the inline-comment-on-Markdown UX feels right; happy to take design feedback.
 
 ### r/ClaudeAI
 
-> **I built a local Google-Docs-style review tool for the Markdown docs Claude writes**
+> **A local inline-comment review tool for the Markdown docs Claude writes**
 >
-> Claude Code is great at drafting PRDs / RFCs / architecture specs. Reviewing them in chat is the awkward part — you can't anchor "fix paragraph 3" to the actual paragraph 3, and once Claude rewrites it, the anchor is gone anyway.
+> Claude Code drafts PRDs, RFCs, architecture specs. Reviewing them in chat is the awkward part. You can't anchor "fix paragraph 3" to the actual paragraph 3, and once Claude rewrites it, the anchor is gone anyway.
 >
-> Redline runs locally, opens a browser tab on the Markdown file, lets you highlight any text and leave a comment, and a Claude subprocess replies in the comment thread. When you resolve everything, it rewrites the doc with the changes applied.
+> Redline runs locally, opens a browser tab on the Markdown file, and lets you highlight any text and leave a comment. A Claude subprocess replies in the comment thread. When you resolve everything, it rewrites the doc with the changes applied.
 >
-> Single command:
+> One command:
 >
 > ```
 > bunx @alevi/redline ./your-doc.md
 > ```
 >
-> No API key — it inherits your Claude Code OAuth. Local-first; the server only binds to 127.0.0.1.
+> No API key. It inherits your Claude Code OAuth. Local-first. The server binds to 127.0.0.1.
 >
 > Repo + demo gif: https://github.com/alevi/redline
->
-> Would love feedback from anyone running multi-step Claude Code workflows that include "have a human read this draft" as a step.
 
 ### X / Twitter (single post)
 
-> AI agents are getting good at writing docs.
-> Reviewing those docs is still awkward.
+> Inline comments on Markdown files, with Claude in the thread.
 >
-> Redline is a local review UI for AI-generated Markdown — highlight text, leave inline comments, discuss with Claude in the thread, apply accepted edits back to the file.
+> Highlight text, leave a comment, Claude replies, resolve, accepted edits land back on disk.
 >
 > `bunx @alevi/redline ./spec.md`
 >
@@ -230,15 +218,15 @@ Primary CTA button: `bunx @alevi/redline ./spec.md` (rendered as a copy-to-clipb
 
 ### LinkedIn
 
-> Shipping Redline today — a small open-source tool I've been using daily for a couple of months.
+> Open-sourcing Redline today. A small tool I've been using daily for a couple of months.
 >
-> Context: most of my recent specs and PRDs start as a Claude draft. Reviewing those drafts in a chat window is awkward; comments scroll out from under the text and lose their anchor as soon as the doc changes.
+> Most of my recent specs and PRDs start as a Claude draft. Reviewing those drafts in a chat window is awkward. Comments scroll out from under the text and lose their anchor as soon as the doc changes.
 >
-> Redline gives Markdown files Google-Docs-style inline comments. You highlight a paragraph, leave a comment, Claude replies in the thread. When you're done, accepted changes are applied back to the file on disk.
+> Redline gives Markdown files an inline-comment layer. You highlight a paragraph, leave a comment, Claude replies in the thread. When you're done, accepted changes are applied back to the file on disk.
 >
-> Local-first — server binds to 127.0.0.1, your file never leaves your machine. Single-player, single agent, opinionated about being one of those.
+> Local-first. The server binds to 127.0.0.1, the file never leaves your machine. Single-player, single agent, opinionated about being one of those.
 >
-> If you've been writing docs with an AI agent and felt the same friction, I'd love your feedback: https://github.com/alevi/redline
+> https://github.com/alevi/redline
 
 ### r/programming or r/devtools (post-polish only)
 

@@ -1,24 +1,14 @@
 {
   "name": "@alevi/redline",
   "version": "0.1.0",
-  "description": "A local review UI for AI-generated Markdown docs. Highlight text, leave inline comments, discuss with Claude, apply accepted revisions back to the file.",
+  "description": "Inline comments on Markdown files, for human-in-the-loop AI doc review.",
   "keywords": [
-    "claude",
-    "claude-code",
-    "ai-agents",
     "markdown",
-    "markdown-review",
-    "document-review",
-    "inline-comments",
-    "human-in-the-loop",
-    "ai-docs",
-    "spec-review",
-    "docs-as-code",
-    "local-first",
-    "developer-tools",
-    "technical-writing",
+    "code-review",
+    "ai",
+    "claude",
     "bun",
-    "review-tool"
+    "documentation"
   ],
   "homepage": "https://github.com/alevi/redline#readme",
   "bugs": {

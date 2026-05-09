@@ -1,6 +1,6 @@
 # Redline
 
-**A local review UI for AI-generated Markdown docs.**
+**Inline comments on Markdown files, designed for human-in-the-loop AI doc review.**
 
 Open a Markdown file, highlight text, leave inline comments, discuss changes with Claude, and apply accepted revisions back to the document.
 
@@ -20,9 +20,9 @@ Requires [Bun](https://bun.sh) ≥ 1.0 and an authenticated [Claude Code](https:
 
 ## Why Redline exists
 
-AI agents are getting good at writing Markdown — PRDs, RFCs, READMEs, architecture specs, launch plans. Reviewing those docs still feels awkward: chat threads scroll out from under the text, "fix paragraph 3" loses its anchor after the first edit, and Google Docs-style tools don't speak the file on disk.
+A lot of recent docs start as a Claude draft. Reviewing those drafts in a chat window is awkward. Comments scroll out from under the text. "Fix paragraph 3" loses its anchor as soon as the doc is rewritten. Google-Docs-style tools don't speak the file on disk.
 
-Redline puts a Google-Docs-style inline-comment layer on top of a local Markdown file, with a Claude agent participating in the review thread. Comments are anchored to the text they're about, the conversation is real-time, and accepted changes are applied back to the file you started with — no copy-paste.
+Redline puts an inline-comment layer on top of a local Markdown file, with a Claude agent participating in the review thread. Comments are anchored to the text they're about. The conversation is real-time. Accepted changes are applied back to the file you started with, no copy-paste.
 
 ## Who it's for
 
@@ -88,15 +88,6 @@ Full threat model: [SECURITY.md](SECURITY.md).
 - Single file per session. No folder mode or repo-wide review.
 - Concurrent `redline` processes on the same `.md` can corrupt the sidecar.
 - Bun required at runtime — there's no plain-Node mode.
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md). Headlines:
-
-- Multi-doc / folder review.
-- Sharper diff view with per-paragraph applied-edit indicators.
-- Optional comment templates (`expand`, `challenge`, `cut`) layered on top of free-text.
-- Optional read-only share link so a teammate can spectate a review.
 
 ## Develop locally
 
