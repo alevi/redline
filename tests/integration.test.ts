@@ -25,9 +25,10 @@ afterEach(() => {
 
 async function spawnTracked(
   filePath: string,
-  extraEnv: Record<string, string> = {}
+  extraEnv: Record<string, string> = {},
+  extraArgs: string[] = []
 ): Promise<SpawnedCLI> {
-  const result = await spawnCLI(filePath, extraEnv);
+  const result = await spawnCLI(filePath, extraEnv, extraArgs);
   procs.push(result.proc);
   return result;
 }
@@ -255,6 +256,34 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
 
   // Cleanup
   ac2.abort();
+}, 15_000);
+
+test("--context flag persists to sidecar.context on first run", async () => {
+  // The CLI parses --context and threads it to createServer, which writes
+  // it to the sidecar on startup. From there agent.ts and resolve.ts both
+  // load it and prepend a "Reviewer's stated focus" block to their prompts.
+  // This test covers the CLI → server → sidecar leg; the prompt-injection
+  // leg is covered by unit tests on contextBlock.
+  const { filePath, dir } = createTestFile();
+  const ctx = "Reviewing for technical accuracy, not prose style.";
+  const { port } = await spawnTracked(filePath, {}, ["--context", ctx]);
+  await waitForServer(port);
+
+  // Server's startup hook writes context into the sidecar asynchronously;
+  // poll briefly so the assertion isn't racing the write.
+  const sidecarPath = path.join(dir, ".review", path.basename(filePath) + ".json");
+  let sidecar: any = null;
+  for (let i = 0; i < 20; i++) {
+    if (existsSync(sidecarPath)) {
+      try {
+        sidecar = JSON.parse(readFileSync(sidecarPath, "utf-8"));
+        if (sidecar.context) break;
+      } catch { /* mid-write, retry */ }
+    }
+    await Bun.sleep(50);
+  }
+  expect(sidecar).not.toBeNull();
+  expect(sidecar.context).toBe(ctx);
 }, 15_000);
 
 test("agent restart cap → cli broadcasts agent-unavailable end-to-end", async () => {

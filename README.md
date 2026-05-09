@@ -52,6 +52,17 @@ Review state lives in a sidecar JSON file at `.review/<filename>.json` next to t
 - **Approving Claude Code output before merge.** Use the bundled [redline-review skill](skills/redline-review/SKILL.md) so your outer agent automatically hands you the doc to sign off on.
 - **Human approval loops for agent-written docs.** Anywhere an agent needs your sign-off on prose before continuing, run it through Redline.
 
+## Reviewing for a specific lens
+
+Pass `--context` at startup to tell Claude what you're focused on for the review. The context is shown in a banner above the doc and threaded into both the reply and revision prompts, so the agent can weight its responses accordingly.
+
+```sh
+bunx @alevi/redline ./spec.md --context "Reviewing for technical accuracy, not prose style."
+bunx @alevi/redline ./api-rfc.md --context "Looking for missing security considerations and breaking changes."
+```
+
+The context is persisted in the sidecar on first run, so it carries across rounds and is available the next time you reopen the same review.
+
 ## One-shot revision
 
 If you already have a sidecar with resolved comments and just want to apply the revision without the live UI:
