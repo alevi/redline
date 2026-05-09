@@ -1,8 +1,44 @@
 {
-  "name": "redline",
+  "name": "@alevi/redline",
   "version": "0.1.0",
+  "description": "Inline comments on Markdown files, for human-in-the-loop AI doc review.",
+  "keywords": [
+    "markdown",
+    "code-review",
+    "ai",
+    "claude",
+    "bun",
+    "documentation"
+  ],
+  "homepage": "https://github.com/alevi/redline#readme",
+  "bugs": {
+    "url": "https://github.com/alevi/redline/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alevi/redline.git"
+  },
+  "license": "MIT",
+  "author": "alevi",
   "bin": {
-    "redline": "src/cli.ts"
+    "redline": "bin/redline.cjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "scripts/install-skill.sh",
+    "skills",
+    "README.md",
+    "SECURITY.md",
+    "ROADMAP.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "start": "bun src/cli.ts",
