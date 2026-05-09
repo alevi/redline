@@ -9,6 +9,7 @@ import {
   waitForServer,
   readResult,
   waitForExit,
+  waitForEvent,
   TEST_CSRF_TOKEN,
 } from "./helpers";
 
@@ -254,6 +255,31 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
 
   // Cleanup
   ac2.abort();
+}, 15_000);
+
+test("agent restart cap → cli broadcasts agent-unavailable end-to-end", async () => {
+  // End-to-end coverage of the dead-agent indicator: the agent's
+  // crash-always hook makes every spawn exit non-zero; with the cap lowered
+  // to 2 (defaults to 5), the cli gives up after the third crash and posts
+  // /api/agent-unavailable. Subscribing first closes the broadcast race —
+  // the event must land within the test timeout.
+  const { filePath } = createTestFile();
+  const { port } = await spawnTracked(filePath, {
+    REDLINE_AGENT_CRASH_ALWAYS: "1",
+    REDLINE_MAX_RESTARTS: "2",
+  });
+  await waitForServer(port);
+
+  const ev = waitForEvent(port, "agent-unavailable", { timeoutMs: 8000 });
+  await ev.ready;
+  const result = await ev;
+
+  expect(result.event).toBe("agent-unavailable");
+  expect(typeof result.data.reason).toBe("string");
+  // The cli's give-up message names the crash count and window, so this
+  // doubles as a check that the reason flowed through end-to-end (cli →
+  // server → SSE → subscriber) rather than the server's default fallback.
+  expect(result.data.reason).toMatch(/crashed/i);
 }, 15_000);
 
 test("agent auto-restarts when it dies unexpectedly", async () => {

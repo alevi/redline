@@ -94,6 +94,7 @@ The Revise button is intentionally **not** styled green. It triggers a non-trivi
 | `accepted` | Human clicks "Revise document" | Agent's cue to run the resolve flow |
 | `finished` | Human clicks "Done" on a round with no comments, or "Looks good — close session" in the diff overlay | Replace body with a "Review complete — close this tab" splash |
 | `reload` | The resolve flow finishes writing the revised document | Full `window.location.reload()` |
+| `agent-unavailable` | CLI hits the agent restart cap (5 in 60s) | Show persistent "Agent offline" pill in header; sticky until page reload |
 
 Soft refresh = `GET /api/comments` then re-render the sidebar. Full reload = `window.location.reload()`. **Use soft refresh for everything except `reload`.** Full reloads scroll to top and feel jarring.
 

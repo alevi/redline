@@ -153,6 +153,19 @@ export function initSSE(): void {
       } catch {}
       window.location.reload();
     });
+    on("agent-unavailable", (e) => {
+      let reason = "Agent process unavailable. Restart redline to recover.";
+      try {
+        const data = JSON.parse(e.data);
+        if (data.reason) reason = data.reason;
+      } catch {}
+      const el = document.getElementById("agent-status");
+      if (el) {
+        el.textContent = "Agent offline";
+        el.setAttribute("title", reason);
+        el.removeAttribute("hidden");
+      }
+    });
     on("finished", () => {
       document.body.innerHTML =
         '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;flex-direction:column;gap:16px;color:#374151"><div style="font-size:48px">\u2713</div><div style="font-size:20px;font-weight:600">Review complete</div><div style="color:#6b7280">You can close this tab and continue in Claude Code.</div></div>';

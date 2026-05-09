@@ -393,6 +393,21 @@ export function createServer(
     return c.json({ ok: true });
   });
 
+  // CLI signals the agent subprocess is gone for good (restart cap exhausted,
+  // missing claude CLI, etc). Surfaces a small persistent indicator in the
+  // header so the user knows replies aren't coming and can restart redline.
+  // No paired "agent-available" event — recovery requires a restart, so the
+  // indicator stays until the page reloads.
+  app.post("/api/agent-unavailable", async (c) => {
+    let reason = "Agent process unavailable.";
+    try {
+      const body = await c.req.json<{ reason?: string }>();
+      if (body.reason?.trim()) reason = body.reason.trim();
+    } catch { /* empty body is fine */ }
+    broadcast("agent-unavailable", { reason });
+    return c.json({ ok: true });
+  });
+
   // Agent signals it is composing a reply (shows typing indicator in thread)
   app.post("/api/comment/:id/thinking", async (c) => {
     const id = c.req.param("id");
