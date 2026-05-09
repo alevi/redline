@@ -64,6 +64,11 @@ function pageTemplate(
         <span class="context-text">${escapeHtml(context)}</span>
         <button class="context-dismiss" onclick="dismissContextBanner()" aria-label="Dismiss">✕</button>
       </div>` : ''}
+      ${!readOnly ? `<div class="first-run-banner" id="first-run-banner" hidden>
+        <span class="first-run-icon" aria-hidden="true">⚠</span>
+        <span class="first-run-text">Redline sends document and comment text to your local Claude Code agent. Use trusted docs.</span>
+        <button class="first-run-dismiss" id="first-run-dismiss" aria-label="Dismiss">Got it</button>
+      </div>` : ''}
       <article class="prose" id="prose">
         ${content}
       </article>
