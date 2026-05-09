@@ -206,10 +206,17 @@ if (args[0] === "resolve") {
       const now = Date.now();
       while (restartTimes.length && now - restartTimes[0] > RESTART_WINDOW_MS) restartTimes.shift();
       if (restartTimes.length >= MAX_RESTARTS) {
+        const reason = `Agent crashed ${restartTimes.length}× in ${RESTART_WINDOW_MS / 1000}s — replies unavailable. Restart redline to recover.`;
         console.error(
-          `\n[redline] Agent crashed ${restartTimes.length}× in ${RESTART_WINDOW_MS / 1000}s — giving up. ` +
-          `Comment replies are unavailable; the review can still be completed manually. Check .review/errors.log.`
+          `\n[redline] ${reason} The review can still be completed manually. Check .review/errors.log.`
         );
+        // Surface the dead-agent state to the browser so the user isn't left
+        // wondering why replies stopped. Best-effort: server may already be down.
+        fetch(`http://localhost:${server.port}/api/agent-unavailable`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Redline-Token": csrfToken },
+          body: JSON.stringify({ reason }),
+        }).catch(() => { /* server already gone */ });
         return;
       }
       restartTimes.push(now);

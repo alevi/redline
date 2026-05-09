@@ -227,6 +227,37 @@ test("watchdog is cleared by /api/reload", async () => {
   await expect(sub).rejects.toThrow(/Timed out/);
 }, 10_000);
 
+test("POST /api/agent-unavailable broadcasts agent-unavailable with reason", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const evP = waitForEvent(port, "agent-unavailable");
+  await evP.ready;
+  await fetch(`http://localhost:${port}/api/agent-unavailable`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({ reason: "Agent crashed 5× in 60s — replies unavailable." }),
+  });
+  const ev = await evP;
+  expect(ev.event).toBe("agent-unavailable");
+  expect(ev.data.reason).toContain("Agent crashed");
+}, 15_000);
+
+test("POST /api/agent-unavailable falls back to a default reason if body is empty", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const evP = waitForEvent(port, "agent-unavailable");
+  await evP.ready;
+  await fetch(`http://localhost:${port}/api/agent-unavailable`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
+  const ev = await evP;
+  expect(ev.data.reason).toBeTruthy();
+  expect(typeof ev.data.reason).toBe("string");
+}, 15_000);
+
 test("POST /api/revision-no-changes broadcasts revision-no-changes", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);

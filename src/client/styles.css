@@ -141,7 +141,34 @@ body {
 .btn-accept:hover:not(:disabled) { border-color: #9ca3af; color: #111827; }
 .btn-accept:disabled { opacity: 0.4; cursor: default; }
 
-.header-actions { display: flex; gap: 8px; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+
+/* Asymmetric status: hidden when healthy, visible only when the agent process
+   is gone for good. Recovery requires restarting redline, so no green/clear
+   counterpart — absence is the signal. */
+.agent-status[hidden] { display: none; }
+.agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #b71c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  cursor: help;
+  user-select: none;
+}
+.agent-status::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b71c1c;
+}
 
 /* ── Prose ── */
 .prose {
