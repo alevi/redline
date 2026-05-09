@@ -111,15 +111,15 @@ The server sends `: ping\n\n` comment frames every 15 seconds to keep the SSE co
 
 ## Server lifecycle
 
-There is no auto-restart. After editing `src/server.ts` or `src/agent.ts`:
+There is no auto-restart. The server binds to an OS-assigned port (`port: 0`, hostname `127.0.0.1`) so you can't kill it by port number — kill the CLI process. After editing `src/server.ts` or `src/agent.ts`:
 
 ```bash
-pkill -f "agent.ts" 2>/dev/null
-lsof -ti:3000 | xargs kill -9 2>/dev/null
+pkill -f "src/cli.ts" 2>/dev/null
+pkill -f "src/agent.ts" 2>/dev/null
 bun run src/cli.ts <file.md> &
 ```
 
-(The CLI also kills the agent on its own SIGINT/SIGTERM, but if you only edited `agent.ts` you can restart just the agent: `pkill -f "agent.ts" && bun src/agent.ts <absolute-path-to-file.md> &`.)
+(The CLI also kills the agent on its own SIGINT/SIGTERM, but if you only edited `agent.ts` you can restart just the agent: `pkill -f "src/agent.ts" && REDLINE_PORT=<port> REDLINE_TOKEN=<token> bun src/agent.ts <absolute-path-to-file.md> &` — port and token come from the printed startup URL and `.review/<file>.startup.json`.)
 
 The browser SSE EventSource auto-reconnects (3s backoff), so the open tab survives a restart — but you still need to hard-reload (Cmd+Shift+R) to pick up new client-side JS.
 
@@ -149,9 +149,33 @@ The round-level button picks its default by the latest verdict on each comment:
 - Any verdict is `revise` → primary = **Revise document** (`/api/accept`).
 - The non-default action is always available as a secondary text link under the banner. Choosing "accept anyway" when comments imply edits triggers a `confirm()` warning.
 
-The agent CLI ([src/agent.ts](src/agent.ts)) gets the verdict by switching `claude -p` from free-text to a JSON contract: `{ "message": "…", "requires_revision": true|false, "reason": "one short sentence" }`. [src/parseReply.ts](src/parseReply.ts) parses it; on any parse failure it falls back to `{ requires_revision: true }` (safe default — better to run an unnecessary revision than silently skip an implied edit).
+The agent CLI ([src/agent.ts](src/agent.ts)) gets the verdict by asking `claude -p` to reply in a delimiter envelope rather than JSON:
+
+```
+REQUIRES_REVISION: <true|false>
+REASON: <one short sentence>
+---MESSAGE---
+<free-form reply prose>
+---END---
+```
+
+JSON was tried first and abandoned: agent replies frequently contain quotes, code fences, and Markdown that the model fails to escape inside a JSON string, which then makes `JSON.parse` blow up on the whole envelope. The delimiter form sidesteps escaping entirely. [src/parseReply.ts](src/parseReply.ts) prefers the delimiter form, accepts the legacy JSON shape as a fallback, and on any parse failure defaults to `{ requires_revision: true }` (safer to run an unnecessary revision than silently skip an implied edit).
 
 The verdict is **agent-owned**. The human cannot flip it directly. Disagreement flows through a follow-up reply, which gives the agent a chance to re-classify rather than be silently overridden.
+
+## Security & resilience as built
+
+These are post-publish hardenings (M5/M8). They're load-bearing — don't regress them when refactoring:
+
+- **Loopback bind.** Server is `Bun.serve({ port: 0, hostname: "127.0.0.1" })` in [src/cli.ts](src/cli.ts). No external interface.
+- **Markdown sanitization.** `marked` v9 stopped sanitizing in-band; we run [`sanitize-html`](src/render.ts) over its output. Tests in [src/render.test.ts](src/render.test.ts) cover the dangerous-payload cases — keep them passing.
+- **CSRF token.** The CLI mints `REDLINE_TOKEN` (a UUID) and threads it to the server (mints from), the agent subprocess (env), and the bundled client (via `window.__REDLINE__`). Mutating endpoints require `X-Redline-Token`. Don't add a mutating endpoint without checking the token.
+- **Realpath on static asset reads.** [src/server.ts](src/server.ts) calls `realpath` before serving anything off disk so a symlink in `.review/history/` can't traverse out.
+- **Cross-process sidecar lock.** [src/sidecar.ts](src/sidecar.ts) layers an in-memory mutex over `proper-lockfile` on `<sidecar>.lock`. Both layers are needed: in-process is the fast path, lockfile catches concurrent processes (e.g. `redline resolve` running while the server is up).
+- **Prompt-input envelopes.** Both `agent.ts` and `resolve.ts` wrap user-controlled text (doc body, comment text) in `---DOCUMENT---` / `---COMMENTS---` style markers before sending to `claude -p`, so a comment that contains "Ignore previous instructions" is recognizable as data, not prompt.
+- **Revision watchdog.** [src/server.ts](src/server.ts) starts a 3-min timer on `/api/accept`. If `/api/reload` doesn't land in time, the round un-resolves and the server broadcasts `revision-stalled`. The revision token in `currentRevision` makes this race-safe — see the comment block at line ~129.
+- **Zombie SSE recovery.** [src/client/sse.ts](src/client/sse.ts) listens for `visibilitychange`/`focus` and runs a 30s heartbeat watchdog while the `.revising` banner is up, so a tab backgrounded across the whole revision recovers when refocused.
+- **Capped agent restart.** [src/cli.ts](src/cli.ts) auto-restarts the agent on unexpected exit but caps at 5 in 60s. If you see "gave up" in the log, something structural is wrong — fix root cause, don't raise the cap.
 
 ## Tests
 
