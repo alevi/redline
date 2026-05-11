@@ -170,6 +170,22 @@ body {
   background: #b71c1c;
 }
 
+/* Persistent neutral pill for --no-agent runs. Communicates "this session is
+   intentionally agent-less", distinct from the asymmetric error variant above. */
+.manual-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  cursor: help;
+  user-select: none;
+}
+
 /* ── Prose ── */
 .prose {
   background: var(--surface);
@@ -942,3 +958,37 @@ del.diff-word-del { background: #fdb8c0; border-radius: 2px; padding: 0 1px; }
   flex-shrink: 0;
 }
 .context-dismiss:hover { opacity: 1; background: rgba(180,83,9,0.1); }
+
+/* ── First-run security banner ── */
+/* Visible only on the first run on a given browser. Dismissal sets
+   localStorage `redline-security-ack` so it never shows again on this
+   machine, regardless of which doc you open. Hidden by default in the
+   HTML; main.ts removes the `hidden` attribute when no ack is found. */
+.first-run-banner[hidden] { display: none; }
+.first-run-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #7f1d1d;
+  line-height: 1.5;
+}
+.first-run-icon { font-size: 14px; flex-shrink: 0; }
+.first-run-text { flex: 1; }
+.first-run-dismiss {
+  background: white;
+  border: 1px solid #fca5a5;
+  color: #7f1d1d;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.first-run-dismiss:hover { background: #fee2e2; }

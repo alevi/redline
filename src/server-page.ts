@@ -18,7 +18,8 @@ function pageTemplate(
   totalRounds: number,
   context?: string,
   readOnly = false,
-  csrfToken = ""
+  csrfToken = "",
+  noAgent = false
 ): string {
   const commentsJson = JSON.stringify(comments);
 
@@ -52,6 +53,7 @@ function pageTemplate(
         </span>
         <div class="header-actions">
           <span id="agent-status" class="agent-status" hidden></span>
+          ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No Claude replies, no revision pass.">Manual mode</span>` : ''}
           ${readOnly
             ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
             : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>
@@ -63,6 +65,11 @@ function pageTemplate(
         <span class="context-label">Context</span>
         <span class="context-text">${escapeHtml(context)}</span>
         <button class="context-dismiss" onclick="dismissContextBanner()" aria-label="Dismiss">✕</button>
+      </div>` : ''}
+      ${!readOnly ? `<div class="first-run-banner" id="first-run-banner" hidden>
+        <span class="first-run-icon" aria-hidden="true">⚠</span>
+        <span class="first-run-text">Redline sends document and comment text to your local Claude Code agent. Use trusted docs.</span>
+        <button class="first-run-dismiss" id="first-run-dismiss" aria-label="Dismiss">Got it</button>
       </div>` : ''}
       <article class="prose" id="prose">
         ${content}
@@ -101,6 +108,7 @@ function pageTemplate(
       totalRounds: ${totalRounds},
       contextTitle: ${JSON.stringify(title)},
       csrfToken: ${JSON.stringify(csrfToken)},
+      noAgent: ${JSON.stringify(noAgent)},
     };
   </script>
   <script src="/client.js" defer></script>

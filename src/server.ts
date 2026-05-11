@@ -34,7 +34,7 @@ function getClientBundle(): Promise<string> {
 
 export function createServer(
   filePath: string,
-  opts: { context?: string; csrfToken?: string } = {}
+  opts: { context?: string; csrfToken?: string; noAgent?: boolean } = {}
 ) {
   const app = new Hono();
   const fileName = path.basename(filePath);
@@ -239,7 +239,7 @@ export function createServer(
     const agentRepliedAt = latestRound?.agent_replied_at ?? null;
     const roundNumber = latestRound?.round ?? 1;
     const totalRounds = sidecar.rounds.length;
-    return c.html(pageTemplate(fileName, html, comments, roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken));
+    return c.html(pageTemplate(fileName, html, comments, roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken, opts.noAgent ?? false));
   });
 
   // Add a comment to the active round
@@ -536,7 +536,8 @@ export function createServer(
       sidecar.rounds.length,
       sidecar.context,
       true,   // readOnly
-      csrfToken
+      csrfToken,
+      opts.noAgent ?? false
     ));
   });
 
