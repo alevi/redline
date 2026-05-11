@@ -110,6 +110,9 @@ if (sessionStorage.getItem("rl-no-changes")) {
 window.addEventListener("scroll", positionCards, { passive: true });
 window.addEventListener("resize", positionCards, { passive: true });
 
+import { initFirstRunBanner } from "./firstRunBanner";
+initFirstRunBanner(document, window);
+
 // Init subsystems
 initSelectionHandlers();
 initDiffHandlers();
