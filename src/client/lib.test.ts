@@ -126,6 +126,106 @@ describe("captureSelection", () => {
     expect(captured!.context_after.startsWith(" adipiscing")).toBe(true);
   });
 
+  test("recovers when selection start has whitespace that the caller trimmed off", () => {
+    setBody(
+      "<div id='prose'><p>" +
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit." +
+        "</p></div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const text = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    const full = text.nodeValue!;
+    // Simulate a selection that includes the leading space before "consectetur"
+    // — caller will .trim() the text but range.startOffset still points at the space.
+    const wsStart = full.indexOf(" consectetur");
+    r.setStart(text, wsStart);
+    r.setEnd(text, wsStart + " consectetur".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(prose, sel as unknown as Selection, "consectetur");
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("consectetur");
+    expect(captured!.context_before.endsWith("amet, ")).toBe(true);
+  });
+
+  test("recovers when selection includes trailing whitespace the caller trimmed off", () => {
+    setBody(
+      "<div id='prose'><p>" +
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit." +
+        "</p></div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const text = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    const full = text.nodeValue!;
+    const start = full.indexOf("consectetur");
+    // Selection extends past the word into the trailing space — caller .trim()s it off.
+    r.setStart(text, start);
+    r.setEnd(text, start + "consectetur ".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(prose, sel as unknown as Selection, "consectetur");
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("consectetur");
+    expect(captured!.context_after.startsWith(" adipiscing")).toBe(true);
+  });
+
+  test("recovers when selection crosses a block boundary (sel.toString inserts \\n\\n, flat does not)", () => {
+    setBody(
+      "<div id='prose'>" +
+        "<p>First paragraph ends here.</p>" +
+        "<p>Second paragraph starts here.</p>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const ps = prose.querySelectorAll("p");
+    const r = document.createRange();
+    const first = ps[0].firstChild!;
+    const second = ps[1].firstChild!;
+    r.setStart(first, first.nodeValue!.indexOf("ends here."));
+    r.setEnd(second, "Second paragraph".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    // The caller passes the trimmed sel.toString(), which in real browsers contains
+    // "ends here.\n\nSecond paragraph". Our captureSelection should still locate it
+    // by falling back to a window search around quoteStart, since flat is just the
+    // concatenated text "ends here.Second paragraph".
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "ends here.Second paragraph",
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("ends here.Second paragraph");
+  });
+
+  test("returns null when selected text doesn't appear anywhere near quoteStart", () => {
+    setBody(
+      "<div id='prose'><p>" +
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." +
+        "</p></div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const text = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    r.setStart(text, 0);
+    r.setEnd(text, 5);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    // The text exists in the doc but far past the ±64 search window from quoteStart=0.
+    const captured = captureSelection(prose, sel as unknown as Selection, "magna aliqua");
+    expect(captured).toBeNull();
+  });
+
   test("returns null when selected text doesn't appear in flat text (e.g. crossed image alt)", () => {
     setBody("<div id='prose'><p>before <img alt='diagram'> after</p></div>");
     const prose = document.getElementById("prose")!;
