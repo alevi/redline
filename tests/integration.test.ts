@@ -286,6 +286,38 @@ test("--context flag persists to sidecar.context on first run", async () => {
   expect(sidecar.context).toBe(ctx);
 }, 15_000);
 
+test("--no-agent skips agent spawn, server stays usable, page reports manual mode", async () => {
+  // The whole point of --no-agent: lightweight Markdown annotation without
+  // requiring claude on PATH or paying for a subprocess. The server still
+  // accepts comments and resolves; the agent is just absent.
+  const { filePath } = createTestFile();
+  const { port, agentReady } = await spawnTracked(filePath, {}, ["--no-agent"]);
+  await waitForServer(port);
+
+  // The agent was never spawned, so its "[agent] connected" line never
+  // arrives — agentReady should still be unresolved well past the window
+  // a real spawn would settle in.
+  let agentConnected = false;
+  agentReady.then(() => { agentConnected = true; });
+  await Bun.sleep(750);
+  expect(agentConnected).toBe(false);
+
+  // Server still serves comments end-to-end; CSRF still required.
+  const post = await fetch(`http://localhost:${port}/api/comment`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({ quote: "first paragraph", context_before: "", context_after: "", message: "manual note" }),
+  });
+  expect(post.status).toBe(200);
+
+  // The rendered page bootstraps noAgent:true into window.__REDLINE__ and
+  // shows the Manual mode pill. Inline-grep the HTML rather than spinning
+  // up a real browser — the bootstrap is what the client actually reads.
+  const html = await fetch(`http://localhost:${port}/`).then((r) => r.text());
+  expect(html).toContain('noAgent: true');
+  expect(html).toContain('Manual mode');
+}, 15_000);
+
 test("agent restart cap → cli broadcasts agent-unavailable end-to-end", async () => {
   // End-to-end coverage of the dead-agent indicator: the agent's
   // crash-always hook makes every spawn exit non-zero; with the cap lowered

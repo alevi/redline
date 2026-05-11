@@ -32,6 +32,7 @@ ThreadEntry { role: human|agent, name?, message, at, requires_revision?, revisio
 ```
 redline <file>                 # opens the review reader; URL is printed and written to .review/<file>.startup.json
 redline <file> --context "..." # opens with a reviewer-supplied focus statement (see "Context-aware prompts" below)
+redline <file> --no-agent      # manual annotation mode — no agent spawn, no claude required on PATH
 redline resolve <file>         # one-shot: read the sidecar, run the revision pass, write back
 ```
 
@@ -69,6 +70,15 @@ Server-side state is bootstrapped into the page as `window.__REDLINE__` ahead of
 - An `inProgress` Set deduplicates so the same comment isn't replied to twice if `comment-reply` fires multiply.
 - `agent-replied` is fired only when `inProgress` drains to zero, so the UI sees one "agent done" event per batch rather than per reply.
 - The CLI installs `exit`/`SIGINT`/`SIGTERM` handlers to kill the agent when the server dies, and auto-restarts the agent on unexpected exit (capped to 5 restarts per 60s window — see [src/cli.ts](src/cli.ts)).
+
+### `--no-agent` (manual mode)
+
+Skips `preflightClaudeCli()` and the agent spawn. The server still serves the page, accepts comments, and resolves them; there's just no agent to reply or revise. The page bootstraps `noAgent: true` into `window.__REDLINE__` and shows a "Manual mode" pill in the header. The client uses the flag to:
+
+- Force the round-level button into **finish** mode (`/api/finish`) regardless of comment count, since `/api/accept` would dead-end on the watchdog with no agent to land `/api/reload`.
+- Suppress the "revise the document anyway" secondary link for the same reason.
+
+Per-comment verdict logic degrades naturally: with no agent there are no `requires_revision` fields, and the existing fallback ("field absent → treated as accept") makes "Accept as-is" the natural finish path.
 
 ## Model picking
 
