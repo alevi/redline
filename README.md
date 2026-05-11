@@ -40,7 +40,9 @@ Two long-lived processes:
 - **Server** ([src/server.ts](src/server.ts)) — renders Markdown, serves the review UI, accepts comment / reply / resolve POSTs, broadcasts SSE events.
 - **Agent** ([src/agent.ts](src/agent.ts)) — child process listening to the SSE stream. Calls `claude -p` to compose replies and post them back. When you accept a round, the agent runs the document revision pass and writes the result to disk.
 
-Review state lives in a sidecar JSON file at `.review/<filename>.json` next to the doc. History snapshots of every revision land in `.review/history/`. Both should be gitignored unless you want them in the repo.
+Review state lives in a sidecar JSON file at `.review/<filename>.json` next to the doc. History snapshots of every revision land in `.review/history/<filename>.<iso>.md` *before* the revision is written, so you can roll back from disk if a revision goes sideways. Both should be gitignored unless you want them in the repo.
+
+After each revision, the browser overlays a side-by-side diff against the previous round so you can read the agent's changes in context. From there you either open another round of comments or click **Looks good** to finish.
 
 [CLAUDE.md](CLAUDE.md) has the full architecture tour: sidecar schema, SSE event vocabulary, model picking, frontend gotchas.
 
