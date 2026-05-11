@@ -120,21 +120,18 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
     <textarea class="reply-input" placeholder="Reply\u2026"></textarea>
     <button class="reply-submit">Send <kbd>\u2318\u21B5</kbd></button>
   `;
-  replyForm.querySelector(".reply-submit")!.addEventListener("click", () => {
-    cb().submitReply(
-      comment.id,
-      (replyForm.querySelector(".reply-input") as HTMLTextAreaElement).value.trim(),
-    );
-  });
+  const sendReply = () => {
+    const ta = replyForm.querySelector(".reply-input") as HTMLTextAreaElement;
+    const message = ta.value.trim();
+    if (!message) return;
+    ta.value = "";
+    cb().submitReply(comment.id, message);
+  };
+  replyForm.querySelector(".reply-submit")!.addEventListener("click", sendReply);
   (replyForm.querySelector(".reply-input") as HTMLTextAreaElement).addEventListener(
     "keydown",
     (e: KeyboardEvent) => {
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-        cb().submitReply(
-          comment.id,
-          (replyForm.querySelector(".reply-input") as HTMLTextAreaElement).value.trim(),
-        );
-      }
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply();
     },
   );
   body.appendChild(replyForm);
