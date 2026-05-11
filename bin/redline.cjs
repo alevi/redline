@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Node-compatible launcher so `npx @alevi/redline <file>` works even when the
+// Node-compatible launcher so `npx @levistudio/redline <file>` works even when the
 // caller doesn't have Bun on PATH yet. Bun is still required at runtime — the
 // server is `Bun.serve()` — but we surface the missing-Bun case as one clean
 // message rather than an opaque shebang/parse failure.
 //
-// On `bunx @alevi/redline`, this file is also the entry point; it just finds
+// On `bunx @levistudio/redline`, this file is also the entry point; it just finds
 // the same Bun that ran it and re-execs `bun run src/cli.ts`. No-op for the
 // caller, single code path for us.
 "use strict";
@@ -42,7 +42,7 @@ if (!bun) {
   process.stderr.write(
     "\nRedline requires Bun. Install it and re-run:\n" +
     "  https://bun.sh\n\n" +
-    "Then: bunx @alevi/redline <file.md>   (or rerun the same npx command)\n\n"
+    "Then: bunx @levistudio/redline <file.md>   (or rerun the same npx command)\n\n"
   );
   process.exit(1);
 }

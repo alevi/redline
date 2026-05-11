@@ -9,10 +9,10 @@ Open a Markdown file, highlight text, leave inline comments, discuss changes wit
 ## Try it in 30 seconds
 
 ```sh
-bunx @alevi/redline ./spec.md
+bunx @levistudio/redline ./spec.md
 ```
 
-(or `npx @alevi/redline ./spec.md` — Bun is required either way.)
+(or `npx @levistudio/redline ./spec.md` — Bun is required either way.)
 
 The terminal prints a `localhost` URL. Cmd-click it. Select any text in the document, type a comment, hit reply. Claude responds in the thread within ~2s. Resolve each comment, then click **Revise document** to have Claude apply the agreed edits back to the file on disk.
 
@@ -59,8 +59,8 @@ After each revision, the browser overlays a side-by-side diff against the previo
 Pass `--context` at startup to tell Claude what you're focused on for the review. The context is shown in a banner above the doc and threaded into both the reply and revision prompts, so the agent can weight its responses accordingly.
 
 ```sh
-bunx @alevi/redline ./spec.md --context "Reviewing for technical accuracy, not prose style."
-bunx @alevi/redline ./api-rfc.md --context "Looking for missing security considerations and breaking changes."
+bunx @levistudio/redline ./spec.md --context "Reviewing for technical accuracy, not prose style."
+bunx @levistudio/redline ./api-rfc.md --context "Looking for missing security considerations and breaking changes."
 ```
 
 The context is persisted in the sidecar on first run, so it carries across rounds and is available the next time you reopen the same review.
@@ -70,7 +70,7 @@ The context is persisted in the sidecar on first run, so it carries across round
 If you just want inline comments on a Markdown file without a Claude conversation, pass `--no-agent`:
 
 ```sh
-bunx @alevi/redline ./spec.md --no-agent
+bunx @levistudio/redline ./spec.md --no-agent
 ```
 
 The server still runs, you can still leave comments and resolve them, but no agent process is spawned and no `claude` binary is required on your PATH. The header shows a "Manual mode" pill so the absence of replies is intentional, not broken. Useful for:
@@ -84,8 +84,8 @@ The server still runs, you can still leave comments and resolve them, but no age
 If you already have a sidecar with resolved comments and just want to apply the revision without the live UI:
 
 ```sh
-bunx @alevi/redline resolve ./spec.md
-bunx @alevi/redline resolve ./spec.md --model claude-sonnet-4-6
+bunx @levistudio/redline resolve ./spec.md
+bunx @levistudio/redline resolve ./spec.md --model claude-sonnet-4-6
 ```
 
 ## Outer-agent handoff (optional)

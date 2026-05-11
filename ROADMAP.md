@@ -4,7 +4,7 @@ This roadmap captures where Redline is heading. It's directional, not a commitme
 
 ## Now
 
-- **Polished launch.** Scoped npm publish (`@alevi/redline`), `npx` / `bunx` parity, GitHub Release, demo GIF that captures the magic moment, landing page.
+- **Polished launch.** Scoped npm publish (`@levistudio/redline`), `npx` / `bunx` parity, GitHub Release, demo GIF that captures the magic moment, landing page.
 - **Stability under real workloads.** Long-document rendering, large sidecars, many-round sessions.
 
 ## Next
