@@ -5,6 +5,8 @@ import { resolve } from "./resolve";
 import { pickReplyModel } from "./pickModel";
 import { parseReply } from "./parseReply";
 import { newEnvelope } from "./promptEnvelope";
+import { contextBlock } from "./contextBlock";
+import { loadSidecar } from "./sidecar";
 
 const filePath = process.argv[2];
 if (!filePath) {
@@ -144,15 +146,19 @@ async function handleComment(commentId: string) {
     await postThinking(commentId);
 
     const docText = await readFile(path.resolve(filePath), "utf-8");
+    const sidecar = await loadSidecar(path.resolve(filePath));
     const env = newEnvelope();
     const threadText = thread
       .map((e: any) => `${e.role === "human" ? "Reviewer" : "Agent"}: ${e.message}`)
       .join("\n");
 
-    // Wrap every user-controlled string (document, quote, thread) in a
-    // per-prompt UUID-anchored envelope so adversarial content inside any
-    // of them can't masquerade as system instructions or as another section.
+    // Wrap every user-controlled string (document, quote, thread, optional
+    // reviewer-supplied context) in a per-prompt UUID-anchored envelope so
+    // adversarial content inside any of them can't masquerade as system
+    // instructions or as another section. The context block is empty when
+    // the user didn't pass --context.
     const userMessage =
+      contextBlock(sidecar.context, env) +
       `## Document\n\n${env.wrap("document", docText)}\n\n---\n\n` +
       `## Comment\n\nQuoted passage:\n${env.wrap("quote", comment.quote)}\n\n` +
       `Thread:\n${env.wrap("thread", threadText)}`;
