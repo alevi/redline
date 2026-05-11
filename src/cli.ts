@@ -2,14 +2,18 @@
 import { existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync, statSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { spawnSync } from "child_process";
+import { createRequire } from "module";
 import path from "path";
 
-// Ensure redline's own dependencies are installed in this checkout before any
-// third-party imports load. `redline` is invoked from arbitrary projects, but
-// its imports resolve against THIS checkout's node_modules. When package.json
-// gains a dep upstream and the user pulls without re-installing, every import
-// below would otherwise blow up with a raw module-not-found and no hint that
-// `bun install` is the fix.
+// Ensure redline's own dependencies are resolvable before any third-party
+// imports load. `redline` is invoked from arbitrary projects: in a checkout
+// they sit in `<root>/node_modules`, but when installed from npm they're
+// hoisted to the consumer's top-level `node_modules`. Use Node's standard
+// module resolution so both layouts are handled.
+//
+// The auto-install fallback is for the checkout case (`git clone` + run
+// without `bun install`). When already installed from a registry, deps are
+// always resolvable and we never fall through to it.
 function preflightDependencies() {
   const root = path.resolve(import.meta.dir, "..");
   const pkgPath = path.join(root, "package.json");
@@ -19,7 +23,10 @@ function preflightDependencies() {
   let pkg: { dependencies?: Record<string, string> };
   try { pkg = JSON.parse(readFileSync(pkgPath, "utf8")); } catch { return; }
   const deps = Object.keys(pkg.dependencies ?? {});
-  const missing = deps.filter((d) => !existsSync(path.join(root, "node_modules", d)));
+  const require = createRequire(pkgPath);
+  const missing = deps.filter((d) => {
+    try { require.resolve(d); return false; } catch { return true; }
+  });
   if (missing.length === 0) return;
   console.log(`[redline] Dependencies missing from ${root}/node_modules: ${missing.join(", ")}`);
   console.log(`[redline] Running \`bun install\` in the redline checkout…`);
