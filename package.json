@@ -1,5 +1,5 @@
 {
-  "name": "@alevi/redline",
+  "name": "@levistudio/redline",
   "version": "0.1.0",
   "description": "Inline comments on Markdown files, for human-in-the-loop AI doc review.",
   "keywords": [
@@ -19,7 +19,7 @@
     "url": "git+https://github.com/alevi/redline.git"
   },
   "license": "MIT",
-  "author": "alevi",
+  "author": "Alon Levi <alonlevi@gmail.com>",
   "bin": {
     "redline": "bin/redline.cjs"
   },

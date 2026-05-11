@@ -5,11 +5,11 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 ## [Unreleased]
 
 ### Added
-- Node-compatible launcher (`bin/redline.cjs`) so `npx @alevi/redline <file>` works alongside `bunx`.
+- Node-compatible launcher (`bin/redline.cjs`) so `npx @levistudio/redline <file>` works alongside `bunx`.
 - `ROADMAP.md` and this changelog.
 
 ### Changed
-- Package renamed to scoped `@alevi/redline` for npm publishing.
+- Package renamed to scoped `@levistudio/redline` for npm publishing.
 - README rewritten around the AI-doc-review use case.
 
 ## [0.1.0] - 2026-05-09
