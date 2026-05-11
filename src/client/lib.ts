@@ -111,7 +111,17 @@ export function captureSelection(prose: Element, sel: Selection, text: string): 
   }
 
   const slice = flat.slice(quoteStart, quoteStart + text.length);
-  if (slice !== text) return null;
+  if (slice !== text) {
+    // Trimming in the caller, or block-boundary newlines that sel.toString()
+    // inserts but our flat-text walker doesn't, can shift the true start a
+    // few chars away from range.startOffset. Search a small window around
+    // quoteStart for the text before giving up.
+    const windowStart = Math.max(0, quoteStart - 64);
+    const windowEnd = Math.min(flat.length, quoteStart + text.length + 64);
+    const found = flat.indexOf(text, windowStart);
+    if (found === -1 || found >= windowEnd) return null;
+    quoteStart = found;
+  }
 
   return {
     quote: text,
