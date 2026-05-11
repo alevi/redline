@@ -26,6 +26,7 @@
   "files": [
     "bin",
     "src",
+    "!src/**/*.test.ts",
     "scripts/install-skill.sh",
     "skills",
     "README.md",
