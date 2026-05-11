@@ -306,9 +306,15 @@ export function applyRoundState(): void {
     btnAccept.disabled = hasOpen;
     document.getElementById("round-secondary")?.remove();
     if (hasOpen) {
-      btnAccept.dataset.mode = "accept";
+      // In manual (--no-agent) mode there's no agent to run a revision pass,
+      // so the round-level button stays in finish mode regardless of how
+      // many comments are open. The "Revise document" affordance would
+      // dead-end on the watchdog if clicked.
+      const mode = state.noAgent ? "finish" : "accept";
+      const label = state.noAgent ? "Finish review" : "Revise document";
+      btnAccept.dataset.mode = mode;
       btnAccept.classList.remove("revise-tinted");
-      btnAccept.textContent = "Revise document";
+      btnAccept.textContent = label;
       if (banner && !errorShowing) {
         banner.classList.remove("revising");
         banner.style.display = "none";
@@ -342,7 +348,11 @@ export function applyRoundState(): void {
         banner.style.display = "block";
       }
 
-      const sidebar = document.querySelector(".sidebar-col");
+      // Manual mode skips the secondary action: there's no agent to run the
+      // revision pass, so "revise the document anyway" would dead-end, and
+      // "accept as-is without revising" can't appear because every comment
+      // is treated as accept by the verdict-fallback path.
+      const sidebar = state.noAgent ? null : document.querySelector(".sidebar-col");
       if (sidebar) {
         const sec = document.createElement("div");
         sec.id = "round-secondary";

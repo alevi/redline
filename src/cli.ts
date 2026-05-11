@@ -117,7 +117,12 @@ if (args[0] === "resolve") {
     console.error(`File not found: ${resolved}`);
     process.exit(1);
   }
-  preflightClaudeCli();
+  const noAgent = args.includes("--no-agent");
+
+  // Manual annotation mode skips both the preflight and the agent spawn —
+  // the user just wants inline comments without a Claude conversation, so
+  // requiring claude on PATH would be a hostile gate.
+  if (!noAgent) preflightClaudeCli();
 
   const contextFlag = args.indexOf("--context");
   const context = contextFlag !== -1 ? args[contextFlag + 1] : undefined;
@@ -147,7 +152,7 @@ if (args[0] === "resolve") {
   // caller can pin the token if it needs to.
   const csrfToken = process.env.REDLINE_TOKEN ?? crypto.randomUUID();
 
-  const app = createServer(resolved, { context, csrfToken });
+  const app = createServer(resolved, { context, csrfToken, noAgent });
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch, idleTimeout: 0 });
   const url = `http://localhost:${server.port}`;
 
@@ -177,6 +182,7 @@ if (args[0] === "resolve") {
   console.log(`  URL:  ${url}`);
   console.log(`  Result: ${resultFile}`);
   console.log(`${bar}`);
+  if (noAgent) console.log(`  Mode: manual annotation (--no-agent — no Claude replies, no revision pass)`);
   if (!autoOpen) console.log(`\n  → cmd-click the URL when you're ready to review\n`);
   else console.log("");
 
@@ -228,7 +234,7 @@ if (args[0] === "resolve") {
       spawnAgent();
     });
   }
-  spawnAgent();
+  if (!noAgent) spawnAgent();
 
   // Graceful shutdown: SIGTERM first so agent.ts can flush in-flight HTTP
   // posts and close its SSE connection cleanly, then SIGKILL after 2s if

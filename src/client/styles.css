@@ -170,6 +170,22 @@ body {
   background: #b71c1c;
 }
 
+/* Persistent neutral pill for --no-agent runs. Communicates "this session is
+   intentionally agent-less", distinct from the asymmetric error variant above. */
+.manual-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  cursor: help;
+  user-select: none;
+}
+
 /* ── Prose ── */
 .prose {
   background: var(--surface);
