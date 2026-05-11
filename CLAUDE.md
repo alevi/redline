@@ -201,3 +201,7 @@ These are post-publish hardenings (M5/M8). They're load-bearing — don't regres
 ## Tests
 
 `bun test` runs the suite. Server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, and happy-dom client tests all live in `tests/` and `src/`.
+
+## Closeout
+
+When the user asks to "close out" a fix/patch/feature after its PR is open, additional dev-process steps apply. They're not documented in this public file — check `CLAUDE.local.md` at the repo root, or fall back to project memory.
