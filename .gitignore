@@ -11,6 +11,7 @@ dist/
 
 # Private dev notes — retros, internal scoping, working docs. Kept on
 # local disk for development context but excluded from the public repo.
+CLAUDE.local.md
 docs/roadmap.md
 docs/retro.md
 docs/retros/
