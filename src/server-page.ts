@@ -48,7 +48,7 @@ function pageTemplate(
                 const label = n === totalRounds ? 'Round ' + n + ' — current' : 'Round ' + n;
                 return `<a class="round-picker-item${isCurrent ? ' current' : ''}" href="${href}">${label}</a>`;
               }).join('')
-            }</div>` : ''}
+            }${!readOnly ? `<button class="round-picker-item round-picker-action" id="btn-compare" type="button">Compare with previous →</button>` : ''}</div>` : ''}
           </span>
         </span>
         <div class="header-actions">
@@ -56,8 +56,7 @@ function pageTemplate(
           ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No Claude replies, no revision pass.">Manual mode</span>` : ''}
           ${readOnly
             ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
-            : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>
-               ${totalRounds > 1 ? `<button class="btn-diff-compare" id="btn-compare">Compare with previous</button>` : ''}`
+            : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>`
           }
         </div>
       </div>
