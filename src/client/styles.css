@@ -58,7 +58,6 @@ body {
   font-weight: 500;
   color: var(--text-muted);
   letter-spacing: 0.02em;
-  text-transform: uppercase;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -110,6 +109,16 @@ body {
 .round-picker-item:hover { background: var(--thread-bg); }
 .round-picker-item.current { font-weight: 600; pointer-events: none; color: var(--text-muted); }
 .round-picker-meta { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+.round-picker-action {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--accent);
+}
 
 .btn-resolve {
   background: var(--accent);
@@ -826,17 +835,6 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
 ins.diff-word-add { background: #acf2bd; text-decoration: none; border-radius: 2px; padding: 0 1px; }
 del.diff-word-del { background: #fdb8c0; border-radius: 2px; padding: 0 1px; }
 .diff-no-changes { padding: 24px 0; color: var(--text-muted); }
-.btn-diff-compare {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: white;
-  cursor: pointer;
-  color: var(--text-muted);
-  transition: all 0.1s;
-}
-.btn-diff-compare:hover { color: var(--text); border-color: #aaa; }
 .btn-diff-accept {
   background: #2e7d32;
   color: white;
