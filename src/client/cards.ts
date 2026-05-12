@@ -166,9 +166,10 @@ function buildThreadEntry(entry: ThreadEntry, isLatestVerdict: boolean): HTMLDiv
     const reason = entry.revision_reason ? escapeHtml(entry.revision_reason) : "edit queued";
     verdictHtml = `<div class="verdict revise"><span class="verdict-icon">\u270E</span><span>${reason}</span></div>`;
   }
+  const messageHtml = entry.messageHtml ?? escapeHtml(entry.message);
   div.innerHTML = `
     <div class="thread-role ${role}">${escapeHtml(label)}</div>
-    <div class="thread-message">${escapeHtml(entry.message)}</div>
+    <div class="thread-message">${messageHtml}</div>
     ${verdictHtml}
   `;
   return div;

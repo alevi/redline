@@ -1,5 +1,3 @@
-import type { Comment } from "./sidecar";
-
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -11,7 +9,7 @@ function escapeHtml(s: string): string {
 function pageTemplate(
   title: string,
   content: string,
-  comments: Comment[],
+  comments: unknown[],
   roundResolved: boolean,
   agentRepliedAt: string | null,
   roundNumber: number,

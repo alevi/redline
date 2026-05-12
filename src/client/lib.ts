@@ -16,6 +16,10 @@ export type ThreadEntry = {
   role?: "human" | "agent";
   name?: string;
   message: string;
+  // Server-rendered sanitized HTML for `message`. Present on entries
+  // delivered through the API/bootstrap; absent on entries the client
+  // builds locally before the next refresh. Falls back to escaped text.
+  messageHtml?: string;
   requires_revision?: boolean;
   revision_reason?: string;
 };

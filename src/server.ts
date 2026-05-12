@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { readFile, realpath } from "fs/promises";
 import path from "path";
-import { renderMarkdown } from "./render";
+import { renderMarkdown, renderMessageMarkdown } from "./render";
 import { renderDocDiff } from "./diff";
 import { pageTemplate } from "./server-page";
 import {
@@ -12,6 +12,22 @@ import {
   activeRound,
   type Comment,
 } from "./sidecar";
+
+// Attach a sanitized HTML rendering of each thread message so the client
+// can show markdown formatting (bold, lists, inline code) instead of the
+// raw source. Done server-side because renderMarkdown depends on marked +
+// sanitize-html which are Node-targeted. The HTML is added as a `messageHtml`
+// field alongside the original `message` so callers that read the source
+// (eg. agent prompt building) are unaffected.
+export function serializeCommentsForClient(comments: Comment[]): unknown[] {
+  return comments.map((c) => ({
+    ...c,
+    thread: c.thread.map((e) => ({
+      ...e,
+      messageHtml: renderMessageMarkdown(e.message),
+    })),
+  }));
+}
 
 // Bundle the client JS once per server lifetime. The build is ~50-100ms — felt
 // only at server startup, not on page loads (the bundle is cached in memory)
@@ -239,7 +255,7 @@ export function createServer(
     const agentRepliedAt = latestRound?.agent_replied_at ?? null;
     const roundNumber = latestRound?.round ?? 1;
     const totalRounds = sidecar.rounds.length;
-    return c.html(pageTemplate(fileName, html, comments, roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken, opts.noAgent ?? false));
+    return c.html(pageTemplate(fileName, html, serializeCommentsForClient(comments), roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken, opts.noAgent ?? false));
   });
 
   // Add a comment to the active round
@@ -482,7 +498,7 @@ export function createServer(
     const sidecar = await loadSidecar(filePath);
     const latestRound = sidecar.rounds[sidecar.rounds.length - 1] ?? null;
     return c.json({
-      comments: latestRound?.comments ?? [],
+      comments: serializeCommentsForClient(latestRound?.comments ?? []),
       roundResolved: latestRound?.resolved_at != null,
       totalRounds: sidecar.rounds.length,
     });
@@ -529,7 +545,7 @@ export function createServer(
     return c.html(pageTemplate(
       fileName,
       html,
-      roundData.comments,
+      serializeCommentsForClient(roundData.comments),
       true,   // treat as resolved (read-only)
       roundData.agent_replied_at ?? null,
       n,

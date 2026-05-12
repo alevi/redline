@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { renderMarkdown, locateQuote } from "./render";
+import { renderMarkdown, renderMessageMarkdown, locateQuote } from "./render";
 
 describe("renderMarkdown", () => {
   test("renders headings", () => {
@@ -101,6 +101,49 @@ describe("renderMarkdown — XSS sanitization", () => {
     const html = renderMarkdown('<p class="evil-class">hello</p>\n');
     expect(html).toContain("hello");
     expect(html).not.toContain("evil-class");
+  });
+});
+
+describe("renderMessageMarkdown", () => {
+  test("renders agent-style numbered list with bold labels", () => {
+    const msg = [
+      "Here are two directions:",
+      "",
+      "1. **Structure-forward:** keeps the original frame",
+      "2. **Season-forward:** leans on year-round wear",
+    ].join("\n");
+    const html = renderMessageMarkdown(msg);
+    expect(html).toContain("<ol>");
+    expect(html).toContain("<strong>Structure-forward:</strong>");
+    expect(html).toContain("<strong>Season-forward:</strong>");
+  });
+
+  test("renders inline code and fenced code blocks", () => {
+    const html = renderMessageMarkdown("Use `foo` like:\n\n```\nfoo()\n```");
+    expect(html).toContain("<code>foo</code>");
+    expect(html).toMatch(/<pre><code[^>]*>foo\(\)/);
+  });
+
+  test("preserves http/https links", () => {
+    const html = renderMessageMarkdown("see [docs](https://example.com)");
+    expect(html).toContain('href="https://example.com"');
+  });
+
+  test("strips javascript: URLs from inline links", () => {
+    const html = renderMessageMarkdown("click [here](javascript:alert(1))");
+    expect(html).not.toContain("javascript:");
+  });
+
+  test("strips raw <script> tags inside agent prose", () => {
+    const html = renderMessageMarkdown("ok <script>alert(1)</script> done");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("ok");
+    expect(html).toContain("done");
+  });
+
+  test("plain prose still produces a paragraph wrapper", () => {
+    const html = renderMessageMarkdown("Fair point.");
+    expect(html).toContain("<p>Fair point.</p>");
   });
 });
 
