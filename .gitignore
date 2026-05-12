@@ -4,6 +4,7 @@ node_modules/
 dist/
 .DS_Store
 .claude/worktrees/
+.claude/*.lock
 
 # Review sidecars — gitignore these if you don't want reviews in the repo
 # (remove this line if you want to commit review files)
