@@ -484,6 +484,57 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
   font-size: 13.5px;
   line-height: 1.5;
   color: var(--text);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.thread-message > :first-child { margin-top: 0; }
+.thread-message > :last-child { margin-bottom: 0; }
+.thread-message p {
+  margin: 0 0 8px;
+}
+.thread-message ul,
+.thread-message ol {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+}
+.thread-message li { margin: 2px 0; }
+.thread-message li > p { margin: 0; }
+.thread-message code {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12.5px;
+}
+.thread-message pre {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 8px 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 4px 0 8px;
+}
+.thread-message pre code {
+  background: transparent;
+  padding: 0;
+}
+.thread-message blockquote {
+  margin: 4px 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--border, #ddd);
+  color: var(--text-muted, #666);
+}
+.thread-message h1,
+.thread-message h2,
+.thread-message h3,
+.thread-message h4 {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin: 4px 0;
+}
+.thread-message a {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 /* ── Verdict footer on agent replies ── */

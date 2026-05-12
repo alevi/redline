@@ -116,6 +116,91 @@ test("GET /api/comments returns comments, roundResolved, and totalRounds", async
   expect(data.totalRounds).toBe(1);
 }, 15_000);
 
+test("GET /api/comments renders thread messageHtml from markdown", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  await postComment(port, { quote: "first paragraph" }, "make it **bold** and a `code` thing");
+  const res = await fetch(`http://localhost:${port}/api/comments`);
+  const data = await res.json();
+
+  expect(data.comments[0].thread[0].message).toContain("**bold**");
+  expect(data.comments[0].thread[0].messageHtml).toContain("<strong>bold</strong>");
+  expect(data.comments[0].thread[0].messageHtml).toContain("<code>code</code>");
+}, 15_000);
+
+test("GET /api/comments sanitizes dangerous html in thread messages", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  await postComment(port, { quote: "first paragraph" }, "<script>alert(1)</script>ok");
+  const res = await fetch(`http://localhost:${port}/api/comments`);
+  const data = await res.json();
+
+  expect(data.comments[0].thread[0].messageHtml).not.toContain("<script>");
+  expect(data.comments[0].thread[0].messageHtml).toContain("ok");
+}, 15_000);
+
+test("GET /api/comments renders agent replies posted through /reply", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const c = await postComment(port, { quote: "first paragraph" }, "what about this?");
+  const reply = await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({
+      role: "agent",
+      name: "Claude",
+      message: "Here are options:\n\n1. **First** option\n2. **Second** option",
+      requires_revision: false,
+    }),
+  });
+  expect(reply.ok).toBe(true);
+
+  const data = await (await fetch(`http://localhost:${port}/api/comments`)).json();
+  const agentEntry = data.comments[0].thread[1];
+  expect(agentEntry.role).toBe("agent");
+  expect(agentEntry.messageHtml).toContain("<ol>");
+  expect(agentEntry.messageHtml).toContain("<strong>First</strong>");
+  expect(agentEntry.messageHtml).toContain("<strong>Second</strong>");
+}, 15_000);
+
+test("GET / bootstraps __REDLINE__.comments with messageHtml per thread entry", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  await postComment(port, { quote: "first paragraph" }, "make it **stronger**");
+
+  const html = await (await fetch(`http://localhost:${port}/`)).text();
+  const m = html.match(/window\.__REDLINE__\s*=\s*\{[^]*?comments:\s*(\[[^]*?\])\s*,\s*roundResolved:/);
+  expect(m).not.toBeNull();
+  const comments = JSON.parse(m![1]);
+  expect(comments).toHaveLength(1);
+  expect(comments[0].thread[0].messageHtml).toContain("<strong>stronger</strong>");
+}, 15_000);
+
+test("GET /round/:n bootstraps messageHtml for the rendered round", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const c = await postComment(port, { quote: "first paragraph" }, "tighten this");
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({
+      role: "agent",
+      name: "Claude",
+      message: "Two options: `a` and **b**.",
+      requires_revision: true,
+    }),
+  });
+
+  const html = await (await fetch(`http://localhost:${port}/round/1`)).text();
+  expect(html).toContain("<code>a</code>");
+  expect(html).toContain("<strong>b</strong>");
+}, 15_000);
+
 // ── /api/comment/:id/resolve and /reopen ──────────────────────────────────
 
 test("POST /api/comment/:id/resolve marks resolved and reports allResolved", async () => {

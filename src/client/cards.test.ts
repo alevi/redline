@@ -126,3 +126,65 @@ describe("reply form submit", () => {
     expect(ta.value).toBe("   ");
   });
 });
+
+describe("thread message markdown", () => {
+  test("renders messageHtml when present instead of escaping the raw message", async () => {
+    const { buildCommentCard, setCardCallbacks } = await loadCards();
+    setCardCallbacks({
+      focusComment: () => {},
+      updateNav: () => {},
+      positionCards: () => {},
+      resolveComment: () => {},
+      reopenComment: () => {},
+      toggleReplyForm: () => {},
+      submitReply: () => {},
+    });
+
+    const card = buildCommentCard({
+      id: "c-md",
+      quote: "hi",
+      resolved: false,
+      thread: [
+        {
+          role: "agent",
+          name: "Claude",
+          message: "Here are **two** options:\n1. first\n2. second",
+          messageHtml: "<p>Here are <strong>two</strong> options:</p><ol><li>first</li><li>second</li></ol>",
+        },
+      ],
+    });
+    document.body.appendChild(card);
+
+    const msg = card.querySelector(".thread-message") as HTMLDivElement;
+    expect(msg.querySelector("strong")?.textContent).toBe("two");
+    expect(msg.querySelectorAll("ol li").length).toBe(2);
+    expect(msg.textContent).not.toContain("**");
+  });
+
+  test("falls back to escaped text when messageHtml is absent", async () => {
+    const { buildCommentCard, setCardCallbacks } = await loadCards();
+    setCardCallbacks({
+      focusComment: () => {},
+      updateNav: () => {},
+      positionCards: () => {},
+      resolveComment: () => {},
+      reopenComment: () => {},
+      toggleReplyForm: () => {},
+      submitReply: () => {},
+    });
+
+    const card = buildCommentCard({
+      id: "c-plain",
+      quote: "hi",
+      resolved: false,
+      thread: [
+        { role: "human", message: "raw <script>alert(1)</script> text" },
+      ],
+    });
+    document.body.appendChild(card);
+
+    const msg = card.querySelector(".thread-message") as HTMLDivElement;
+    expect(msg.querySelector("script")).toBeNull();
+    expect(msg.textContent).toContain("<script>");
+  });
+});

@@ -57,6 +57,15 @@ export function renderMarkdown(content: string): string {
   );
 }
 
+// Render a comment-thread message through the same sanitized markdown
+// pipeline as the document body. Agents reply in markdown (bold, lists,
+// inline code, occasional fenced blocks) and the chat-style rendering in
+// the sidebar previously displayed the raw `**bold**` and `1.` syntax,
+// which looked like the agent had failed to render its own output.
+export function renderMessageMarkdown(content: string): string {
+  return renderMarkdown(content);
+}
+
 /**
  * Locate where a quoted passage starts inside the flat text of a document.
  *
