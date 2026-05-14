@@ -52,6 +52,7 @@ function pageTemplate(
         <div class="header-actions">
           <span id="agent-status" class="agent-status" hidden></span>
           ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No Claude replies, no revision pass.">Manual mode</span>` : ''}
+          ${!readOnly && totalRounds > 1 ? `<button class="btn-toggle-diff" id="btn-toggle-diff" type="button" aria-pressed="false">Show changes</button>` : ''}
           ${readOnly
             ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
             : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>`

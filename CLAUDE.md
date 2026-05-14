@@ -53,6 +53,16 @@ Client-side JS lives in [src/client/main.js](src/client/main.js). It is bundled 
 
 Server-side state is bootstrapped into the page as `window.__REDLINE__` ahead of the bundle.
 
+### Inline diff toggle
+
+After a revision pass, the new round opens with the document rendered **as the diff** (block-level insert/delete bands, word-level `<ins>`/`<del>` marks for modified paragraphs). A header toggle (`#btn-toggle-diff`, "Show changes" / "Hide changes") flips between diff view and clean view. The toggle is only rendered on rounds 2+ in the live view — round 1 has nothing to compare against, and the read-only `/round/:n` views can't use `/api/diff` honestly because that endpoint always compares the current file to the most recent snapshot.
+
+- Pure swap helpers (`applyDiffSwap`, `revertDiffSwap`, `updateToggleButton`, `diffStateKey`) live in [src/client/diffToggle.ts](src/client/diffToggle.ts) with tests in [src/client/diffToggle.test.ts](src/client/diffToggle.test.ts). DOM + network glue is in [src/client/diff.ts](src/client/diff.ts).
+- Diff HTML is fetched lazily from `/api/diff` and cached in-module; the original clean innerHTML is captured on the first swap so toggling back is a pure restore (no second fetch, no server round trip).
+- Per-file state is persisted in `sessionStorage` under `rl-diff-on-<title>` so soft refreshes don't reset the view. Auto-enabled on round open when `just-revised` is set.
+- After every swap, both `applyHighlights()` and `renderComments()` re-run because the prose DOM was rebuilt and comment marks/cards need to re-anchor.
+- Commenting stays enabled in diff mode. Quotes captured against diff text may include `<ins>`/`<del>` boundaries; flipping back to clean view can fail to highlight those comments. Accepted tradeoff.
+
 ## Design decisions worth knowing
 
 - **Free-text comments only.** Typed actions (`[expand]`, `[challenge]`, `[cut]`) are a future direction; don't add structure prematurely.

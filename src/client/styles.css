@@ -150,6 +150,23 @@ body {
 .btn-accept:hover:not(:disabled) { border-color: #9ca3af; color: #111827; }
 .btn-accept:disabled { opacity: 0.4; cursor: default; }
 
+.btn-toggle-diff {
+  background: white;
+  color: #374151;
+  border: 1.5px solid #d1d5db;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.btn-toggle-diff:hover { border-color: #9ca3af; color: #111827; }
+.btn-toggle-diff.active {
+  background: #f3f4f6;
+  color: #111827;
+}
+
 .header-actions { display: flex; gap: 8px; align-items: center; }
 
 /* Asymmetric status: hidden when healthy, visible only when the agent process
@@ -881,7 +898,8 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
 .diff-prose li { margin: 0.3em 0; line-height: 1.7; }
 .diff-block { border-radius: 4px; margin: 2px -12px; padding: 2px 12px; }
 .diff-block-add { background: #e6ffed; border-left: 3px solid #28a745; }
-.diff-block-del { background: #ffeef0; border-left: 3px solid #d73a49; opacity: 0.8; }
+.diff-block-del { background: #ffeef0; border-left: 3px solid #d73a49; opacity: 0.8; text-decoration: line-through; text-decoration-color: #b91c2c; text-decoration-thickness: 1.5px; }
+.diff-block-del a { text-decoration: line-through; }
 .diff-block-mod { background: #fffbe6; border-left: 3px solid #f0ad00; }
 ins.diff-word-add { background: #acf2bd; text-decoration: none; border-radius: 2px; padding: 0 1px; }
 del.diff-word-del { background: #fdb8c0; border-radius: 2px; padding: 0 1px; }
@@ -928,46 +946,6 @@ del.diff-word-del { background: #fdb8c0; border-radius: 2px; padding: 0 1px; }
   text-align: center;
   opacity: 0.75;
 }
-
-/* ── Revision banner ── */
-.revision-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: var(--radius);
-  margin-bottom: 14px;
-  font-size: 13.5px;
-  color: #1e40af;
-}
-.revision-banner-text { flex: 1; }
-.revision-banner-link {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #1d4ed8;
-  font-size: 13.5px;
-  font-weight: 500;
-  padding: 0;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.revision-banner-link:hover { color: #1e40af; }
-.revision-banner-dismiss {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #60a5fa;
-  font-size: 13px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  line-height: 1;
-  opacity: 0.7;
-  flex-shrink: 0;
-}
-.revision-banner-dismiss:hover { opacity: 1; background: rgba(96,165,250,0.15); }
 
 /* ── Context banner ──
    Muted left-accent stripe; the styling itself signals "framing for what
