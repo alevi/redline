@@ -1,0 +1,65 @@
+name: Use case
+description: Tell us how you're using Redline (or want to use it). Helps shape the roadmap.
+labels: [use-case]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not a bug, not a feature request — a story about how Redline fits (or doesn't fit) into your work. These help calibrate where the tool should grow.
+
+        The README lists five use cases the tool is shaped for:
+
+        - Reviewing AI-generated PRDs
+        - Reviewing architecture specs
+        - Reviewing README drafts
+        - Approving Claude Code output before merge
+        - Human approval loops for agent-written docs
+
+        If your case is one of these, great — say so. If it's something else, even better.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you're doing with it
+      description: One short paragraph. The actual workflow, not the aspiration.
+      placeholder: |
+        e.g. "I'm using it to review weekly retrospectives my agent writes for me. The agent drafts a one-pager every Friday afternoon; I open it in Redline on Monday morning to push back on framing before we share it with the team."
+    validations:
+      required: true
+
+  - type: textarea
+    id: works
+    attributes:
+      label: What's working
+      description: What does Redline do well for this case?
+    validations:
+      required: false
+
+  - type: textarea
+    id: friction
+    attributes:
+      label: What's not working
+      description: Where does it get in your way? What do you wish behaved differently?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often you reach for it
+      options:
+        - Daily
+        - A few times a week
+        - Weekly
+        - Occasionally
+        - Tried it once
+    validations:
+      required: false
+
+  - type: textarea
+    id: who
+    attributes:
+      label: A line about you (optional)
+      description: Engineer? PM? Solo founder? Helps us understand who's actually using it.
+    validations:
+      required: false
