@@ -193,17 +193,43 @@ describe("captureSelection", () => {
     sel.removeAllRanges();
     sel.addRange(r);
 
-    // The caller passes the trimmed sel.toString(), which in real browsers contains
-    // "ends here.\n\nSecond paragraph". Our captureSelection should still locate it
-    // by falling back to a window search around quoteStart, since flat is just the
-    // concatenated text "ends here.Second paragraph".
+    // Real browsers' sel.toString() inserts "\n\n" between blocks, so the
+    // caller passes "ends here.\n\nSecond paragraph". flat is the concatenated
+    // text "ends here.Second paragraph", so captureSelection must normalize
+    // away the block-boundary newlines before matching.
     const captured = captureSelection(
       prose,
       sel as unknown as Selection,
-      "ends here.Second paragraph",
+      "ends here.\n\nSecond paragraph",
     );
     expect(captured).not.toBeNull();
     expect(captured!.quote).toBe("ends here.Second paragraph");
+  });
+
+  test("recovers when selection crosses a heading into a paragraph", () => {
+    setBody(
+      "<div id='prose'>" +
+        "<h3>A subsection (H3)</h3>" +
+        "<p>Specs typically nest. This is an H3 heading.</p>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const h3 = prose.querySelector("h3")!.firstChild!;
+    const p = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    r.setStart(h3, 0);
+    r.setEnd(p, "Specs typically nest.".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "A subsection (H3)\n\nSpecs typically nest.",
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("A subsection (H3)Specs typically nest.");
   });
 
   test("returns null when selected text doesn't appear anywhere near quoteStart", () => {
