@@ -4,17 +4,23 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-11
+
 ### Added
-- Node-compatible launcher (`bin/redline.cjs`) so `npx @levistudio/redline <file>` works alongside `bunx`.
-- `ROADMAP.md` and this changelog.
+- **Inline diff view** with a header toggle on revised rounds ([#79](https://github.com/alevi/redline/pull/79)). After a revision pass, the document opens with the diff rendered in place — block-level insert/delete bands and word-level marks for modified paragraphs. `Show changes` / `Hide changes` in the header flips between diff and clean view at any time. View choice persists per file in `sessionStorage`.
+- **Markdown rendering in agent thread replies** ([#75](https://github.com/alevi/redline/pull/75)). Agent replies in the sidebar now render `**bold**`, lists, inline `code`, fenced blocks, and links instead of showing raw markdown. Same `marked` + `sanitize-html` pipeline as the document body.
 
 ### Changed
-- Package renamed to scoped `@levistudio/redline` for npm publishing.
-- README rewritten around the AI-doc-review use case.
+- **Doc header decluttered** ([#74](https://github.com/alevi/redline/pull/74)). `Compare with previous` moved out of the header and into the round-badge dropdown (only when there's a prior round to compare against). Filename no longer renders all-caps.
+- **Banner hierarchy fixed** ([#77](https://github.com/alevi/redline/pull/77)). The reviewer's `--context` focus now reads at full document weight with a 3px accent stripe; the first-run safety notice is demoted to a muted inline line with an underlined "Got it" link. Importance now matches behavior: context shapes every reply for the session, the safety notice is once-per-machine.
 
-## [0.1.0] - 2026-05-09
+### Fixed
+- **Selections spanning a heading into a paragraph** ([#78](https://github.com/alevi/redline/pull/78)) are no longer rejected. The browser's `Selection.toString()` emits `\n\n` between blocks; `captureSelection` now normalizes those before searching the document text, and `highlightText` stores the normalized form so the highlight survives re-renders.
+- Block-level deletes in the diff view now render with strikethrough (previously only word-level deletes inside modified paragraphs were struck through) ([#79](https://github.com/alevi/redline/pull/79)).
 
-Initial public release.
+## [0.1.0] - 2026-05-11
+
+Initial public release on npm as `@levistudio/redline`.
 
 ### Added
 - Local review reader (Bun + Hono server, browser UI) for Markdown files.
@@ -25,6 +31,8 @@ Initial public release.
 - Verdict-aware resolve: every agent reply ships with `requires_revision` so the round-level button auto-defaults to **Revise document** or **Accept as-is**.
 - One-shot revision command: `redline resolve <file> [--model <id>]`.
 - `redline-review` skill for outer-agent handoff (Claude Code etc.).
+- Node-compatible launcher (`bin/redline.cjs`) so `npx @levistudio/redline <file>` works alongside `bunx`.
+- `ROADMAP.md` and this changelog.
 - CSRF token on every mutating `/api/*` request.
 - Cross-process file lock around sidecar transactions.
 - `realpath` check on the static-asset route to block symlink escapes.
@@ -33,5 +41,6 @@ Initial public release.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/alevi/redline/releases/tag/v0.2.0
 [0.1.0]: https://github.com/alevi/redline/releases/tag/v0.1.0
