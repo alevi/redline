@@ -114,23 +114,29 @@ export function captureSelection(prose: Element, sel: Selection, text: string): 
     return { quote: text, context_before: "", context_after: "" };
   }
 
-  const slice = flat.slice(quoteStart, quoteStart + text.length);
-  if (slice !== text) {
-    // Trimming in the caller, or block-boundary newlines that sel.toString()
-    // inserts but our flat-text walker doesn't, can shift the true start a
-    // few chars away from range.startOffset. Search a small window around
-    // quoteStart for the text before giving up.
+  // Block boundaries: sel.toString() inserts "\n\n" between blocks (e.g. a
+  // heading followed by a paragraph), but the text-node walker concatenates
+  // with no separator. Strip those runs from `text` so it can match `flat`.
+  // We keep single \n (which can appear inside a single text node, e.g. a
+  // code block) untouched.
+  const normalized = text.replace(/\n{2,}/g, "");
+
+  const slice = flat.slice(quoteStart, quoteStart + normalized.length);
+  if (slice !== normalized) {
+    // Trimming in the caller can shift the true start a few chars away from
+    // range.startOffset. Search a small window around quoteStart for the
+    // normalized text before giving up.
     const windowStart = Math.max(0, quoteStart - 64);
-    const windowEnd = Math.min(flat.length, quoteStart + text.length + 64);
-    const found = flat.indexOf(text, windowStart);
+    const windowEnd = Math.min(flat.length, quoteStart + normalized.length + 64);
+    const found = flat.indexOf(normalized, windowStart);
     if (found === -1 || found >= windowEnd) return null;
     quoteStart = found;
   }
 
   return {
-    quote: text,
+    quote: normalized,
     context_before: flat.slice(Math.max(0, quoteStart - 32), quoteStart),
-    context_after: flat.slice(quoteStart + text.length, quoteStart + text.length + 32),
+    context_after: flat.slice(quoteStart + normalized.length, quoteStart + normalized.length + 32),
   };
 }
 
