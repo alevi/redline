@@ -59,7 +59,6 @@ function pageTemplate(
         </div>
       </div>
       ${context ? `<div class="context-banner" id="context-banner">
-        <span class="context-label">Context</span>
         <span class="context-text">${escapeHtml(context)}</span>
         <button class="context-dismiss" onclick="dismissContextBanner()" aria-label="Dismiss">✕</button>
       </div>` : ''}
