@@ -42,7 +42,7 @@ Two long-lived processes:
 
 Review state lives in a sidecar JSON file at `.review/<filename>.json` next to the doc. History snapshots of every revision land in `.review/history/<filename>.<iso>.md` *before* the revision is written, so you can roll back from disk if a revision goes sideways. Both should be gitignored unless you want them in the repo.
 
-After each revision, the browser overlays a side-by-side diff against the previous round so you can read the agent's changes in context. From there you either open another round of comments or click **Looks good** to finish.
+After each revision, the new round opens with the document rendered inline as a diff against the previous round — insert and delete bands at the block level, word-level marks within modified paragraphs — so you can read the agent's changes in place. Use the **Show changes** / **Hide changes** toggle in the header to flip back to the clean view at any time. From there you either open another round of comments or click **Looks good** to finish.
 
 [CLAUDE.md](CLAUDE.md) has the full architecture tour: sidecar schema, SSE event vocabulary, model picking, frontend gotchas.
 
