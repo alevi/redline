@@ -16,7 +16,8 @@ import {
 import { state } from "./state";
 import { initSelectionHandlers } from "./selection";
 import { initSSE } from "./sse";
-import { showRevisionBanner, initDiffHandlers } from "./diff";
+import { enableDiffMode, initDiffHandlers } from "./diff";
+import { diffStateKey } from "./diffToggle";
 import { observeCardSizes } from "./cards";
 
 // Wire card callbacks (breaks circular dependency between cards and render)
@@ -89,9 +90,14 @@ positionCards();
 updateNav();
 applyRoundState();
 
-if (sessionStorage.getItem("just-revised")) {
-  sessionStorage.removeItem("just-revised");
-  showRevisionBanner();
+const justRevised = sessionStorage.getItem("just-revised");
+if (justRevised) sessionStorage.removeItem("just-revised");
+const diffPersisted = (() => {
+  try { return sessionStorage.getItem(diffStateKey(window.__REDLINE__.contextTitle)) === "1"; }
+  catch { return false; }
+})();
+if (justRevised || diffPersisted) {
+  void enableDiffMode();
 }
 if (sessionStorage.getItem("rl-no-changes")) {
   sessionStorage.removeItem("rl-no-changes");
