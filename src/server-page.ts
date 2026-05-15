@@ -18,7 +18,7 @@ function pageTemplate(
   readOnly = false,
   csrfToken = "",
   noAgent = false,
-  agentName = "local agent"
+  agentName = "selected local"
 ): string {
   const commentsJson = JSON.stringify(comments);
 
