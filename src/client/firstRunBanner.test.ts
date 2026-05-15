@@ -13,7 +13,7 @@ beforeEach(() => {
 function makeBanner(): HTMLElement {
   document.body.innerHTML = `
     <div class="first-run-banner" id="first-run-banner" hidden>
-      <span>Redline sends document and comment text to your local Claude Code agent. Use trusted docs.</span>
+      <span>Redline sends document and comment text to your selected local agent. Use trusted docs.</span>
       <button class="first-run-dismiss" id="first-run-dismiss">Got it</button>
     </div>
   `;

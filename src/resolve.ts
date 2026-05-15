@@ -5,11 +5,13 @@ import type { Round, Comment } from "./sidecar";
 import { pickRevisionModel } from "./pickModel";
 import { newEnvelope } from "./promptEnvelope";
 import { contextBlock } from "./contextBlock";
+import { getAgentProvider, resolveProviderId, type AgentProviderId } from "./agentProvider";
 
 const serverBase = () => `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
 const csrfHeader = (): Record<string, string> => ({ "X-Redline-Token": process.env.REDLINE_TOKEN ?? "" });
 
-export async function resolve(filePath: string, options: { model?: string } = {}) {
+export async function resolve(filePath: string, options: { model?: string; agentProvider?: AgentProviderId } = {}) {
+  const provider = getAgentProvider(options.agentProvider ?? resolveProviderId());
   const model = options.model ?? null;
   const sidecar = await loadSidecar(filePath);
 
@@ -20,7 +22,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   }
   const round: Round = resolvedRounds[resolvedRounds.length - 1];
   const settled = round.comments.filter((c) => c.resolved);
-  const chosenModel = model ?? pickRevisionModel(settled);
+  const chosenModel = model ?? provider.modelForTier(pickRevisionModel(settled));
 
   const docText = await readFile(filePath, "utf-8");
 
@@ -89,9 +91,6 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     contextBlock(sidecar.context, env) +
     `<comments-to-apply>\n${commentsBlock}\n</comments-to-apply>${priorChangesBlock}\n\n<document>\n${env.wrap("document", docText)}\n</document>`;
 
-  // Call the claude CLI (inherits auth from the user's Claude Code session — no API key needed)
-  const cliBin = process.env.CLAUDE_CODE_EXECPATH ?? "claude";
-
   const broadcastChunk = (text: string, kind: "thinking" | "text") => {
     fetch(`${serverBase()}/api/revision-chunk`, {
       method: "POST",
@@ -109,7 +108,7 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   const fail = async (reason: string) => {
     await logRevisionFailure(filePath, {
       reason,
-      model: chosenModel,
+      model: `${provider.id}/${chosenModel}`,
       exitCode,
       stderr: stderrText.trim(),
       stdoutSample: revised.slice(0, 2000),
@@ -128,72 +127,27 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     console.log(
       attempt === 1
-        ? `Revising with ${chosenModel}...\n`
-        : `\nRetrying revision with ${chosenModel} (attempt ${attempt}/${MAX_ATTEMPTS})...\n`
+        ? `Revising with ${provider.id}/${chosenModel}...\n`
+        : `\nRetrying revision with ${provider.id}/${chosenModel} (attempt ${attempt}/${MAX_ATTEMPTS})...\n`
     );
     console.log("─".repeat(60));
-    const revisionStartedAt = Date.now();
-
-    const proc = Bun.spawn(
-      [cliBin, "-p", "--system-prompt", systemPrompt, "--model", chosenModel,
-       "--output-format", "stream-json", "--include-partial-messages", "--verbose"],
-      { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
-    );
-
-    proc.stdin.write(userMessage);
-    proc.stdin.end();
-
-    // Drain stderr concurrently so we can include it in any error report.
-    stderrText = "";
-    const stderrDone = (async () => {
-      const r = proc.stderr.getReader();
-      const dec = new TextDecoder();
-      while (true) {
-        const { done, value } = await r.read();
-        if (done) break;
-        const chunk = dec.decode(value);
-        stderrText += chunk;
-        process.stderr.write(chunk);
-      }
-    })();
-
-    revised = "";
-    let buffer = "";
-    const reader = proc.stdout.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += new TextDecoder().decode(value);
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const obj = JSON.parse(line);
-          if (obj.type === "stream_event" && obj.event?.type === "content_block_delta") {
-            const delta = obj.event.delta;
-            if (delta?.type === "text_delta" && delta.text) {
-              revised += delta.text;
-              process.stdout.write(delta.text);
-              broadcastChunk(delta.text, "text");
-            } else if (delta?.type === "thinking_delta" && delta.thinking) {
-              broadcastChunk(delta.thinking, "thinking");
-            }
-          }
-        } catch { /* malformed JSON line, skip */ }
-      }
-    }
-
-    exitCode = await proc.exited;
-    await stderrDone;
-    const revisionDurationMs = Date.now() - revisionStartedAt;
+    const run = await provider.runRevision({
+      systemPrompt,
+      userMessage,
+      model: chosenModel,
+      cwd: process.cwd(),
+      onChunk: broadcastChunk,
+    });
+    revised = run.revised;
+    stderrText = run.stderr;
+    exitCode = run.exitCode;
     console.log("\n" + "─".repeat(60));
-    console.log(`Model: ${chosenModel}  ·  Duration: ${(revisionDurationMs / 1000).toFixed(1)}s  ·  Exit: ${exitCode}`);
+    console.log(`Model: ${provider.id}/${chosenModel}  ·  Duration: ${(run.durationMs / 1000).toFixed(1)}s  ·  Exit: ${exitCode}`);
     console.log("─".repeat(60) + "\n");
 
     // A CLI crash is not retryable — fail immediately.
     if (exitCode !== 0) {
-      await fail(`claude CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`);
+      await fail(`${provider.id} CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`);
     }
 
     const result = validateRevision(revised, docText, settled);

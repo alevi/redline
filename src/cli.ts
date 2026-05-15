@@ -45,24 +45,25 @@ preflightDependencies();
 // Dynamic imports so preflight runs before module resolution pulls in third-party deps.
 const { createServer } = await import("./server");
 const { resolve } = await import("./resolve");
+const {
+  getAgentProvider,
+  invalidProviderMessage,
+  parseAgentProviderId,
+  resolveProviderId,
+} = await import("./agentProvider");
 
-// Verify the `claude` CLI is reachable before we start, so first-run users
-// without Claude Code installed get a clear message instead of a silent agent
-// crash later (the agent process shells out to `claude -p`; without it, replies
-// fail and errors land in `.review/errors.log` where nobody looks).
-//
-// Resolution mirrors the runtime: prefer CLAUDE_CODE_EXECPATH (used by tests
-// and advanced setups), then look for `claude` on PATH.
-function preflightClaudeCli() {
-  const exec = process.env.CLAUDE_CODE_EXECPATH;
-  if (exec && existsSync(exec)) return;
-  if (Bun.which("claude")) return;
-  console.error(
-    "\n[redline] Could not find the `claude` CLI on PATH.\n" +
-    "Redline shells out to Claude Code for agent replies and revisions.\n" +
-    "Install it from https://claude.com/claude-code and re-run.\n"
-  );
-  process.exit(1);
+function argValue(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  return idx !== -1 ? args[idx + 1] : undefined;
+}
+
+function selectProvider(args: string[]) {
+  const raw = argValue(args, "--agent") ?? process.env.REDLINE_AGENT;
+  if (raw && !parseAgentProviderId(raw)) {
+    console.error(invalidProviderMessage(raw));
+    process.exit(1);
+  }
+  return getAgentProvider(resolveProviderId(raw));
 }
 
 // Walk up from `start` looking for a git root (a `.git` directory or file —
@@ -112,10 +113,15 @@ if (args[0] === "resolve") {
     console.error(`File not found: ${resolved}`);
     process.exit(1);
   }
-  const modelFlag = args.indexOf("--model");
-  const model = modelFlag !== -1 ? args[modelFlag + 1] : undefined;
-  preflightClaudeCli();
-  resolve(resolved, { model });
+  const model = argValue(args, "--model");
+  const provider = selectProvider(args);
+  try {
+    provider.preflight();
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  }
+  resolve(resolved, { model, agentProvider: provider.id });
 } else {
   // redline <file>  — open review reader
   const filePath = args[0];
@@ -129,14 +135,21 @@ if (args[0] === "resolve") {
     process.exit(1);
   }
   const noAgent = args.includes("--no-agent");
+  const provider = selectProvider(args);
 
   // Manual annotation mode skips both the preflight and the agent spawn —
-  // the user just wants inline comments without a Claude conversation, so
-  // requiring claude on PATH would be a hostile gate.
-  if (!noAgent) preflightClaudeCli();
+  // the user just wants inline comments without an agent conversation, so
+  // requiring a provider CLI on PATH would be a hostile gate.
+  if (!noAgent) {
+    try {
+      provider.preflight();
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
+  }
 
-  const contextFlag = args.indexOf("--context");
-  const context = contextFlag !== -1 ? args[contextFlag + 1] : undefined;
+  const context = argValue(args, "--context");
   const autoOpen = args.includes("--open");
 
   const resultFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".result");
@@ -164,7 +177,7 @@ if (args[0] === "resolve") {
   // caller can pin the token if it needs to.
   const csrfToken = process.env.REDLINE_TOKEN ?? crypto.randomUUID();
 
-  const app = createServer(resolved, { context, csrfToken, noAgent });
+  const app = createServer(resolved, { context, csrfToken, noAgent, agentName: provider.displayName });
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch, idleTimeout: 0 });
   const url = `http://localhost:${server.port}`;
 
@@ -182,6 +195,7 @@ if (args[0] === "resolve") {
       started_at: new Date().toISOString(),
       pid: process.pid,
       csrf_token: csrfToken,
+      agent_provider: provider.id,
     }, null, 2));
   } catch (e) {
     console.error("[redline] Failed to write startup file:", e);
@@ -194,14 +208,14 @@ if (args[0] === "resolve") {
   console.log(`  URL:  ${url}`);
   console.log(`  Result: ${resultFile}`);
   console.log(`${bar}`);
-  if (noAgent) console.log(`  Mode: manual annotation (--no-agent — no Claude replies, no revision pass)`);
+  if (noAgent) console.log(`  Mode: manual annotation (--no-agent — no ${provider.displayName} replies, no revision pass)`);
   if (!autoOpen) console.log(`\n  → cmd-click the URL when you're ready to review\n`);
   else console.log("");
 
   maybePrintGitignoreHint(resolved);
 
   // Auto-restart the agent if it dies unexpectedly (harness reaping, OOM,
-  // a transient claude-CLI auth blip, etc). Capped to MAX_RESTARTS within
+  // a transient provider-CLI auth blip, etc). Capped to MAX_RESTARTS within
   // RESTART_WINDOW_MS so a permanently-broken environment doesn't loop forever.
   const RESTART_WINDOW_MS = 60_000;
   // Cap is overrideable via env so integration tests can exercise the
@@ -216,7 +230,7 @@ if (args[0] === "resolve") {
       [process.execPath, "run", path.join(import.meta.dir, "agent.ts"), resolved],
       {
         stdout: "inherit", stderr: "inherit", stdin: "ignore",
-        env: { ...process.env, REDLINE_PORT: String(server.port), REDLINE_TOKEN: csrfToken },
+        env: { ...process.env, REDLINE_PORT: String(server.port), REDLINE_TOKEN: csrfToken, REDLINE_AGENT: provider.id },
       }
     );
     agentProc = proc;

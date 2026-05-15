@@ -1,5 +1,5 @@
-// End-to-end tests for the agent process and the resolve flow, with a mocked
-// `claude` CLI. The agent + revision logic runs as the production CLI does
+// End-to-end tests for the agent process and the resolve flow, with mocked
+// provider CLIs. The agent + revision logic runs as the production CLI does
 // (cli.ts spawns agent.ts) — only the model call is mocked.
 
 import { test, expect, afterEach } from "bun:test";
@@ -13,6 +13,7 @@ import {
   postComment,
   waitForEvent,
   installClaudeShim,
+  installCodexShim,
   TEST_CSRF_TOKEN,
 } from "./helpers";
 
@@ -29,13 +30,14 @@ afterEach(() => {
   dirs.splice(0);
 });
 
-function makeTestDir(content: string): { filePath: string; dir: string; shim: string } {
+function makeTestDir(content: string): { filePath: string; dir: string; claudeShim: string; codexShim: string } {
   const dir = mkdtempSync(path.join(os.tmpdir(), "redline-agent-test-"));
   dirs.push(dir);
   const filePath = path.join(dir, "test.md");
   writeFileSync(filePath, content);
-  const shim = installClaudeShim(dir);
-  return { filePath, dir, shim };
+  const claudeShim = installClaudeShim(dir);
+  const codexShim = installCodexShim(dir);
+  return { filePath, dir, claudeShim, codexShim };
 }
 
 async function startWithShim(filePath: string, shim: string, extraEnv: Record<string, string> = {}) {
@@ -57,8 +59,8 @@ const SAMPLE = "# Doc\n\nFirst paragraph here.\n\nSecond paragraph here.\n";
 // ── Agent reply flow ─────────────────────────────────────────────────────
 
 test("agent posts thinking + reply when a comment is added", async () => {
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: "Acknowledged." });
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, { REDLINE_SHIM_REPLY: "Acknowledged." });
 
   // Subscribe to the two events the agent will fire as it processes the comment.
   const thinkingP = waitForEvent(port, "comment-thinking", { timeoutMs: 8000 });
@@ -81,8 +83,8 @@ test("agent posts thinking + reply when a comment is added", async () => {
 test("agent does not reply twice if comment-added fires multiple times", async () => {
   // The inProgress dedup set in agent.ts is the safety net we're pinning here.
   // Two rapid comment-added events for the same comment should produce one reply.
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: "ok" });
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, { REDLINE_SHIM_REPLY: "ok" });
 
   const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
   await repliedP.ready;
@@ -118,8 +120,8 @@ test("delimiter envelope: message with unescaped quotes round-trips intact", asy
     messageWithQuotes + "\n" +
     "---END---";
 
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, { REDLINE_SHIM_REPLY: envelope });
 
   const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
   await repliedP.ready;
@@ -145,8 +147,8 @@ test("delimiter envelope: revise verdict + reason flow through to the sidecar", 
     "Got it.\n" +
     "---END---";
 
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, { REDLINE_SHIM_REPLY: envelope });
 
   const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
   await repliedP.ready;
@@ -169,8 +171,8 @@ test("delimiter envelope: ESCALATE flag flows through to the sidecar", async () 
     "I don't have the style guide — routed to the launching agent.\n" +
     "---END---";
 
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, { REDLINE_SHIM_REPLY: envelope });
 
   const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
   await repliedP.ready;
@@ -192,8 +194,8 @@ test("delimiter envelope: no ESCALATE line leaves escalate unset", async () => {
     "Looks fine to me.\n" +
     "---END---";
 
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, { REDLINE_SHIM_REPLY: envelope });
 
   const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
   await repliedP.ready;
@@ -208,8 +210,8 @@ test("delimiter envelope: no ESCALATE line leaves escalate unset", async () => {
 // ── Resolve / revision flow ──────────────────────────────────────────────
 
 test("accept triggers revision; revised file is written and round 2 opens", async () => {
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, {
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, {
     REDLINE_SHIM_REPLY: "ok",
     REDLINE_SHIM_REVISION: "modify",
   });
@@ -249,8 +251,8 @@ test("accept triggers revision; revised file is written and round 2 opens", asyn
 }, 25_000);
 
 test("revision producing no changes broadcasts revision-no-changes (not reload)", async () => {
-  const { filePath, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, {
+  const { filePath, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, {
     REDLINE_SHIM_REPLY: "ok",
     REDLINE_SHIM_REVISION: "no-changes",
   });
@@ -272,8 +274,8 @@ test("revision producing no changes broadcasts revision-no-changes (not reload)"
 }, 25_000);
 
 test("revision failure broadcasts revision-error and writes errors.log", async () => {
-  const { filePath, dir, shim } = makeTestDir(SAMPLE);
-  const { port } = await startWithShim(filePath, shim, {
+  const { filePath, dir, claudeShim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, claudeShim, {
     REDLINE_SHIM_REPLY: "ok",
     REDLINE_SHIM_REVISION: "fail",
   });
@@ -298,9 +300,9 @@ test("revision failure broadcasts revision-error and writes errors.log", async (
 }, 25_000);
 
 test("revision retries once on mangled output and succeeds on the retry", async () => {
-  const { filePath, dir, shim } = makeTestDir(SAMPLE);
+  const { filePath, dir, claudeShim } = makeTestDir(SAMPLE);
   const counter = path.join(dir, "shim-count");
-  const { port } = await startWithShim(filePath, shim, {
+  const { port } = await startWithShim(filePath, claudeShim, {
     REDLINE_SHIM_REPLY: "ok",
     REDLINE_SHIM_REVISION: "mangle-once",
     REDLINE_SHIM_COUNTER: counter,
@@ -326,9 +328,9 @@ test("revision retries once on mangled output and succeeds on the retry", async 
 }, 25_000);
 
 test("revision that stays mangled fails after the retry, not on the first attempt", async () => {
-  const { filePath, dir, shim } = makeTestDir(SAMPLE);
+  const { filePath, dir, claudeShim } = makeTestDir(SAMPLE);
   const counter = path.join(dir, "shim-count");
-  const { port } = await startWithShim(filePath, shim, {
+  const { port } = await startWithShim(filePath, claudeShim, {
     REDLINE_SHIM_REPLY: "ok",
     REDLINE_SHIM_REVISION: "mangle",
     REDLINE_SHIM_COUNTER: counter,
@@ -351,4 +353,43 @@ test("revision that stays mangled fails after the retry, not on the first attemp
   // misleading "no Markdown heading" wording.
   const log = await readFile(path.join(dir, ".review", "errors.log"), "utf-8");
   expect(log).toContain("no Markdown headings");
+}, 25_000);
+
+test("codex provider can reply and revise through the same sidecar flow", async () => {
+  const { filePath, codexShim } = makeTestDir(SAMPLE);
+  const { proc, port, agentReady } = await spawnCLI(filePath, {
+    REDLINE_AGENT: "codex",
+    CODEX_EXECPATH: codexShim,
+    REDLINE_SHIM_REPLY: "REQUIRES_REVISION: true\nESCALATE: false\nREASON: update the first paragraph\n---MESSAGE---\nGot it.\n---END---",
+    REDLINE_SHIM_REVISION: "modify",
+  });
+  procs.push(proc);
+  await waitForServer(port);
+  await agentReady;
+
+  const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
+  await repliedP.ready;
+  const c = await postComment(port, { quote: "First paragraph" }, "tighten this");
+  await repliedP;
+
+  let sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const reply = sidecar.rounds[0].comments[0].thread[1];
+  expect(reply).toMatchObject({
+    role: "agent",
+    name: "Codex",
+    message: "Got it.",
+    requires_revision: true,
+    revision_reason: "update the first paragraph",
+  });
+
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
+  const reloadP = waitForEvent(port, "reload", { timeoutMs: 15000 });
+  await reloadP.ready;
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
+  await reloadP;
+
+  const revised = await readFile(filePath, "utf-8");
+  expect(revised).toContain("## Revised by codex shim");
+  sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  expect(sidecar.rounds).toHaveLength(2);
 }, 25_000);
