@@ -4,7 +4,7 @@ import {
   preserveScroll as _preserveScroll,
   latestVerdict,
 } from "./lib";
-import { state, apiFetch, showError } from "./state";
+import { state, apiFetch, showError, reportMutationFailure } from "./state";
 import {
   buildCommentCard,
   captureTypingState,
@@ -171,7 +171,7 @@ export async function saveComment(
       showError(data.error || "Failed to save comment");
     }
   } catch (err: unknown) {
-    showError("Failed to save comment: " + (err as Error).message);
+    reportMutationFailure("Failed to save comment", err);
   }
 }
 
@@ -195,7 +195,7 @@ export async function submitReply(id: string, message: string): Promise<void> {
       showError(data.error || "Failed to save reply");
     }
   } catch (err: unknown) {
-    showError("Failed to save reply: " + (err as Error).message);
+    reportMutationFailure("Failed to save reply", err);
   }
 }
 
@@ -220,7 +220,7 @@ export async function resolveComment(id: string): Promise<void> {
       showError(data.error || "Failed to resolve comment");
     }
   } catch (err: unknown) {
-    showError("Failed to resolve: " + (err as Error).message);
+    reportMutationFailure("Failed to resolve", err);
   }
 }
 
@@ -240,7 +240,7 @@ export async function reopenComment(id: string): Promise<void> {
       showError(data.error || "Failed to reopen comment");
     }
   } catch (err: unknown) {
-    showError("Failed to reopen: " + (err as Error).message);
+    reportMutationFailure("Failed to reopen", err);
   }
 }
 
