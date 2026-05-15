@@ -1,4 +1,4 @@
-import { state } from "./state";
+import { state, markSessionEnded } from "./state";
 import {
   renderComments,
   applyHighlights,
@@ -10,6 +10,11 @@ import {
 let sseHasConnectedOnce = false;
 let currentEs: EventSource | null = null;
 let lastEventAt = Date.now();
+// Consecutive failed connection attempts with no successful open in between.
+// A transient blip resolves on the next reconnect (resetting this to 0); a
+// dead server never reconnects, so a sustained run means the server is gone.
+let consecutiveSseErrors = 0;
+const MAX_SSE_ERRORS = 4;
 
 export async function softRefresh({ rehighlight = false } = {}): Promise<void> {
   try {
@@ -53,6 +58,24 @@ export function initSSE(): void {
   document.addEventListener("visibilitychange", onVisibleOrFocus);
   window.addEventListener("focus", onVisibleOrFocus);
 
+  // Tell the server explicitly when this tab is going away, so it can
+  // distinguish a real close from a bare SSE drop (sleep, network blip) and
+  // not abandon a session the user means to keep. `keepalive` lets the POST
+  // survive unload; `pagehide` is more reliable than `beforeunload`. Skip the
+  // bfcache case (e.persisted) — the page may be restored and reconnect.
+  window.addEventListener("pagehide", (e) => {
+    if ((e as PageTransitionEvent).persisted) return;
+    try {
+      fetch("/api/tab-closed", {
+        method: "POST",
+        keepalive: true,
+        headers: { "X-Redline-Token": state.csrfToken },
+      });
+    } catch {
+      /* unload is best-effort */
+    }
+  });
+
   setInterval(() => {
     const banner = document.getElementById("sidebar-status-banner");
     const revising = banner?.classList.contains("revising");
@@ -74,6 +97,7 @@ export function initSSE(): void {
       });
     es.onopen = () => {
       lastEventAt = Date.now();
+      consecutiveSseErrors = 0;
       if (sseHasConnectedOnce) {
         softRefresh({ rehighlight: true });
       }
@@ -173,6 +197,14 @@ export function initSSE(): void {
     es.onerror = () => {
       es.close();
       if (currentEs === es) currentEs = null;
+      consecutiveSseErrors += 1;
+      // A run of failures with no successful open in between means the server
+      // is gone for good (it exited, or restarted on a fresh port this tab
+      // can't reach). Stop the silent retry loop and tell the user.
+      if (consecutiveSseErrors >= MAX_SSE_ERRORS) {
+        markSessionEnded();
+        return;
+      }
       setTimeout(connectEvents, 3000);
     };
   })();

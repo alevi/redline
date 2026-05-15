@@ -296,6 +296,57 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
   ac2.abort();
 }, 15_000);
 
+test("tab-closed beacon abandons on the short grace even when the backstop is long", async () => {
+  const { filePath, dir } = createTestFile();
+  // Long backstop (60s) — a bare SSE drop would NOT abandon within this test's
+  // window. The explicit beacon must take the short TAB_CLOSE_GRACE_MS path.
+  const { proc, port } = await spawnTracked(filePath, {
+    REDLINE_ABANDON_MS: "60000",
+    REDLINE_TABCLOSE_MS: "800",
+  });
+  await waitForServer(port);
+
+  const ac = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  await Bun.sleep(200); // let connection register so hadBrowser is set
+
+  // Tab fires its close beacon, then the SSE drops — the order a real close hits.
+  await fetch(`http://localhost:${port}/api/tab-closed`, { method: "POST", headers: CSRF_HEADERS });
+  ac.abort();
+
+  const code = await waitForExit(proc, 5000);
+  expect(code).toBe(2);
+  const result = await readResult(dir);
+  expect(result.status).toBe("abandoned");
+}, 15_000);
+
+test("tab-closed beacon followed by a reconnect (reload) does NOT abandon", async () => {
+  const { filePath } = createTestFile();
+  const { proc, port } = await spawnTracked(filePath, {
+    REDLINE_ABANDON_MS: "60000",
+    REDLINE_TABCLOSE_MS: "1500",
+  });
+  await waitForServer(port);
+
+  const ac1 = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac1.signal }).catch(() => {});
+  await Bun.sleep(200);
+
+  // Reload: beacon fires, old SSE drops, new SSE reconnects within the short grace.
+  await fetch(`http://localhost:${port}/api/tab-closed`, { method: "POST", headers: CSRF_HEADERS });
+  ac1.abort();
+  await Bun.sleep(300);
+  const ac2 = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac2.signal }).catch(() => {});
+
+  // Outlast the short grace; the reconnect should have cancelled the timer.
+  await Bun.sleep(2000);
+  const res = await fetch(`http://localhost:${port}/api/comments`);
+  expect(res.ok).toBe(true);
+
+  ac2.abort();
+}, 15_000);
+
 test("--context flag persists to sidecar.context on first run", async () => {
   // The CLI parses --context and threads it to createServer, which writes
   // it to the sidecar on startup. From there agent.ts and resolve.ts both

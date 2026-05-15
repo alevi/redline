@@ -97,6 +97,7 @@ function pageTemplate(
     </div>
   </div>
   <div id="error-banner" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#b71c1c;color:white;padding:12px 24px;border-radius:6px;font-size:14px;font-weight:500;box-shadow:0 1px 4px rgba(0,0,0,0.08);z-index:999;white-space:nowrap;"></div>
+  <div id="session-ended-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#92400e;color:white;padding:10px 24px;font-size:14px;font-weight:500;text-align:center;z-index:1000;box-shadow:0 1px 4px rgba(0,0,0,0.15);">Review session ended — the redline server is no longer running. Your changes up to this point are saved; close this tab and continue in Claude Code.</div>
 
   <script>
     window.__REDLINE__ = {
