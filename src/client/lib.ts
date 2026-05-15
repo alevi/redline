@@ -22,6 +22,7 @@ export type ThreadEntry = {
   messageHtml?: string;
   requires_revision?: boolean;
   revision_reason?: string;
+  escalate?: boolean;
 };
 
 export function escapeHtml(s: string): string {
@@ -42,6 +43,11 @@ export function latestVerdict(comment: ClientComment): "revise" | "accept" | nul
     return e.requires_revision ? "revise" : "accept";
   }
   return null;
+}
+
+// True when an agent reply flagged this comment for the launching agent.
+export function isEscalated(comment: ClientComment): boolean {
+  return (comment.thread || []).some((e) => e.role === "agent" && e.escalate === true);
 }
 
 export function nearestCell(node: Node): HTMLElement | null {

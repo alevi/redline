@@ -3,6 +3,7 @@ import {
   highlightText as _highlightText,
   preserveScroll as _preserveScroll,
   latestVerdict,
+  isEscalated,
 } from "./lib";
 import { state, apiFetch, showError, reportMutationFailure } from "./state";
 import {
@@ -345,6 +346,17 @@ export function applyRoundState(): void {
           bannerText = `${reviseCount} of ${total} comments imply edits.`;
         }
         banner.textContent = bannerText;
+        // Escalations are orthogonal to the revise/accept verdict — a comment
+        // can be answered in-thread yet still need the launching agent. Call
+        // it out on its own line so it survives all three banner branches.
+        const escCount = state.comments.filter(isEscalated).length;
+        if (escCount > 0) {
+          const escLine = document.createElement("div");
+          escLine.className = "banner-escalation";
+          escLine.textContent =
+            `↑ ${escCount} comment${escCount !== 1 ? "s" : ""} escalated to the launching agent.`;
+          banner.appendChild(escLine);
+        }
         banner.style.display = "block";
       }
 

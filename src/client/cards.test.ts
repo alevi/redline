@@ -188,3 +188,49 @@ describe("thread message markdown", () => {
     expect(msg.textContent).toContain("<script>");
   });
 });
+
+describe("escalation badge", () => {
+  const noopCallbacks = {
+    focusComment: () => {},
+    updateNav: () => {},
+    positionCards: () => {},
+    resolveComment: () => {},
+    reopenComment: () => {},
+    toggleReplyForm: () => {},
+    submitReply: () => {},
+  };
+
+  test("shows the escalate badge and thread note when an agent reply set escalate", async () => {
+    const { buildCommentCard, setCardCallbacks } = await loadCards();
+    setCardCallbacks(noopCallbacks);
+
+    const card = buildCommentCard({
+      id: "c-esc",
+      quote: "hi",
+      resolved: false,
+      thread: [
+        { role: "human", message: "run the style guide" },
+        { role: "agent", name: "Claude", message: "Routed.", escalate: true },
+      ],
+    });
+    document.body.appendChild(card);
+
+    expect(card.querySelector(".escalate-badge")).not.toBeNull();
+    expect(card.querySelector(".verdict.escalate")).not.toBeNull();
+  });
+
+  test("no badge when nothing escalated", async () => {
+    const { buildCommentCard, setCardCallbacks } = await loadCards();
+    setCardCallbacks(noopCallbacks);
+
+    const card = buildCommentCard({
+      id: "c-plain2",
+      quote: "hi",
+      resolved: false,
+      thread: [{ role: "agent", name: "Claude", message: "Got it." }],
+    });
+    document.body.appendChild(card);
+
+    expect(card.querySelector(".escalate-badge")).toBeNull();
+  });
+});

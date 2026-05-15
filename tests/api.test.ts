@@ -290,6 +290,46 @@ test("POST /api/comment/:id/reply persists agent verdict (requires_revision + re
   expect(entry.revision_reason).toBe("fix the misspelled word");
 }, 15_000);
 
+test("POST /api/comment/:id/reply persists agent escalate flag", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const c = await postComment(port, { quote: "first paragraph" }, "run the style guide");
+
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({
+      role: "agent",
+      name: "Claude",
+      message: "Routed to the launching agent.",
+      requires_revision: false,
+      escalate: true,
+    }),
+  });
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const entry = sidecar.rounds[0].comments[0].thread[1];
+  expect(entry.escalate).toBe(true);
+}, 15_000);
+
+test("POST /api/comment/:id/reply ignores escalate on human entries", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const c = await postComment(port, { quote: "first paragraph" }, "q");
+
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({ role: "human", message: "follow-up", escalate: true }),
+  });
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const entry = sidecar.rounds[0].comments[0].thread[1];
+  expect(entry.escalate).toBeUndefined();
+}, 15_000);
+
 test("POST /api/comment/:id/reply ignores verdict on human entries", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);

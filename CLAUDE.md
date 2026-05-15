@@ -184,6 +184,7 @@ The agent CLI ([src/agent.ts](src/agent.ts)) gets the verdict by asking `claude 
 
 ```
 REQUIRES_REVISION: <true|false>
+ESCALATE: <true|false>
 REASON: <one short sentence>
 ---MESSAGE---
 <free-form reply prose>
@@ -193,6 +194,13 @@ REASON: <one short sentence>
 JSON was tried first and abandoned: agent replies frequently contain quotes, code fences, and Markdown that the model fails to escape inside a JSON string, which then makes `JSON.parse` blow up on the whole envelope. The delimiter form sidesteps escaping entirely. [src/parseReply.ts](src/parseReply.ts) prefers the delimiter form, accepts the legacy JSON shape as a fallback, and on any parse failure defaults to `{ requires_revision: true }` (safer to run an unnecessary revision than silently skip an implied edit).
 
 The verdict is **agent-owned**. The human cannot flip it directly. Disagreement flows through a follow-up reply, which gives the agent a chance to re-classify rather than be silently overridden.
+
+## Escalation to the launching agent
+
+The inline review agent and the agent that *launched* `redline` share no live channel — the sidecar is the only persisted artifact, and the launching agent only regains control when the session exits. So two mechanisms carry feedback back to it:
+
+- **`ESCALATE` verdict.** A second, orthogonal flag in the reply envelope. The agent sets `ESCALATE: true` when a comment can't be acted on from inside the review — it needs the launching agent's project context, tools, or authority (an external style guide, a spec to check against, a wider-project decision). It's stored as `escalate?: boolean` on the agent's `ThreadEntry` and rendered as an "↑ Escalated" badge on the comment and an "↑ Routed to the launching agent" note in the thread. Escalation is independent of `requires_revision` — the agent judges each on its own.
+- **Closeout transcript.** On `finished`, the CLI loads the sidecar and prints every comment thread verbatim via [src/reviewSummary.ts](src/reviewSummary.ts) (`formatReviewSummary`), with a dedicated callout listing escalated comments (`collectEscalations`). The escalation count is also written to `.review/<file>.result` and appended to the `REDLINE_RESULT:` line. This is the launching agent's read point — it sees the transcript when control hands back.
 
 ## Security & resilience as built
 
@@ -205,6 +213,7 @@ These are post-publish hardenings (M5/M8). They're load-bearing — don't regres
 - **Cross-process sidecar lock.** [src/sidecar.ts](src/sidecar.ts) layers an in-memory mutex over `proper-lockfile` on `<sidecar>.lock`. Both layers are needed: in-process is the fast path, lockfile catches concurrent processes (e.g. `redline resolve` running while the server is up).
 - **Prompt-input envelopes.** Both `agent.ts` and `resolve.ts` wrap user-controlled text (doc body, comment text) in `---DOCUMENT---` / `---COMMENTS---` style markers before sending to `claude -p`, so a comment that contains "Ignore previous instructions" is recognizable as data, not prompt.
 - **Revision watchdog.** [src/server.ts](src/server.ts) starts a 3-min timer on `/api/accept`. If `/api/reload` doesn't land in time, the round un-resolves and the server broadcasts `revision-stalled`. The revision token in `currentRevision` makes this race-safe — see the comment block at line ~129.
+- **Revision integrity check + retry.** `validateRevision` in [src/resolve.ts](src/resolve.ts) is a pure check on the model's output: it strips fences/wrapper-tags/meta-sections, then rejects output that has no headings (when the input had them) or that drops a heading whose section no settled comment touched — the signal that the model mangled the doc instead of editing it. A failed validation retries the revision once with the same model before surfacing `revision-error`; a non-zero CLI exit is not retried (environment failure, not a model stumble).
 - **Zombie SSE recovery.** [src/client/sse.ts](src/client/sse.ts) listens for `visibilitychange`/`focus` and runs a 30s heartbeat watchdog while the `.revising` banner is up, so a tab backgrounded across the whole revision recovers when refocused.
 - **Capped agent restart.** [src/cli.ts](src/cli.ts) auto-restarts the agent on unexpected exit but caps at 5 in 60s. If you see "gave up" in the log, something structural is wrong — fix root cause, don't raise the cap.
 

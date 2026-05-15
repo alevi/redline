@@ -13,6 +13,11 @@ export interface ThreadEntry {
   // action defaults to "Revise" or "Accept as-is". Only set on agent entries.
   requires_revision?: boolean;
   revision_reason?: string;
+  // Set true on an agent reply when the comment can't be acted on from inside
+  // this review — it needs the agent that *launched* redline (project context,
+  // tools, or authority the inline agent lacks). Surfaced in the closeout
+  // summary so the launching agent picks it up. Only set on agent entries.
+  escalate?: boolean;
 }
 
 // Latest agent verdict on a comment thread:
