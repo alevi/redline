@@ -86,63 +86,138 @@ export type Captured = {
   context_after: string;
 };
 
-// Walk the prose container's text nodes, locate the selection's start, and
-// return the quote with surrounding context. Returns null when the selection
-// can't be relocated against flat text (e.g. crossed an <img>).
-export function captureSelection(prose: Element, sel: Selection, text: string): Captured | null {
-  const range = sel.getRangeAt(0);
+type FlatSegment = {
+  node: Text | HTMLImageElement;
+  start: number;
+  len: number;
+  isImg: boolean;
+};
 
-  const walker = (prose.ownerDocument || document).createTreeWalker(prose, NodeFilter.SHOW_TEXT);
-  const segments: { node: Text; start: number }[] = [];
+// An <img> contributes no characters of its own, so on its own it can't be
+// anchored against. We give it a presence in the flat text as an
+// `[image: alt]` token — the same shape the image-only comment path uses — so
+// a selection can run text → image → text and still round-trip.
+function imgToken(img: HTMLImageElement): string {
+  return "[image: " + (img.alt || "") + "]";
+}
+
+// Walk a container into a flat string plus the segments that produced it.
+// Text nodes contribute their value; <img> elements contribute an
+// `[image: alt]` token. Segments are in document order. captureSelection and
+// highlightText both build flat through here so their coordinates agree.
+function buildFlat(container: Element): { flat: string; segments: FlatSegment[] } {
+  const doc = container.ownerDocument || document;
+  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+    acceptNode(n: Node) {
+      if (n.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+      return (n as Element).tagName === "IMG" ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    },
+  });
+  const segments: FlatSegment[] = [];
   let flat = "";
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const tn = node as Text;
-    segments.push({ node: tn, start: flat.length });
-    flat += tn.nodeValue ?? "";
-  }
-
-  let quoteStart = -1;
-  for (const seg of segments) {
-    if (seg.node === range.startContainer) {
-      quoteStart = seg.start + range.startOffset;
-      break;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const v = (node as Text).nodeValue ?? "";
+      segments.push({ node: node as Text, start: flat.length, len: v.length, isImg: false });
+      flat += v;
+    } else {
+      const img = node as HTMLImageElement;
+      const tok = imgToken(img);
+      segments.push({ node: img, start: flat.length, len: tok.length, isImg: true });
+      flat += tok;
     }
   }
+  return { flat, segments };
+}
 
-  if (quoteStart === -1) {
-    return { quote: text, context_before: "", context_after: "" };
+// Map both range endpoints onto the flat text and return the quote with
+// surrounding context. Returns null only when the selection can't be resolved
+// against the flat text at all.
+//
+// The quote is sliced straight out of `flat` rather than reconstructed from
+// `sel.toString()`. sel.toString() joins blocks with "\n"/"\n\n" separators
+// that don't exist in the walker's output, and marked emits stray whitespace
+// text nodes between block tags — so the two never line up across a block
+// boundary. Working in flat coordinates sidesteps the mismatch: `flat` is the
+// single source of truth, and highlightText re-finds the quote against the
+// same flat string later. `text` is kept only as a last-resort fallback for
+// the rare case where an endpoint can't be resolved.
+export function captureSelection(prose: Element, sel: Selection, text: string): Captured | null {
+  const range = sel.getRangeAt(0);
+  const { flat, segments } = buildFlat(prose);
+  if (segments.length === 0) return null;
+
+  // Map a range boundary point onto an index into `flat`. Text-node boundaries
+  // are the common case; Chrome sometimes anchors a drag to an element node
+  // plus a child index, which we resolve to the nearest segment edge.
+  const pointToFlat = (container: Node, offset: number, side: "start" | "end"): number => {
+    for (const seg of segments) {
+      if (seg.node === container) {
+        if (seg.isImg) return offset > 0 ? seg.start + seg.len : seg.start;
+        return seg.start + offset;
+      }
+    }
+    if (container.nodeType === Node.TEXT_NODE) return -1;
+    const kids = container.childNodes;
+    const segEnd = (seg: FlatSegment) => seg.start + seg.len;
+    if (side === "start") {
+      const ref = offset < kids.length ? kids[offset]! : null;
+      if (ref) {
+        for (const seg of segments) {
+          if (ref === seg.node || ref.contains(seg.node)) return seg.start;
+          if (ref.compareDocumentPosition(seg.node) & Node.DOCUMENT_POSITION_FOLLOWING)
+            return seg.start;
+        }
+        return flat.length;
+      }
+      let end = -1;
+      for (const seg of segments) if (container.contains(seg.node)) end = segEnd(seg);
+      return end === -1 ? flat.length : end;
+    }
+    const ref = offset > 0 ? kids[offset - 1]! : null;
+    if (ref) {
+      let end = -1;
+      for (const seg of segments) {
+        if (
+          ref === seg.node ||
+          ref.contains(seg.node) ||
+          ref.compareDocumentPosition(seg.node) & Node.DOCUMENT_POSITION_PRECEDING
+        ) {
+          end = segEnd(seg);
+        }
+      }
+      return end === -1 ? 0 : end;
+    }
+    for (const seg of segments) if (container.contains(seg.node)) return seg.start;
+    return 0;
+  };
+
+  let flatStart = pointToFlat(range.startContainer, range.startOffset, "start");
+  let flatEnd = pointToFlat(range.endContainer, range.endOffset, "end");
+  if (flatStart === -1 || flatEnd === -1 || flatEnd <= flatStart) {
+    return text ? { quote: text, context_before: "", context_after: "" } : null;
   }
 
-  // Block boundaries: sel.toString() inserts "\n\n" between blocks (e.g. a
-  // heading followed by a paragraph), but the text-node walker concatenates
-  // with no separator. Strip those runs from `text` so it can match `flat`.
-  // We keep single \n (which can appear inside a single text node, e.g. a
-  // code block) untouched.
-  const normalized = text.replace(/\n{2,}/g, "");
-
-  const slice = flat.slice(quoteStart, quoteStart + normalized.length);
-  if (slice !== normalized) {
-    // Trimming in the caller can shift the true start a few chars away from
-    // range.startOffset. Search a small window around quoteStart for the
-    // normalized text before giving up.
-    const windowStart = Math.max(0, quoteStart - 64);
-    const windowEnd = Math.min(flat.length, quoteStart + normalized.length + 64);
-    const found = flat.indexOf(normalized, windowStart);
-    if (found === -1 || found >= windowEnd) return null;
-    quoteStart = found;
-  }
+  // Trim whitespace overshoot: a drag that ends a hair past a block — or
+  // starts in the gap before one — shouldn't fail or carry stray newlines.
+  // This is the "clamp": a small overshoot anchors to what the user meant.
+  while (flatStart < flatEnd && /\s/.test(flat[flatStart]!)) flatStart++;
+  while (flatEnd > flatStart && /\s/.test(flat[flatEnd - 1]!)) flatEnd--;
+  if (flatEnd <= flatStart) return null;
 
   return {
-    quote: normalized,
-    context_before: flat.slice(Math.max(0, quoteStart - 32), quoteStart),
-    context_after: flat.slice(quoteStart + normalized.length, quoteStart + normalized.length + 32),
+    quote: flat.slice(flatStart, flatEnd),
+    context_before: flat.slice(Math.max(0, flatStart - 32), flatStart),
+    context_after: flat.slice(flatEnd, flatEnd + 32),
   };
 }
 
 // Wrap occurrences of `text` inside `container` with <mark> elements. Uses
-// `contextBefore` to disambiguate when a quote appears multiple times.
-// Image quotes (`[image: alt]`) wrap the matching <img> instead.
+// `contextBefore` to disambiguate when a quote appears multiple times. The
+// quote is matched against the same flat text captureSelection produced, so
+// `[image: alt]` tokens in the quote wrap the corresponding <img> — whether
+// the quote is image-only or text mixed with an image.
 // Returns the marks created (caller can attach event listeners).
 export function highlightText(
   container: Element,
@@ -154,35 +229,9 @@ export function highlightText(
   const doc = container.ownerDocument || document;
   const marks: HTMLElement[] = [];
 
-  const imgMatch = text.match(/^\[image:\s*(.*)\]$/);
-  if (imgMatch) {
-    const alt = imgMatch[1];
-    const imgs = container.querySelectorAll("img");
-    for (const img of imgs) {
-      if ((img.alt || "") === alt) {
-        const mark = doc.createElement("mark");
-        mark.className = "rl-highlight rl-img" + (resolved ? " resolved" : "");
-        mark.dataset.commentId = id;
-        img.parentNode!.insertBefore(mark, img);
-        mark.appendChild(img);
-        marks.push(mark);
-        return marks;
-      }
-    }
-    return marks;
-  }
-
   (container as HTMLElement).normalize();
 
-  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  const segments: { node: Text; start: number }[] = [];
-  let flat = "";
-  let node: Node | null;
-  while ((node = walker.nextNode())) {
-    const tn = node as Text;
-    segments.push({ node: tn, start: flat.length });
-    flat += tn.nodeValue ?? "";
-  }
+  const { flat, segments } = buildFlat(container);
 
   let quoteStart = -1;
   if (contextBefore) {
@@ -194,18 +243,28 @@ export function highlightText(
 
   const quoteEnd = quoteStart + text.length;
 
-  const toWrap: { node: Text; localStart: number; localEnd: number }[] = [];
   for (const seg of segments) {
-    const segEnd = seg.start + (seg.node.nodeValue?.length ?? 0);
-    if (segEnd <= quoteStart || seg.start >= quoteEnd) continue;
-    toWrap.push({
-      node: seg.node,
-      localStart: Math.max(0, quoteStart - seg.start),
-      localEnd: Math.min(seg.node.nodeValue?.length ?? 0, quoteEnd - seg.start),
-    });
-  }
+    const segStart = seg.start;
+    const segEnd = seg.start + seg.len;
+    if (segEnd <= quoteStart || segStart >= quoteEnd) continue;
 
-  for (const { node: tn, localStart, localEnd } of toWrap) {
+    if (seg.isImg) {
+      // Image tokens are atomic — wrap the <img> only when the quote covers
+      // the whole token, never on a partial overlap.
+      if (segStart < quoteStart || segEnd > quoteEnd) continue;
+      const img = seg.node as HTMLImageElement;
+      const mark = doc.createElement("mark");
+      mark.className = "rl-highlight rl-img" + (resolved ? " resolved" : "");
+      mark.dataset.commentId = id;
+      img.parentNode!.insertBefore(mark, img);
+      mark.appendChild(img);
+      marks.push(mark);
+      continue;
+    }
+
+    const tn = seg.node as Text;
+    const localStart = Math.max(0, quoteStart - segStart);
+    const localEnd = Math.min(seg.len, quoteEnd - segStart);
     const mark = doc.createElement("mark");
     mark.className = "rl-highlight" + (resolved ? " resolved" : "");
     mark.dataset.commentId = id;
