@@ -4,6 +4,16 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-15
+
+### Added
+- **Escalation handoff** ([#86](https://github.com/alevi/redline/pull/86)). When a comment needs something the inline review agent can't provide — an external style guide, a spec it can't see, a decision that needs the wider project — the agent flags its reply with an escalate verdict. The comment shows an "Escalated" badge, the round banner notes the count, and the session's closeout summary and `.review/<file>.result` carry an `escalations` array so the agent that launched the review picks the feedback up.
+
+### Fixed
+- **Revision integrity check and retry** ([#86](https://github.com/alevi/redline/pull/86)). The revision pass now validates its output on every run and rejects a revision that silently drops document sections no comment touched, instead of writing a mangled document to disk. A failed validation retries once before surfacing an error.
+- **Cross-block and image-spanning selections** ([#85](https://github.com/alevi/redline/pull/85)) now anchor correctly. Selecting across a block boundary, or across an image, no longer fails with an anchoring error.
+- **Sessions are no longer abandoned on a transient SSE drop** ([#84](https://github.com/alevi/redline/pull/84)). A backgrounded tab, laptop sleep, or a brief network blip no longer causes the server to exit; only an explicit tab close ends the session. A server that does go away surfaces a clear "session ended" banner instead of a raw fetch error.
+
 ## [0.2.0] - 2026-05-11
 
 ### Added
@@ -41,6 +51,7 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/alevi/redline/releases/tag/v0.3.0
 [0.2.0]: https://github.com/alevi/redline/releases/tag/v0.2.0
 [0.1.0]: https://github.com/alevi/redline/releases/tag/v0.1.0
