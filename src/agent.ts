@@ -7,6 +7,7 @@ import { parseReply } from "./parseReply";
 import { newEnvelope } from "./promptEnvelope";
 import { contextBlock } from "./contextBlock";
 import { loadSidecar } from "./sidecar";
+import { getAgentProvider, resolveProviderId } from "./agentProvider";
 
 const filePath = process.argv[2];
 if (!filePath) {
@@ -42,6 +43,7 @@ if (process.env.REDLINE_AGENT_CRASH_ALWAYS === "1") {
 
 const BASE_URL = `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
 const CSRF_TOKEN = process.env.REDLINE_TOKEN ?? "";
+const provider = getAgentProvider(resolveProviderId());
 
 // Inject `X-Redline-Token` on every mutating call back to the server. The
 // server rejects unauthenticated POST/DELETE/PUT/PATCH on /api/*; without
@@ -123,7 +125,7 @@ async function postReply(
   await fetch(`${BASE_URL}/api/comment/${commentId}/reply`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...CSRF_HEADER },
-    body: JSON.stringify({ role: "agent", name: "Claude", message, requires_revision, revision_reason, escalate }),
+    body: JSON.stringify({ role: "agent", name: provider.displayName, message, requires_revision, revision_reason, escalate }),
   });
 }
 
@@ -168,24 +170,16 @@ async function handleComment(commentId: string) {
       `Thread:\n${env.wrap("thread", threadText)}`;
 
     const lastMessage = thread[thread.length - 1].message as string;
-    const model = pickReplyModel(lastMessage);
-    console.log(`[agent] replying to ${commentId} with ${model}`);
+    const tier = pickReplyModel(lastMessage);
+    const model = provider.modelForTier(tier);
+    console.log(`[agent] replying to ${commentId} with ${provider.id}/${model}`);
 
-    const cliBin = process.env.CLAUDE_CODE_EXECPATH ?? "claude";
-    const proc = Bun.spawn(
-      [cliBin, "-p", "--system-prompt", replySystemPrompt(env.systemPromptHint()), "--model", model],
-      { stdin: "pipe", stdout: "pipe", stderr: "inherit" }
-    );
-    proc.stdin.write(userMessage);
-    proc.stdin.end();
-
-    let reply = "";
-    const reader = proc.stdout.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      reply += new TextDecoder().decode(value);
-    }
+    const reply = await provider.runReply({
+      systemPrompt: replySystemPrompt(env.systemPromptHint()),
+      userMessage,
+      model,
+      cwd: process.cwd(),
+    });
 
     if (reply.trim()) {
       const parsed = parseReply(reply);

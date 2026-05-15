@@ -17,6 +17,14 @@ export function installClaudeShim(dir: string): string {
   return wrapper;
 }
 
+export function installCodexShim(dir: string): string {
+  const shimPath = path.resolve(import.meta.dir, "fixtures", "codex-shim.ts");
+  const wrapper = path.join(dir, "codex");
+  writeFileSync(wrapper, `#!/bin/sh\nexec ${process.execPath} ${shimPath} "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  return wrapper;
+}
+
 export const CLI = path.join(import.meta.dir, "../src/cli.ts");
 export const BUN = process.execPath;
 

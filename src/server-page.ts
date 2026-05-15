@@ -17,7 +17,8 @@ function pageTemplate(
   context?: string,
   readOnly = false,
   csrfToken = "",
-  noAgent = false
+  noAgent = false,
+  agentName = "local agent"
 ): string {
   const commentsJson = JSON.stringify(comments);
 
@@ -51,7 +52,7 @@ function pageTemplate(
         </span>
         <div class="header-actions">
           <span id="agent-status" class="agent-status" hidden></span>
-          ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No Claude replies, no revision pass.">Manual mode</span>` : ''}
+          ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No ${escapeHtml(agentName)} replies, no revision pass.">Manual mode</span>` : ''}
           ${!readOnly && totalRounds > 1 ? `<button class="btn-toggle-diff" id="btn-toggle-diff" type="button" aria-pressed="false">Show changes</button>` : ''}
           ${readOnly
             ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
@@ -65,7 +66,7 @@ function pageTemplate(
       </div>` : ''}
       ${!readOnly ? `<div class="first-run-banner" id="first-run-banner" hidden>
         <span class="first-run-icon" aria-hidden="true">⚠</span>
-        <span class="first-run-text">Redline sends document and comment text to your local Claude Code agent. Use trusted docs.</span>
+        <span class="first-run-text">Redline sends document and comment text to your ${escapeHtml(agentName)} agent. Use trusted docs.</span>
         <button class="first-run-dismiss" id="first-run-dismiss" aria-label="Dismiss">Got it</button>
       </div>` : ''}
       <article class="prose" id="prose">
@@ -97,7 +98,7 @@ function pageTemplate(
     </div>
   </div>
   <div id="error-banner" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#b71c1c;color:white;padding:12px 24px;border-radius:6px;font-size:14px;font-weight:500;box-shadow:0 1px 4px rgba(0,0,0,0.08);z-index:999;white-space:nowrap;"></div>
-  <div id="session-ended-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#92400e;color:white;padding:10px 24px;font-size:14px;font-weight:500;text-align:center;z-index:1000;box-shadow:0 1px 4px rgba(0,0,0,0.15);">Review session ended — the redline server is no longer running. Your changes up to this point are saved; close this tab and continue in Claude Code.</div>
+  <div id="session-ended-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#92400e;color:white;padding:10px 24px;font-size:14px;font-weight:500;text-align:center;z-index:1000;box-shadow:0 1px 4px rgba(0,0,0,0.15);">Review session ended — the redline server is no longer running. Your changes up to this point are saved; close this tab and continue in your agent environment.</div>
 
   <script>
     window.__REDLINE__ = {

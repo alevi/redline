@@ -192,7 +192,7 @@ export function initSSE(): void {
     });
     on("finished", () => {
       document.body.innerHTML =
-        '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;flex-direction:column;gap:16px;color:#374151"><div style="font-size:48px">\u2713</div><div style="font-size:20px;font-weight:600">Review complete</div><div style="color:#6b7280">You can close this tab and continue in Claude Code.</div></div>';
+        '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;flex-direction:column;gap:16px;color:#374151"><div style="font-size:48px">\u2713</div><div style="font-size:20px;font-weight:600">Review complete</div><div style="color:#6b7280">You can close this tab and continue in your agent environment.</div></div>';
     });
     es.onerror = () => {
       es.close();

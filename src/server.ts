@@ -50,7 +50,7 @@ function getClientBundle(): Promise<string> {
 
 export function createServer(
   filePath: string,
-  opts: { context?: string; csrfToken?: string; noAgent?: boolean } = {}
+  opts: { context?: string; csrfToken?: string; noAgent?: boolean; agentName?: string } = {}
 ) {
   const app = new Hono();
   const fileName = path.basename(filePath);
@@ -275,7 +275,7 @@ export function createServer(
     const agentRepliedAt = latestRound?.agent_replied_at ?? null;
     const roundNumber = latestRound?.round ?? 1;
     const totalRounds = sidecar.rounds.length;
-    return c.html(pageTemplate(fileName, html, serializeCommentsForClient(comments), roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken, opts.noAgent ?? false));
+    return c.html(pageTemplate(fileName, html, serializeCommentsForClient(comments), roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken, opts.noAgent ?? false, opts.agentName));
   });
 
   // Add a comment to the active round
@@ -588,7 +588,8 @@ export function createServer(
       sidecar.context,
       true,   // readOnly
       csrfToken,
-      opts.noAgent ?? false
+      opts.noAgent ?? false,
+      opts.agentName
     ));
   });
 
@@ -681,5 +682,4 @@ export function createServer(
     onRevisionRecovered(cb: () => void) { onRevisionRecoveredCallback = cb; },
   };
 }
-
 
