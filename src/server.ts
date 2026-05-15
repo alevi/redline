@@ -129,12 +129,23 @@ export function createServer(
 
   // Abandonment detection: if no browser is connected for ABANDON_GRACE_MS after
   // the first one ever connected, fire onAbandonCallback so the CLI can exit.
-  // Default 10min — DevTools-offline debugging, brief network blips, and tab
-  // sleeps all reconnect well within that. The previous 2min default tripped on
-  // routine offline-mode testing. Override with REDLINE_ABANDON_MS for tests.
+  // Default 10min — this is now only the *backstop* for the no-beacon case
+  // (browser crash, kill -9, OS-killed tab). A cleanly closed tab fires an
+  // explicit /api/tab-closed beacon and takes the much shorter TAB_CLOSE_GRACE_MS
+  // path instead. The long backstop must stay generous: a bare SSE drop (laptop
+  // sleep, network blip, DevTools offline) is NOT a closed tab, and exiting on
+  // it kills a session the user means to continue. Override with
+  // REDLINE_ABANDON_MS for tests.
   const ABANDON_GRACE_MS = process.env.REDLINE_ABANDON_MS
     ? parseInt(process.env.REDLINE_ABANDON_MS, 10)
     : 10 * 60 * 1000;
+  // Grace applied after an explicit tab-close beacon. A reload also fires the
+  // beacon, so we can't exit immediately — but a reload reconnects its SSE
+  // within ~1s, while a real close never does. A few seconds covers the
+  // reconnect. Override with REDLINE_TABCLOSE_MS for tests.
+  const TAB_CLOSE_GRACE_MS = process.env.REDLINE_TABCLOSE_MS
+    ? parseInt(process.env.REDLINE_TABCLOSE_MS, 10)
+    : 8000;
   let hadBrowser = false;
   let abandonTimer: ReturnType<typeof setTimeout> | null = null;
   let onAbandonCallback: (() => void) | undefined;
@@ -194,15 +205,24 @@ export function createServer(
     }, REVISION_TIMEOUT_MS);
   }
 
+  function armAbandonTimer(graceMs: number) {
+    if (abandonTimer) clearTimeout(abandonTimer);
+    abandonTimer = setTimeout(() => {
+      abandonTimer = null;
+      // Re-check at fire time: a tab may have (re)connected during the grace
+      // — a reload, or a second tab — in which case nothing is abandoned.
+      if (browserClients.size > 0) return;
+      console.log(`\n[redline] No browser connected for ${graceMs / 1000}s — assuming abandoned.`);
+      onAbandonCallback?.();
+    }, graceMs);
+  }
+
   function checkBrowserPresence() {
     if (browserClients.size > 0) {
       hadBrowser = true;
       if (abandonTimer) { clearTimeout(abandonTimer); abandonTimer = null; }
     } else if (hadBrowser && !abandonTimer) {
-      abandonTimer = setTimeout(() => {
-        console.log(`\n[redline] No browser connected for ${ABANDON_GRACE_MS / 1000}s — assuming abandoned.`);
-        onAbandonCallback?.();
-      }, ABANDON_GRACE_MS);
+      armAbandonTimer(ABANDON_GRACE_MS);
     }
   }
 
@@ -421,6 +441,17 @@ export function createServer(
       if (body.reason?.trim()) reason = body.reason.trim();
     } catch { /* empty body is fine */ }
     broadcast("agent-unavailable", { reason });
+    return c.json({ ok: true });
+  });
+
+  // A browser tab fired pagehide — it is closing, reloading, or navigating away.
+  // This is a hint, not proof of abandonment (a reload fires it too), so we
+  // shorten the abandon grace rather than exiting outright. On a real close the
+  // SSE never reconnects and the short timer fires; on a reload the new page
+  // reconnects within ~1s and checkBrowserPresence clears the timer. Crashes
+  // and kill -9 send no beacon and fall back to the long ABANDON_GRACE_MS.
+  app.post("/api/tab-closed", (c) => {
+    if (hadBrowser) armAbandonTimer(TAB_CLOSE_GRACE_MS);
     return c.json({ ok: true });
   });
 
