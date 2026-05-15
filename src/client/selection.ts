@@ -197,7 +197,7 @@ export function initSelectionHandlers(): void {
 
       const captured = captureSelection(sel, text);
       if (!captured) {
-        showError("Highlight a single passage \u2014 selections that cross images or sections can't be anchored.");
+        showError("Couldn't anchor that selection \u2014 try highlighting the passage again.");
         sel.removeAllRanges();
         return;
       }

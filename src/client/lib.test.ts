@@ -232,7 +232,7 @@ describe("captureSelection", () => {
     expect(captured!.quote).toBe("A subsection (H3)Specs typically nest.");
   });
 
-  test("returns null when selected text doesn't appear anywhere near quoteStart", () => {
+  test("anchors to the range, not the text argument, when the two disagree", () => {
     setBody(
       "<div id='prose'><p>" +
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." +
@@ -247,24 +247,90 @@ describe("captureSelection", () => {
     sel.removeAllRanges();
     sel.addRange(r);
 
-    // The text exists in the doc but far past the ±64 search window from quoteStart=0.
+    // The range is the source of truth — even a bogus text arg can't shift it.
     const captured = captureSelection(prose, sel as unknown as Selection, "magna aliqua");
-    expect(captured).toBeNull();
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("Lorem");
   });
 
-  test("returns null when selected text doesn't appear in flat text (e.g. crossed image alt)", () => {
+  test("anchors a selection that crosses a block boundary with real inter-tag whitespace", () => {
+    // marked emits "\n" text nodes between block tags; the walker includes
+    // them in flat. A cross-block selection must still anchor.
+    setBody(
+      "<div id='prose'>" +
+        "<p>First paragraph ends here.</p>\n" +
+        "<h2>A heading</h2>\n" +
+        "<p>Second paragraph starts here.</p>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const ps = prose.querySelectorAll("p");
+    const r = document.createRange();
+    const first = ps[0]!.firstChild!;
+    const second = ps[1]!.firstChild!;
+    r.setStart(first, first.nodeValue!.indexOf("ends here."));
+    r.setEnd(second, "Second paragraph".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    expect(captured).not.toBeNull();
+    expect(captured!.quote.startsWith("ends here.")).toBe(true);
+    expect(captured!.quote.endsWith("Second paragraph")).toBe(true);
+  });
+
+  test("clamps a small overshoot past the end of a block", () => {
+    // The user selects a list item and drags a hair into the next heading.
+    setBody(
+      "<div id='prose'>" +
+        "<ul>\n<li>First item</li>\n<li>The last item</li>\n</ul>\n" +
+        "<h2>Next section</h2>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const lastLi = prose.querySelectorAll("li")[1]!.firstChild!;
+    const heading = prose.querySelector("h2")!.firstChild!;
+    const r = document.createRange();
+    r.setStart(lastLi, 0);
+    r.setEnd(heading, 3); // dragged 3 chars into "Next section"
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    // Old behavior: rejected with "crosses sections". New behavior: anchors.
+    const captured = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    expect(captured).not.toBeNull();
+    expect(captured!.quote.startsWith("The last item")).toBe(true);
+  });
+
+  test("anchors a selection that spans an image, embedding an [image: alt] token", () => {
     setBody("<div id='prose'><p>before <img alt='diagram'> after</p></div>");
     const prose = document.getElementById("prose")!;
     const p = prose.querySelector("p")!;
     const r = document.createRange();
     r.setStart(p.firstChild!, 0);
-    r.setEnd(p.lastChild!, 5);
+    r.setEnd(p.lastChild!, 6);
     const sel = window.getSelection()!;
     sel.removeAllRanges();
     sel.addRange(r);
-    // simulate sel.toString() returning text with the alt embedded — won't match flat
-    const got = captureSelection(prose, sel as unknown as Selection, "before diagram afte");
-    expect(got).toBeNull();
+    const got = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    expect(got).not.toBeNull();
+    expect(got!.quote).toBe("before [image: diagram] after");
+  });
+
+  test("captures an image-only selection as an [image: alt] quote", () => {
+    setBody("<div id='prose'><p>before <img alt='diagram'> after</p></div>");
+    const prose = document.getElementById("prose")!;
+    const img = prose.querySelector("img")!;
+    const r = document.createRange();
+    r.selectNode(img);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+    const got = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    expect(got).not.toBeNull();
+    expect(got!.quote).toBe("[image: diagram]");
   });
 });
 
@@ -313,6 +379,16 @@ describe("highlightText", () => {
     const mark = marks[0]!;
     expect(mark.classList.contains("rl-img")).toBe(true);
     expect(mark.querySelector("img")?.getAttribute("alt")).toBe("hero");
+  });
+  test("wraps a quote that mixes text and an image across multiple marks", () => {
+    setBody("<div><p>see the <img alt='diagram'> below for details</p></div>");
+    const root = document.querySelector("div")!;
+    const marks = highlightText(root, "the [image: diagram] below", "c1", false, "");
+    expect(marks.length).toBe(3);
+    const imgMark = marks.find((m) => m.classList.contains("rl-img"))!;
+    expect(imgMark).toBeTruthy();
+    expect(imgMark.querySelector("img")?.getAttribute("alt")).toBe("diagram");
+    expect(marks.filter((m) => !m.classList.contains("rl-img")).length).toBe(2);
   });
   test("returns no marks when quote isn't found", () => {
     setBody("<div><p>hello</p></div>");
