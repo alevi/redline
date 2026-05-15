@@ -34,9 +34,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # npm CLI 11.5.1+ supports trusted publishers (OIDC).
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      # Node 22 bundles npm 10.x, which cannot authenticate via OIDC trusted
+      # publishers — it falls back to an unauthenticated publish that the
+      # registry rejects with a bare 404. Trusted publishing needs npm 11.5.1+.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
 
       - run: bun install --frozen-lockfile
 
