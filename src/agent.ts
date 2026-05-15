@@ -89,8 +89,11 @@ const REPLY_SYSTEM_PROMPT_BODY =
   "Good: message: \"Got it.\"  reason: \"Add a third line to the hard line breaks example\"\n" +
   "When requires_revision is false, leave reason empty (or a very short note about why no edit). The reply IS the answer.\n" +
   "\n" +
+  "Separately, decide whether this comment needs the agent that LAUNCHED this review rather than you. That outer agent has the project context, tools, and authority you don't — e.g. an external style guide or canon you can't see, a spec to check the document against, or a decision that depends on the wider project. When the comment asks for something like that, set ESCALATE: true and briefly tell the reviewer in your message that you've routed it to the launching agent. Otherwise ESCALATE: false. Escalating does not change requires_revision — judge that on its own.\n" +
+  "\n" +
   "Output exactly this format and nothing else (no prose before/after, no code fences). Use these literal markers — do not escape quotes inside the message:\n" +
   "REQUIRES_REVISION: <true|false>\n" +
+  "ESCALATE: <true|false>\n" +
   "REASON: <one short sentence describing the edit, or empty>\n" +
   "---MESSAGE---\n" +
   "<your reply text — quotes, punctuation, anything>\n" +
@@ -114,12 +117,13 @@ async function postReply(
   commentId: string,
   message: string,
   requires_revision: boolean,
-  revision_reason: string
+  revision_reason: string,
+  escalate: boolean
 ) {
   await fetch(`${BASE_URL}/api/comment/${commentId}/reply`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...CSRF_HEADER },
-    body: JSON.stringify({ role: "agent", name: "Claude", message, requires_revision, revision_reason }),
+    body: JSON.stringify({ role: "agent", name: "Claude", message, requires_revision, revision_reason, escalate }),
   });
 }
 
@@ -185,8 +189,8 @@ async function handleComment(commentId: string) {
 
     if (reply.trim()) {
       const parsed = parseReply(reply);
-      console.log(`[agent] verdict for ${commentId}: requires_revision=${parsed.requires_revision}`);
-      await postReply(commentId, parsed.message, parsed.requires_revision, parsed.reason);
+      console.log(`[agent] verdict for ${commentId}: requires_revision=${parsed.requires_revision} escalate=${parsed.escalate}`);
+      await postReply(commentId, parsed.message, parsed.requires_revision, parsed.reason, parsed.escalate);
     }
   } catch (err) {
     await logReplyFailure(commentId, err);

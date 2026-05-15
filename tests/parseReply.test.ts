@@ -11,7 +11,28 @@ test("parseReply: well-formed JSON with revise verdict", () => {
     message: "Will rephrase the intro.",
     requires_revision: true,
     reason: "drop the offline-first framing",
+    escalate: false,
   });
+});
+
+test("parseReply: delimiter envelope with ESCALATE: true", () => {
+  const raw =
+    "REQUIRES_REVISION: false\nESCALATE: true\nREASON: \n" +
+    "---MESSAGE---\nI don't have the style guide — routed to the launching agent.\n---END---";
+  const r = parseReply(raw);
+  expect(r.escalate).toBe(true);
+  expect(r.requires_revision).toBe(false);
+});
+
+test("parseReply: ESCALATE absent defaults to false", () => {
+  const raw = "REQUIRES_REVISION: true\nREASON: fix typo\n---MESSAGE---\nGot it.\n---END---";
+  const r = parseReply(raw);
+  expect(r.escalate).toBe(false);
+});
+
+test("parseReply: JSON form carries escalate", () => {
+  const r = parseReply('{"message":"ok","requires_revision":false,"escalate":true}');
+  expect(r.escalate).toBe(true);
 });
 
 test("parseReply: well-formed JSON with accept verdict", () => {

@@ -4,6 +4,10 @@ import { mkdir, writeFile } from "fs/promises";
 import { spawnSync } from "child_process";
 import { createRequire } from "module";
 import path from "path";
+// reviewSummary only `import type`s from ./sidecar, so it pulls in no
+// third-party deps at runtime — safe to import statically ahead of the
+// preflight. abandon() needs it synchronously (signal context).
+import { collectEscalations, formatReviewSummary } from "./reviewSummary";
 
 // Ensure redline's own dependencies are resolvable before any third-party
 // imports load. `redline` is invoked from arbitrary projects: in a checkout
@@ -137,6 +141,7 @@ if (args[0] === "resolve") {
 
   const resultFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".result");
   const startupFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".startup.json");
+  const sidecarFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".json");
 
   // Clear stale state from a prior run so a polling agent can't be misled
   // by a leftover .result or .startup.json file that predates this process.
@@ -274,19 +279,36 @@ if (args[0] === "resolve") {
     const status = lastRevisionError ? "error" : "abandoned";
     const payload: Record<string, unknown> = { status, file: resolved };
     if (lastRevisionError) payload.reason = lastRevisionError;
+    // Carry escalations through the error/abandon path too — on an incomplete
+    // session they matter more, not less. Read the sidecar synchronously:
+    // abandon runs in signal context where async I/O may not complete.
+    let escalations: import("./reviewSummary").EscalationItem[] = [];
+    try {
+      if (existsSync(sidecarFile)) {
+        const raw = readFileSync(sidecarFile, "utf-8");
+        if (raw.trim()) escalations = collectEscalations(JSON.parse(raw));
+      }
+    } catch { /* best effort — never block shutdown on the summary */ }
+    payload.escalations = escalations;
     // Synchronous write so the result file lands even if the runtime is
     // terminating due to a signal (async I/O may not complete in that case).
     try {
       mkdirSync(path.dirname(resultFile), { recursive: true });
       writeFileSync(resultFile, JSON.stringify(payload, null, 2));
     } catch { /* best effort */ }
-    console.log(`\nREDLINE_RESULT: ${status}${lastRevisionError ? ` reason="${lastRevisionError}"` : ""}`);
+    if (escalations.length) {
+      console.log(
+        `\n⚠ ${escalations.length} comment${escalations.length !== 1 ? "s" : ""} escalated to the launching agent — see ${path.basename(resultFile)}`
+      );
+    }
+    const escSuffix = escalations.length ? ` escalations=${escalations.length}` : "";
+    console.log(`\nREDLINE_RESULT: ${status}${lastRevisionError ? ` reason="${lastRevisionError}"` : ""}${escSuffix}`);
     // Exit 3 = revision error; 2 = abandoned. Both still distinguish from 0 (approved).
     process.exit(lastRevisionError ? 3 : 2);
   };
 
   // Happy-path finish: human clicked Done.
-  app.onFinished(({ totalRounds, totalComments }) => {
+  app.onFinished(async ({ totalRounds, totalComments }) => {
     serverExiting = true;
     killAgent().catch(() => { /* shutdown already in flight */ });
     try { unlinkSync(startupFile); } catch { /* best effort */ }
@@ -296,10 +318,25 @@ if (args[0] === "resolve") {
     console.log(`   ${totalRounds} round${totalRounds !== 1 ? "s" : ""} · ${totalComments} comment${totalComments !== 1 ? "s" : ""} addressed`);
     console.log(`   Revised document: ${resolved}`);
     console.log(`${line}`);
+
+    // Print the full comment threads so the launching agent — which has no
+    // live channel to the inline review agent — sees everything the reviewer
+    // said, including escalated feedback meant for it.
+    let escalations: import("./reviewSummary").EscalationItem[] = [];
+    try {
+      const { loadSidecar } = await import("./sidecar");
+      const sidecar = await loadSidecar(resolved);
+      escalations = collectEscalations(sidecar);
+      console.log(`\n${formatReviewSummary(sidecar)}`);
+    } catch (e) {
+      console.error("[redline] Failed to build review summary:", e);
+    }
+
     // Machine-greppable result line for a calling agent. Keep this stable.
-    console.log(`REDLINE_RESULT: approved file=${resolved} rounds=${totalRounds} comments=${totalComments}`);
+    const escSuffix = escalations.length ? ` escalations=${escalations.length}` : "";
+    console.log(`\nREDLINE_RESULT: approved file=${resolved} rounds=${totalRounds} comments=${totalComments}${escSuffix}`);
     console.log("");
-    writeResult({ status: "approved", file: resolved, rounds: totalRounds, comments: totalComments })
+    writeResult({ status: "approved", file: resolved, rounds: totalRounds, comments: totalComments, escalations })
       .finally(() => process.exit(0));
   });
 

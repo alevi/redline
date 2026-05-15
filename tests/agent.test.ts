@@ -160,6 +160,51 @@ test("delimiter envelope: revise verdict + reason flow through to the sidecar", 
   expect(reply.revision_reason).toBe("drop the offline-first framing");
 }, 20_000);
 
+test("delimiter envelope: ESCALATE flag flows through to the sidecar", async () => {
+  const envelope =
+    "REQUIRES_REVISION: false\n" +
+    "ESCALATE: true\n" +
+    "REASON: \n" +
+    "---MESSAGE---\n" +
+    "I don't have the style guide — routed to the launching agent.\n" +
+    "---END---";
+
+  const { filePath, shim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+
+  const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
+  await repliedP.ready;
+  await postComment(port, { quote: "First paragraph" }, "run the house style guide");
+  await repliedP;
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const reply = sidecar.rounds[0].comments[0].thread[1];
+  expect(reply.role).toBe("agent");
+  expect(reply.escalate).toBe(true);
+  expect(reply.requires_revision).toBe(false);
+}, 20_000);
+
+test("delimiter envelope: no ESCALATE line leaves escalate unset", async () => {
+  const envelope =
+    "REQUIRES_REVISION: false\n" +
+    "REASON: \n" +
+    "---MESSAGE---\n" +
+    "Looks fine to me.\n" +
+    "---END---";
+
+  const { filePath, shim } = makeTestDir(SAMPLE);
+  const { port } = await startWithShim(filePath, shim, { REDLINE_SHIM_REPLY: envelope });
+
+  const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
+  await repliedP.ready;
+  await postComment(port, { quote: "First paragraph" }, "all good?");
+  await repliedP;
+
+  const sidecar = await fetch(`http://localhost:${port}/api/sidecar`).then((r) => r.json());
+  const reply = sidecar.rounds[0].comments[0].thread[1];
+  expect(reply.escalate).toBeUndefined();
+}, 20_000);
+
 // ── Resolve / revision flow ──────────────────────────────────────────────
 
 test("accept triggers revision; revised file is written and round 2 opens", async () => {
@@ -250,4 +295,60 @@ test("revision failure broadcasts revision-error and writes errors.log", async (
   const log = await readFile(logPath, "utf-8");
   expect(log).toContain("reason:");
   expect(log).toContain("exitCode:     1");
+}, 25_000);
+
+test("revision retries once on mangled output and succeeds on the retry", async () => {
+  const { filePath, dir, shim } = makeTestDir(SAMPLE);
+  const counter = path.join(dir, "shim-count");
+  const { port } = await startWithShim(filePath, shim, {
+    REDLINE_SHIM_REPLY: "ok",
+    REDLINE_SHIM_REVISION: "mangle-once",
+    REDLINE_SHIM_COUNTER: counter,
+  });
+
+  const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
+  await repliedP.ready;
+  const c = await postComment(port, { quote: "First paragraph" }, "fix this");
+  await repliedP;
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
+
+  // First attempt drops the heading (rejected); the retry returns a clean
+  // revision, so `reload` still fires.
+  const reloadP = waitForEvent(port, "reload", { timeoutMs: 15000 });
+  await reloadP.ready;
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
+  await reloadP;
+
+  const revised = await readFile(filePath, "utf-8");
+  expect(revised).toContain("## Revised by shim");
+  // Two shim invocations: a mangled first attempt + a clean retry.
+  expect((await readFile(counter, "utf-8")).trim()).toBe("2");
+}, 25_000);
+
+test("revision that stays mangled fails after the retry, not on the first attempt", async () => {
+  const { filePath, dir, shim } = makeTestDir(SAMPLE);
+  const counter = path.join(dir, "shim-count");
+  const { port } = await startWithShim(filePath, shim, {
+    REDLINE_SHIM_REPLY: "ok",
+    REDLINE_SHIM_REVISION: "mangle",
+    REDLINE_SHIM_COUNTER: counter,
+  });
+
+  const repliedP = waitForEvent(port, "agent-replied", { timeoutMs: 8000 });
+  await repliedP.ready;
+  const c = await postComment(port, { quote: "First paragraph" }, "fix this");
+  await repliedP;
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/resolve`, { method: "POST", headers: CSRF_HEADERS });
+
+  const errP = waitForEvent(port, "revision-error", { timeoutMs: 15000 });
+  await errP.ready;
+  await fetch(`http://localhost:${port}/api/accept`, { method: "POST", headers: CSRF_HEADERS });
+  await errP;
+
+  // Both attempts ran before giving up.
+  expect((await readFile(counter, "utf-8")).trim()).toBe("2");
+  // The logged reason is the accurate validator message, not the old
+  // misleading "no Markdown heading" wording.
+  const log = await readFile(path.join(dir, ".review", "errors.log"), "utf-8");
+  expect(log).toContain("no Markdown headings");
 }, 25_000);

@@ -440,6 +440,7 @@ export function createServer(
       name?: string;
       requires_revision?: boolean;
       revision_reason?: string;
+      escalate?: boolean;
     }>();
     if (!body.message?.trim()) return c.json({ ok: false, error: "message is required" }, 400);
     const role = (body.role === "human" ? "human" : "agent") as "human" | "agent";
@@ -453,9 +454,12 @@ export function createServer(
       const entry: import("./sidecar").ThreadEntry = { role, message: body.message.trim(), at: new Date().toISOString() };
       if (name) entry.name = name;
       // Verdict only meaningful on agent replies; ignore on human entries.
-      if (role === "agent" && typeof body.requires_revision === "boolean") {
-        entry.requires_revision = body.requires_revision;
-        if (body.revision_reason?.trim()) entry.revision_reason = body.revision_reason.trim();
+      if (role === "agent") {
+        if (typeof body.requires_revision === "boolean") {
+          entry.requires_revision = body.requires_revision;
+          if (body.revision_reason?.trim()) entry.revision_reason = body.revision_reason.trim();
+        }
+        if (body.escalate === true) entry.escalate = true;
       }
       comment.thread.push(entry);
       return { skip: false as const, roundNumber: round.round, comment };

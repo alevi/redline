@@ -1,4 +1,4 @@
-import { escapeHtml, latestVerdict, type ClientComment, type ThreadEntry } from "./lib";
+import { escapeHtml, isEscalated, latestVerdict, type ClientComment, type ThreadEntry } from "./lib";
 import { state } from "./state";
 
 export type CardCallbacks = {
@@ -40,6 +40,12 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
       vbadge.textContent = verdict === "revise" ? "\u270E Edit queued" : "\u2713 Answered";
       quote.appendChild(vbadge);
     }
+  }
+  if (isEscalated(comment)) {
+    const ebadge = document.createElement("span");
+    ebadge.className = "escalate-badge";
+    ebadge.textContent = "↑ Escalated";
+    quote.appendChild(ebadge);
   }
   quote.appendChild(document.createTextNode('"' + comment.quote + '"'));
   card.appendChild(quote);
@@ -165,6 +171,9 @@ function buildThreadEntry(entry: ThreadEntry, isLatestVerdict: boolean): HTMLDiv
   if (role === "agent" && entry.requires_revision === true && isLatestVerdict) {
     const reason = entry.revision_reason ? escapeHtml(entry.revision_reason) : "edit queued";
     verdictHtml = `<div class="verdict revise"><span class="verdict-icon">\u270E</span><span>${reason}</span></div>`;
+  }
+  if (role === "agent" && entry.escalate === true) {
+    verdictHtml += `<div class="verdict escalate"><span class="verdict-icon">\u2191</span><span>Routed to the launching agent</span></div>`;
   }
   const messageHtml = entry.messageHtml ?? escapeHtml(entry.message);
   div.innerHTML = `

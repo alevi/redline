@@ -10,6 +10,7 @@ import {
   readResult,
   waitForExit,
   waitForEvent,
+  postComment,
   TEST_CSRF_TOKEN,
 } from "./helpers";
 
@@ -200,6 +201,43 @@ test("revision crash → abandon writes error result, not abandoned", async () =
   const result = await readResult(dir);
   expect(result.status).toBe("error");
   expect(result.reason).toContain("boom");
+}, 15_000);
+
+test("abandon path carries escalations into the result file", async () => {
+  // Escalations must survive a session that ends on abandon, not just a clean
+  // finish — otherwise feedback meant for the launching agent is lost when a
+  // review is interrupted.
+  const { filePath, dir } = createTestFile();
+  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" }, ["--no-agent"]);
+  await waitForServer(port);
+
+  const c = await postComment(port, { quote: "a test" }, "Check this against the house style guide.");
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({
+      role: "agent",
+      name: "Claude",
+      message: "Routed to the launching agent.",
+      requires_revision: false,
+      escalate: true,
+    }),
+  });
+
+  // Connect a browser then drop it, tripping the abandon timer.
+  const ac = new AbortController();
+  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  await Bun.sleep(200);
+  ac.abort();
+
+  const code = await waitForExit(proc, 5000);
+  expect(code).toBe(2);
+
+  const result = await readResult(dir);
+  expect(result.status).toBe("abandoned");
+  const escalations = result.escalations as Array<Record<string, unknown>>;
+  expect(escalations).toHaveLength(1);
+  expect(escalations[0]!.quote).toBe("a test");
 }, 15_000);
 
 test("revision crash → recovered → abandon writes abandoned, not error", async () => {
@@ -400,4 +438,54 @@ test("/api/finish writes approved result file and exits 0", async () => {
   expect(result.file).toBe(filePath);
   expect(typeof result.rounds).toBe("number");
   expect(typeof result.comments).toBe("number");
+}, 15_000);
+
+test("/api/finish: escalated comment surfaces in the result file escalations array", async () => {
+  // --no-agent so no claude shim is needed; we post the escalated agent reply
+  // directly. Exercises the closeout path: sidecar → reviewSummary → result file.
+  const { filePath, dir } = createTestFile();
+  const { proc, port } = await spawnTracked(filePath, {}, ["--no-agent"]);
+  await waitForServer(port);
+
+  const c = await postComment(port, { quote: "a test" }, "Run this past the house style guide.");
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({
+      role: "agent",
+      name: "Claude",
+      message: "I don't have the style guide — routed to the launching agent.",
+      requires_revision: false,
+      escalate: true,
+    }),
+  });
+
+  const res = await fetch(`http://localhost:${port}/api/finish`, { method: "POST", headers: CSRF_HEADERS });
+  expect(res.status).toBe(200);
+
+  const code = await waitForExit(proc, 5000);
+  expect(code).toBe(0);
+
+  const result = await readResult(dir);
+  expect(result.status).toBe("approved");
+  const escalations = result.escalations as Array<Record<string, unknown>>;
+  expect(Array.isArray(escalations)).toBe(true);
+  expect(escalations).toHaveLength(1);
+  expect(escalations[0]!.quote).toBe("a test");
+  expect(escalations[0]!.request).toBe("Run this past the house style guide.");
+}, 15_000);
+
+test("/api/finish: no escalations → result file carries an empty escalations array", async () => {
+  const { filePath, dir } = createTestFile();
+  const { proc, port } = await spawnTracked(filePath, {}, ["--no-agent"]);
+  await waitForServer(port);
+
+  const res = await fetch(`http://localhost:${port}/api/finish`, { method: "POST", headers: CSRF_HEADERS });
+  expect(res.status).toBe(200);
+
+  const code = await waitForExit(proc, 5000);
+  expect(code).toBe(0);
+
+  const result = await readResult(dir);
+  expect(result.escalations).toEqual([]);
 }, 15_000);

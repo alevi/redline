@@ -569,6 +569,7 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
   line-height: 1.5;
 }
 .verdict.revise { color: #92400e; }
+.verdict.escalate { color: #5b21b6; }
 
 /* Warm-tinted resolve button when the latest verdict implies an edit */
 .btn-resolve-comment.revise {
@@ -595,6 +596,22 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
 }
 .verdict-badge.revise { background: #fef3c7; color: #92400e; }
 .verdict-badge.accept { background: #e5e7eb; color: var(--text-muted); }
+
+/* Escalation badge on the quote line — comment routed to the launching agent */
+.escalate-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  font-style: normal;
+  background: #ede9fe;
+  color: #5b21b6;
+}
 
 /* Round-level secondary action (under the primary banner button) */
 .round-secondary {
@@ -785,6 +802,16 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
   font-weight: 500;
   align-items: center;
   gap: 8px;
+}
+/* Escalation sub-line under the round banner — purple to match the
+   ↑ Escalated comment badges, distinct from the green verdict copy. */
+.banner-escalation {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #a5d6a7;
+  color: #5b21b6;
+  font-size: 12.5px;
+  font-weight: 600;
 }
 #sidebar-status-banner.revising {
   background: #fff3e0;
