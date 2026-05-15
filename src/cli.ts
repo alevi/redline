@@ -101,11 +101,33 @@ function maybePrintGitignoreHint(filePath: string) {
 
 const args = process.argv.slice(2);
 
+if (args[0] === "--version" || args[0] === "-v") {
+  const pkgPath = path.resolve(import.meta.dir, "..", "package.json");
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
+    console.log(pkg.version ?? "unknown");
+  } catch {
+    console.log("unknown");
+  }
+  process.exit(0);
+}
+
+// redline install-skill [--agent claude|codex|both]
+if (args[0] === "install-skill") {
+  const script = path.resolve(import.meta.dir, "..", "scripts", "install-skill.sh");
+  if (!existsSync(script)) {
+    console.error(`Install script not found: ${script}`);
+    process.exit(1);
+  }
+  const result = spawnSync("bash", [script, ...args.slice(1)], { stdio: "inherit" });
+  process.exit(result.status ?? 1);
+}
+
 // redline resolve <file> [--model <id>]
 if (args[0] === "resolve") {
   const filePath = args[1];
   if (!filePath) {
-    console.error("Usage: redline resolve <file.md> [--model <model-id>]");
+    console.error("Usage: redline resolve <file.md> [--model <model-id>] [--agent claude|codex]");
     process.exit(1);
   }
   const resolved = path.resolve(filePath);
@@ -126,7 +148,7 @@ if (args[0] === "resolve") {
   // redline <file>  — open review reader
   const filePath = args[0];
   if (!filePath) {
-    console.error("Usage: redline <file.md>");
+    console.error("Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline install-skill [--agent claude|codex|both]");
     process.exit(1);
   }
   const resolved = path.resolve(filePath);

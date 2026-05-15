@@ -12,7 +12,7 @@ body:
         - Reviewing AI-generated PRDs
         - Reviewing architecture specs
         - Reviewing README drafts
-        - Approving Claude Code output before merge
+        - Approving agent output before merge
         - Human approval loops for agent-written docs
 
         If your case is one of these, great — say so. If it's something else, even better.

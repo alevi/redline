@@ -18,6 +18,23 @@ The terminal prints a `localhost` URL. Cmd-click it. Select any text in the docu
 
 Requires [Bun](https://bun.sh) >= 1.0 and an authenticated local agent CLI. Redline currently supports [Claude Code](https://claude.com/claude-code) and Codex. The agent inherits your existing CLI auth session — no provider API key needed.
 
+## Install
+
+For one-off reviews, `bunx` / `npx` is enough:
+
+```sh
+bunx @levistudio/redline ./spec.md
+```
+
+To make Redline available as a normal command and install its agent skill:
+
+```sh
+bun add -g @levistudio/redline
+redline install-skill --agent codex   # or: claude, both
+```
+
+That installs the bundled `redline-review` skill into your agent environment (`~/.codex/skills/` and/or `~/.claude/skills/`). After that, ask your agent to redline a Markdown file when it needs your sign-off; it should launch Redline, surface the local URL, wait for you to finish, then continue from the approved file.
+
 ## Why Redline exists
 
 A lot of recent docs start as an AI-agent draft. Reviewing those drafts in a chat window is awkward. Comments scroll out from under the text. "Fix paragraph 3" loses its anchor as soon as the doc is rewritten. Google-Docs-style tools don't speak the file on disk.
@@ -51,7 +68,7 @@ After each revision, the new round opens with the document rendered inline as a 
 - **Reviewing AI-generated PRDs.** Hand your coding agent a one-line brief, let it draft the PRD, then redline it line by line before passing it on.
 - **Reviewing architecture specs.** Mark assumptions you want challenged, ask the agent to expand sections, ship the revised spec.
 - **Reviewing README drafts.** Your agent wrote your README — read through, leave inline comments where the framing is off, accept the revision in one click.
-- **Approving agent output before merge.** Use the bundled [redline-review skill](skills/redline-review/SKILL.md) from Claude Code so your outer agent automatically hands you the doc to sign off on.
+- **Approving agent output before merge.** Use the bundled [redline-review skill](skills/redline-review/SKILL.md) so your outer agent automatically hands you the doc to sign off on.
 - **Human approval loops for agent-written docs.** Anywhere an agent needs your sign-off on prose before continuing, run it through Redline.
 
 ## Reviewing for a specific lens
@@ -91,14 +108,14 @@ bunx @levistudio/redline resolve ./spec.md --agent codex
 
 ## Outer-agent handoff (optional)
 
-Want Claude Code to invoke Redline automatically whenever it produces a Markdown doc you need to sign off on? Install the bundled skill:
+Want your coding agent to invoke Redline automatically whenever it produces a Markdown doc you need to sign off on? Install the bundled skill:
 
 ```sh
-git clone https://github.com/alevi/redline.git && cd redline
-./scripts/install-skill.sh
+bun add -g @levistudio/redline
+redline install-skill --agent codex   # or: claude, both
 ```
 
-This copies `skills/redline-review/` into `~/.claude/skills/` with absolute paths baked in. After installation, Claude Code will reach for `redline-review` whenever it has Markdown that needs human review before it can continue.
+This copies `skills/redline-review/` into your agent skills directory with a durable launcher baked in. After installation, your agent can reach for `redline-review` whenever it has Markdown that needs human review before it can continue.
 
 ## Local-first / security
 

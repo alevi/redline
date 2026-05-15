@@ -47,7 +47,10 @@ if (!bun) {
   process.exit(1);
 }
 
-const child = spawn(bun, ["run", CLI, ...process.argv.slice(2)], { stdio: "inherit" });
+const child = spawn(bun, ["run", CLI, ...process.argv.slice(2)], {
+  stdio: "inherit",
+  env: { ...process.env, REDLINE_BIN_ABS: __filename },
+});
 child.on("exit", (code, signal) => {
   if (signal) {
     try { process.kill(process.pid, signal); } catch { process.exit(1); }

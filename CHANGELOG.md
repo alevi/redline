@@ -4,8 +4,11 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-15
+
 ### Added
 - Claude and Codex agent providers are now supported through a provider-neutral runtime. Use `--agent claude|codex` or `REDLINE_AGENT` to choose explicitly; otherwise Redline auto-detects an available local provider.
+- `redline install-skill --agent claude|codex|both` installs the bundled `redline-review` skill into Claude Code and/or Codex so agents can reach for Redline automatically when a Markdown doc needs human sign-off.
 
 ### Changed
 - `AGENTS.md` is now the canonical contributor onboarding doc. `CLAUDE.md` remains as a Claude Code compatibility pointer to the same provider-neutral guidance.
@@ -57,7 +60,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/alevi/redline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alevi/redline/releases/tag/v0.3.0
 [0.2.0]: https://github.com/alevi/redline/releases/tag/v0.2.0
 [0.1.0]: https://github.com/alevi/redline/releases/tag/v0.1.0

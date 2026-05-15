@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Redline is intentionally narrow — single-player, single-agent, local markdown review with a Claude in the thread. Feature requests that fit that scope are more likely to land than ones that pull it toward being a full CMS or collaborative-editing platform.
+        Redline is intentionally narrow — single-player, single-agent, local markdown review with a local agent in the thread. Feature requests that fit that scope are more likely to land than ones that pull it toward being a full CMS or collaborative-editing platform.
 
         Read [ROADMAP.md](https://github.com/alevi/redline/blob/main/ROADMAP.md) first to see what's already planned. If your idea is already on it, drop a 👍 on this issue when you open it.
 

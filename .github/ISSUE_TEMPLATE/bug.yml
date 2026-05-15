@@ -59,11 +59,11 @@ body:
       required: true
 
   - type: input
-    id: claude-version
+    id: agent-version
     attributes:
-      label: Claude Code version
-      description: Output of `claude --version`.
-      placeholder: e.g. 2.5.0
+      label: Agent CLI version
+      description: Output of `claude --version`, `codex --version`, or whichever provider CLI you used.
+      placeholder: e.g. Claude Code 2.5.0 or Codex 0.42.0
     validations:
       required: false
 
