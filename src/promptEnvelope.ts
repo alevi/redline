@@ -1,5 +1,5 @@
 // Per-prompt envelope around user-controlled strings before they reach
-// `claude -p`. Same delimiter-over-JSON principle the agent reply path
+// the selected local agent provider. Same delimiter-over-JSON principle the agent reply path
 // already uses (see retro entry 2026-05-07 — "delimiter envelope for agent
 // replies"), applied to the *input* side: comment text, document body,
 // thread messages.

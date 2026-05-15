@@ -215,7 +215,7 @@ if (args[0] === "resolve") {
   maybePrintGitignoreHint(resolved);
 
   // Auto-restart the agent if it dies unexpectedly (harness reaping, OOM,
-  // a transient claude-CLI auth blip, etc). Capped to MAX_RESTARTS within
+  // a transient provider-CLI auth blip, etc). Capped to MAX_RESTARTS within
   // RESTART_WINDOW_MS so a permanently-broken environment doesn't loop forever.
   const RESTART_WINDOW_MS = 60_000;
   // Cap is overrideable via env so integration tests can exercise the

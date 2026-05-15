@@ -4,6 +4,12 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+- Claude and Codex agent providers are now supported through a provider-neutral runtime. Use `--agent claude|codex` or `REDLINE_AGENT` to choose explicitly; otherwise Redline auto-detects an available local provider.
+
+### Changed
+- `AGENTS.md` is now the canonical contributor onboarding doc. `CLAUDE.md` remains as a Claude Code compatibility pointer to the same provider-neutral guidance.
+
 ## [0.3.0] - 2026-05-15
 
 ### Added

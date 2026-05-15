@@ -430,7 +430,7 @@ export function createServer(
   });
 
   // CLI signals the agent subprocess is gone for good (restart cap exhausted,
-  // missing claude CLI, etc). Surfaces a small persistent indicator in the
+  // missing provider CLI, etc). Surfaces a small persistent indicator in the
   // header so the user knows replies aren't coming and can restart redline.
   // No paired "agent-available" event — recovery requires a restart, so the
   // indicator stays until the page reloads.
@@ -682,4 +682,3 @@ export function createServer(
     onRevisionRecovered(cb: () => void) { onRevisionRecoveredCallback = cb; },
   };
 }
-

@@ -1,6 +1,6 @@
 # Security
 
-Redline is a **single-player, localhost-only** review tool that runs on the operator's machine. Reviewed Markdown is rendered in a browser and fed to a local Claude subprocess. This document describes what is defended against, what is out of scope, and how to report issues.
+Redline is a **single-player, localhost-only** review tool that runs on the operator's machine. Reviewed Markdown is rendered in a browser and fed to a selected local agent subprocess. This document describes what is defended against, what is out of scope, and how to report issues.
 
 ## Threat model
 
@@ -11,9 +11,9 @@ Redline is a **single-player, localhost-only** review tool that runs on the oper
 
 **Out of scope.** Redline is a developer tool, not a sandbox. It is appropriate to run on documents you authored, generated, or trust. The following are **not** defended against:
 
-- **Adversarial Markdown trying to manipulate the agent via prompt injection.** The agent reads the document text and comment thread as input to Claude; carefully crafted content can attempt to redirect the model. Treat agent output the same way you'd treat any other AI output you didn't fully verify.
+- **Adversarial Markdown trying to manipulate the agent via prompt injection.** The agent reads the document text and comment thread as input to the selected local provider; carefully crafted content can attempt to redirect the model. Treat agent output the same way you'd treat any other AI output you didn't fully verify.
 - **Multiple `redline` processes operating on the same file.** The sidecar lock is in-process; concurrent runs on the same `.md` can corrupt review state.
-- **Malicious CLI flags or environment.** `redline` runs with the operator's full file-system permissions and shells out to `claude -p` with the operator's auth.
+- **Malicious CLI flags or environment.** `redline` runs with the operator's full file-system permissions and shells out to the selected local provider CLI with the operator's auth.
 - **Sharing reviews across operators.** Redline is single-player — it has no auth, no access control, and no audit log.
 
 ## What "single-player, localhost" means in practice
