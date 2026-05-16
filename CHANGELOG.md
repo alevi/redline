@@ -4,6 +4,9 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Changed
+- Reframed M9 author handoff language from "escalated to the launching agent" to "author reply needed" while preserving the existing `ESCALATE`/`escalations` compatibility fields.
+
 ## [0.4.1] - 2026-05-15
 
 ### Fixed

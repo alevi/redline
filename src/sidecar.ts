@@ -14,9 +14,9 @@ export interface ThreadEntry {
   requires_revision?: boolean;
   revision_reason?: string;
   // Set true on an agent reply when the comment can't be acted on from inside
-  // this review — it needs the agent that *launched* redline (project context,
-  // tools, or authority the inline agent lacks). Surfaced in the closeout
-  // summary so the launching agent picks it up. Only set on agent entries.
+  // this review — it needs author-level context, tools, or authority the inline
+  // agent lacks. Surfaced in the closeout summary so the authoring agent picks
+  // it up. Only set on agent entries.
   escalate?: boolean;
 }
 

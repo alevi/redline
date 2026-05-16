@@ -189,7 +189,7 @@ describe("thread message markdown", () => {
   });
 });
 
-describe("escalation badge", () => {
+describe("author reply needed badge", () => {
   const noopCallbacks = {
     focusComment: () => {},
     updateNav: () => {},
@@ -200,7 +200,7 @@ describe("escalation badge", () => {
     submitReply: () => {},
   };
 
-  test("shows the escalate badge and thread note when an agent reply set escalate", async () => {
+  test("shows the author-reply badge and thread note when an agent reply set escalate", async () => {
     const { buildCommentCard, setCardCallbacks } = await loadCards();
     setCardCallbacks(noopCallbacks);
 
@@ -210,16 +210,16 @@ describe("escalation badge", () => {
       resolved: false,
       thread: [
         { role: "human", message: "run the style guide" },
-        { role: "agent", name: "Claude", message: "Routed.", escalate: true },
+        { role: "agent", name: "Claude", message: "Needs author input.", escalate: true },
       ],
     });
     document.body.appendChild(card);
 
-    expect(card.querySelector(".escalate-badge")).not.toBeNull();
-    expect(card.querySelector(".verdict.escalate")).not.toBeNull();
+    expect(card.querySelector(".escalate-badge")?.textContent).toBe("↑ Author reply needed");
+    expect(card.querySelector(".verdict.escalate")?.textContent).toContain("Author reply needed");
   });
 
-  test("no badge when nothing escalated", async () => {
+  test("no author-reply badge when no author input is needed", async () => {
     const { buildCommentCard, setCardCallbacks } = await loadCards();
     setCardCallbacks(noopCallbacks);
 

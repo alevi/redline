@@ -597,7 +597,7 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
 .verdict-badge.revise { background: #fef3c7; color: #92400e; }
 .verdict-badge.accept { background: #e5e7eb; color: var(--text-muted); }
 
-/* Escalation badge on the quote line — comment routed to the launching agent */
+/* Author-reply-needed badge on the quote line */
 .escalate-badge {
   display: inline-flex;
   align-items: center;
@@ -803,8 +803,8 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
   align-items: center;
   gap: 8px;
 }
-/* Escalation sub-line under the round banner — purple to match the
-   ↑ Escalated comment badges, distinct from the green verdict copy. */
+/* Author-handoff sub-line under the round banner — purple to match the
+   ↑ Author reply needed badges, distinct from the green verdict copy. */
 .banner-escalation {
   margin-top: 6px;
   padding-top: 6px;

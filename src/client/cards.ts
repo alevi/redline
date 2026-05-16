@@ -44,7 +44,7 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
   if (isEscalated(comment)) {
     const ebadge = document.createElement("span");
     ebadge.className = "escalate-badge";
-    ebadge.textContent = "↑ Escalated";
+    ebadge.textContent = "↑ Author reply needed";
     quote.appendChild(ebadge);
   }
   quote.appendChild(document.createTextNode('"' + comment.quote + '"'));
@@ -173,7 +173,7 @@ function buildThreadEntry(entry: ThreadEntry, isLatestVerdict: boolean): HTMLDiv
     verdictHtml = `<div class="verdict revise"><span class="verdict-icon">\u270E</span><span>${reason}</span></div>`;
   }
   if (role === "agent" && entry.escalate === true) {
-    verdictHtml += `<div class="verdict escalate"><span class="verdict-icon">\u2191</span><span>Routed to the launching agent</span></div>`;
+    verdictHtml += `<div class="verdict escalate"><span class="verdict-icon">\u2191</span><span>Author reply needed</span></div>`;
   }
   const messageHtml = entry.messageHtml ?? escapeHtml(entry.message);
   div.innerHTML = `
