@@ -4,6 +4,9 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+- `redline-review` now launches Redline through a Node detached process group instead of `nohup`, so Codex-style shell runners that clean up the shell process group do not kill the review server after startup.
+
 ## [0.5.1] - 2026-05-15
 
 ### Fixed
