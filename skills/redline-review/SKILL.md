@@ -20,8 +20,8 @@ STARTUP="$DIR/.review/$BASE.startup.json"
 RESULT="$DIR/.review/$BASE.result"
 LOG=/tmp/redline-$BASE.log
 
-# Kick off the review in the background.
-__REDLINE_BIN__ "$FILE" > "$LOG" 2>&1 &
+# Kick off the review in the background and open it in the user's real browser.
+__REDLINE_BIN__ "$FILE" --open > "$LOG" 2>&1 &
 
 # Step 1: wait for startup, read the URL.
 for i in $(seq 1 60); do [ -f "$STARTUP" ] && break; sleep 0.5; done
@@ -34,7 +34,7 @@ PID=$(grep -o '"pid": *[0-9]*' "$STARTUP" | grep -o '[0-9]*')
 echo "REDLINE_URL: $URL"
 echo "REDLINE_PID: $PID"
 
-# Step 2: surface the URL to the human (you do this after the first shell call returns
+# Step 2: tell the human the browser opened (you do this after the first shell call returns
 # — see the next section), then wait for the redline process to exit. Watching
 # the PID (essentially free) instead of polling for the result file means you
 # wake up within ~0.5s of the human clicking Done, not up to 30s later.
@@ -46,7 +46,7 @@ The startup file at `.review/<basename>.startup.json` is written synchronously w
 
 In practice, run the script above as **two separate shell calls** so you can tell the human the URL between steps:
 1. First call: everything through `echo "REDLINE_PID: $PID"`. Returns in ~1s with the URL and PID on stdout.
-2. Surface the URL to the human in your reply text (see "Surfacing the URL" below).
+2. Tell the human Redline opened in their browser, and include the URL only as a fallback (see "Surfacing the URL" below).
 3. Second call: just the `while kill -0` loop waiting for the PID, then `cat "$RESULT"`. Long timeout (`timeout: 1800000` = 30 min, or longer).
 
 If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run `redline install-skill`.
@@ -61,11 +61,9 @@ The context string is shown in the reader's header so the human knows what they'
 
 ### Surfacing the URL
 
-After the first shell call returns with `REDLINE_URL: http://localhost:NNNN`, surface that URL in your reply text. The human has no other signal that something is waiting for them. One short sentence:
+The `--open` flag launches the review in the user's real browser via the OS opener (`open` on macOS, `xdg-open` on Linux, `start` on Windows). After the first shell call returns with `REDLINE_URL: http://localhost:NNNN`, tell the human the browser opened and include the URL only as a fallback. Do **not** make the URL the primary action; in some agent UIs, clicking localhost opens an embedded preview panel instead of the user's browser.
 
-> "Opening this in Redline for review at http://localhost:NNNN — cmd-click to open. I'll continue once you click Done."
-
-(There is an `--open` flag that auto-launches the browser, but prefer leaving it off — the human may not be at the keyboard the moment the session starts, and a stolen-focus browser tab is worse than a URL they click when ready.)
+> "I opened this in Redline in your browser. Fallback URL: http://localhost:NNNN. I'll continue once you click Done."
 
 ## How to interpret the result
 
@@ -87,8 +85,8 @@ The full loop, when you are the outer agent producing the doc:
 
 1. Write the markdown file to disk at an absolute path.
 2. Tell the human in one sentence what's about to happen.
-3. First shell call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>"` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
-4. Surface the URL to the human in your reply text so they can cmd-click to open.
+3. First shell call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>" --open` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
+4. Tell the human Redline opened in their browser and include the URL only as a fallback.
 5. Second shell call: wait on the redline PID (`while kill -0 "$PID" 2>/dev/null; do sleep 0.5; done`) then `cat "$RESULT"`, with a long timeout (30+ min). While the session runs, you are idle — do not start unrelated work, do not run other tools.
 6. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
 7. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.

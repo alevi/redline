@@ -4,6 +4,11 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-15
+
+### Fixed
+- `redline-review` now launches Redline with `--open` so agent sessions open the review in the user's real browser instead of relying on clickable localhost links that some agent UIs capture in an embedded preview panel.
+
 ## [0.4.0] - 2026-05-15
 
 ### Added
@@ -60,7 +65,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/alevi/redline/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/alevi/redline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alevi/redline/releases/tag/v0.3.0
 [0.2.0]: https://github.com/alevi/redline/releases/tag/v0.2.0

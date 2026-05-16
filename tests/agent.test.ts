@@ -207,6 +207,15 @@ test("delimiter envelope: no ESCALATE line leaves escalate unset", async () => {
   expect(reply.escalate).toBeUndefined();
 }, 20_000);
 
+test("reply prompt says ordinary edit requests are not escalations", async () => {
+  const agentSource = await readFile(path.join(import.meta.dir, "../src/agent.ts"), "utf-8");
+
+  expect(agentSource).toContain("ESCALATE is rare");
+  expect(agentSource).toContain("Do NOT escalate ordinary requested edits");
+  expect(agentSource).toContain("emphasis changes");
+  expect(agentSource).toContain("If the comment can be satisfied by editing this document, set ESCALATE: false");
+}, 20_000);
+
 // ── Resolve / revision flow ──────────────────────────────────────────────
 
 test("accept triggers revision; revised file is written and round 2 opens", async () => {
