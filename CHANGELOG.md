@@ -4,6 +4,8 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-16
+
 ### Fixed
 - `redline-review` now launches Redline through a Node detached process group instead of `nohup`, so Codex-style shell runners that clean up the shell process group do not kill the review server after startup.
 
@@ -82,7 +84,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/alevi/redline/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/alevi/redline/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/alevi/redline/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/alevi/redline/compare/v0.4.0...v0.4.1

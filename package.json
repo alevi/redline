@@ -1,6 +1,6 @@
 {
   "name": "@levistudio/redline",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Inline comments on Markdown files, for human-in-the-loop AI doc review.",
   "keywords": [
     "markdown",
