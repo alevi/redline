@@ -4,6 +4,8 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-15
+
 ### Added
 - Added author-handoff CLI commands: `redline author-needed <file>` lists pending author-needed comments, `redline author-reply <file> <comment-id> --message "..."` posts an author-marked reply back into the thread, and `redline author-wait <file>` blocks until either author input is needed or the review finishes.
 
@@ -71,7 +73,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/alevi/redline/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/alevi/redline/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/alevi/redline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alevi/redline/releases/tag/v0.3.0
