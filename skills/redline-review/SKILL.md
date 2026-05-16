@@ -11,7 +11,7 @@ When you've produced a markdown document that the human needs to read, comment o
 
 The redline launcher lives at `__REDLINE_BIN__` (substituted at install time — if you see the literal placeholder string, the skill was installed incorrectly; tell the human to re-run `redline install-skill`). Always invoke it by this absolute path. Do not call bare `redline` and do not try to "fix" PATH issues by running `bun link` or guessing where the repo lives.
 
-**Always background the launcher and poll.** Never run `__REDLINE_BIN__` as a foreground/blocking shell call: agent shell tools often buffer stdout until the process exits, so you would never see the URL the human needs to click and your "I'll wait while you review" message would be a lie. Use this pattern:
+**Always detach the launcher with `nohup` and poll.** Never run `__REDLINE_BIN__` as a foreground/blocking shell call: agent shell tools often buffer stdout until the process exits, so you would never see the URL the human needs to click and your "I'll wait while you review" message would be a lie. Also do not use a plain trailing `&` without `nohup`: in Codex-style short shell calls, the shell can exit and take the Redline server with it. Use this pattern:
 
 ```bash
 FILE=/abs/path/to/file.md
@@ -20,8 +20,8 @@ STARTUP="$DIR/.review/$BASE.startup.json"
 RESULT="$DIR/.review/$BASE.result"
 LOG=/tmp/redline-$BASE.log
 
-# Kick off the review in the background and open it in the user's real browser.
-__REDLINE_BIN__ "$FILE" --open > "$LOG" 2>&1 &
+# Kick off the review detached from this short-lived shell and open it in the user's real browser.
+nohup __REDLINE_BIN__ "$FILE" --open > "$LOG" 2>&1 < /dev/null &
 
 # Step 1: wait for startup, read the URL.
 for i in $(seq 1 60); do [ -f "$STARTUP" ] && break; sleep 0.5; done
@@ -46,7 +46,7 @@ The startup file at `.review/<basename>.startup.json` is written synchronously w
 In practice, run the script above as **two separate shell calls** so you can tell the human the URL between steps:
 1. First call: everything through `echo "REDLINE_PID: $PID"`. Returns in ~1s with the URL and PID on stdout.
 2. Tell the human Redline opened in their browser, and include the URL only as a fallback (see "Surfacing the URL" below).
-3. Second call: `__REDLINE_BIN__ author-wait "$FILE"`. It returns either `{ "kind": "author-needed", ... }` or `{ "kind": "result", ... }`. Long timeout (`timeout: 1800000` = 30 min, or longer). If it returns author-needed JSON, answer with `author-reply`, then run `author-wait` again.
+3. Second call: `__REDLINE_BIN__ author-wait "$FILE"`. It returns `{ "kind": "author-needed", ... }`, `{ "kind": "result", ... }`, or `{ "kind": "session-ended", ... }`. Long timeout (`timeout: 1800000` = 30 min, or longer). If it returns author-needed JSON, answer with `author-reply`, then run `author-wait` again. If it returns session-ended, inspect `$LOG` and relaunch only after explaining the failed session to the human.
 
 If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run `redline install-skill`.
 
@@ -86,7 +86,7 @@ The full loop, when you are the outer agent producing the doc:
 2. Tell the human in one sentence what's about to happen.
 3. First shell call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>" --open` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
 4. Tell the human Redline opened in their browser and include the URL only as a fallback.
-5. Second shell call: run `__REDLINE_BIN__ author-wait "$FILE"`. If it returns `kind: "author-needed"`, answer with `__REDLINE_BIN__ author-reply "$FILE" <comment-id> --message "..."`, then run `author-wait` again. Do not start unrelated work while the session runs.
+5. Second shell call: run `__REDLINE_BIN__ author-wait "$FILE"`. If it returns `kind: "author-needed"`, answer with `__REDLINE_BIN__ author-reply "$FILE" <comment-id> --message "..."`, then run `author-wait` again. If it returns `kind: "session-ended"`, inspect the log path from step 1 and tell the human the session died instead of silently relaunching. Do not start unrelated work while the session runs.
 6. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
 7. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
 

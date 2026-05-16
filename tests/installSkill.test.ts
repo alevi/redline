@@ -34,7 +34,9 @@ test("install-skill.sh substitutes the launcher path into the installed SKILL.md
   // No placeholder may remain — a literal `__REDLINE_BIN__` would break every
   // session that runs the skill.
   expect(text).not.toContain("__REDLINE_BIN__");
+  expect(text).toContain("nohup ");
   expect(text).toContain("\"$FILE\" --open");
+  expect(text).toContain("< /dev/null &");
 
   // Substituted path must be the launcher next to SKILL.md, absolute.
   const expectedLauncher = path.join(tmp, "skills/redline-review/redline");

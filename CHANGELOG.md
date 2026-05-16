@@ -4,6 +4,12 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-15
+
+### Fixed
+- `redline-review` now launches Redline with `nohup` so the local server survives short-lived agent shell calls instead of ending the browser session early.
+- `redline author-wait` now returns `kind: "session-ended"` when the startup PID is gone and no result was written, so agents do not wait forever on a dead session.
+
 ## [0.5.0] - 2026-05-15
 
 ### Added
@@ -73,7 +79,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/alevi/redline/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/alevi/redline/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/alevi/redline/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/alevi/redline/compare/v0.3.0...v0.4.0
