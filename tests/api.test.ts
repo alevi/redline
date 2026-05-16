@@ -313,6 +313,29 @@ test("POST /api/comment/:id/reply persists agent escalate flag", async () => {
   expect(entry.escalate).toBe(true);
 }, 15_000);
 
+test("POST /api/comment/:id/reply persists author flag on agent entries", async () => {
+  const { filePath, dir } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+  const c = await postComment(port, { quote: "first paragraph" }, "msg");
+
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({
+      role: "agent",
+      name: "Author",
+      message: "Use sentence case.",
+      author: true,
+    }),
+  });
+
+  const raw = await readFile(path.join(dir, ".review", "test.md.json"), "utf-8");
+  const sidecar = JSON.parse(raw);
+  const entry = sidecar.rounds[0].comments[0].thread.at(-1);
+  expect(entry.author).toBe(true);
+  expect(entry.requires_revision).toBeUndefined();
+}, 15_000);
+
 test("POST /api/comment/:id/reply ignores escalate on human entries", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);

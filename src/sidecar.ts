@@ -18,6 +18,10 @@ export interface ThreadEntry {
   // agent lacks. Surfaced in the closeout summary so the authoring agent picks
   // it up. Only set on agent entries.
   escalate?: boolean;
+  // Set true on an agent entry posted by the authoring/launching agent rather
+  // than the inline review agent. This lets the UI distinguish author replies
+  // without changing the legacy role shape.
+  author?: boolean;
 }
 
 // Latest agent verdict on a comment thread:

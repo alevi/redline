@@ -45,6 +45,7 @@ preflightDependencies();
 // Dynamic imports so preflight runs before module resolution pulls in third-party deps.
 const { createServer } = await import("./server");
 const { resolve } = await import("./resolve");
+const { formatAuthorNeeded, listAuthorNeeded, postAuthorReply } = await import("./authorHandoff");
 const {
   getAgentProvider,
   invalidProviderMessage,
@@ -123,6 +124,51 @@ if (args[0] === "install-skill") {
   process.exit(result.status ?? 1);
 }
 
+// redline author-needed <file> [--json]
+if (args[0] === "author-needed") {
+  const filePath = args[1];
+  if (!filePath) {
+    console.error("Usage: redline author-needed <file.md> [--json]");
+    process.exit(1);
+  }
+  const resolved = path.resolve(filePath);
+  if (!existsSync(resolved)) {
+    console.error(`File not found: ${resolved}`);
+    process.exit(1);
+  }
+  const items = await listAuthorNeeded(resolved);
+  if (args.includes("--json")) {
+    console.log(JSON.stringify({ file: resolved, author_needed: items }, null, 2));
+  } else {
+    console.log(formatAuthorNeeded(items));
+  }
+  process.exit(0);
+}
+
+// redline author-reply <file> <comment-id> --message "..."
+if (args[0] === "author-reply") {
+  const filePath = args[1];
+  const commentId = args[2];
+  const message = argValue(args, "--message");
+  if (!filePath || !commentId || !message) {
+    console.error("Usage: redline author-reply <file.md> <comment-id> --message \"...\" [--name \"Author\"]");
+    process.exit(1);
+  }
+  const resolved = path.resolve(filePath);
+  if (!existsSync(resolved)) {
+    console.error(`File not found: ${resolved}`);
+    process.exit(1);
+  }
+  try {
+    const result = await postAuthorReply(resolved, commentId, message, { name: argValue(args, "--name") });
+    console.log(`Posted author reply to ${result.commentId} via ${result.via}.`);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 // redline resolve <file> [--model <id>]
 if (args[0] === "resolve") {
   const filePath = args[1];
@@ -148,7 +194,7 @@ if (args[0] === "resolve") {
   // redline <file>  — open review reader
   const filePath = args[0];
   if (!filePath) {
-    console.error("Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline install-skill [--agent claude|codex|both]");
+    console.error("Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline author-needed <file.md> [--json]\n       redline author-reply <file.md> <comment-id> --message \"...\" [--name \"Author\"]\n       redline install-skill [--agent claude|codex|both]");
     process.exit(1);
   }
   const resolved = path.resolve(filePath);

@@ -496,6 +496,13 @@ mark.rl-highlight.rl-img:hover, mark.rl-highlight.rl-img.active {
 }
 .thread-role.human { color: var(--accent); }
 .thread-role.agent { color: #3b5bdb; }
+.thread-entry.author-entry {
+  border-left: 3px solid #7c3aed;
+  padding-left: 10px;
+}
+.thread-entry.author-entry .thread-role {
+  color: #5b21b6;
+}
 
 .thread-message {
   font-size: 13.5px;
