@@ -21,7 +21,7 @@ function sidecar(): Sidecar {
             resolved: true,
             thread: [
               { role: "human", message: "Did you run the copy guidelines on this?", at: "" },
-              { role: "agent", name: "Claude", message: "I don't have them — routed to the launching agent.", at: "", escalate: true },
+              { role: "agent", name: "Claude", message: "I don't have them — an author reply is needed.", at: "", escalate: true },
               { role: "human", message: "Give the feedback to the outer agent.", at: "" },
             ],
           },
@@ -42,7 +42,7 @@ function sidecar(): Sidecar {
   };
 }
 
-test("collectEscalations finds escalated comments with the triggering request", () => {
+test("collectEscalations finds author-needed comments with the triggering request", () => {
   const esc = collectEscalations(sidecar());
   expect(esc.length).toBe(1);
   expect(esc[0]!.quote).toBe("the em dash here");
@@ -50,30 +50,30 @@ test("collectEscalations finds escalated comments with the triggering request", 
   expect(esc[0]!.request).toBe("Did you run the copy guidelines on this?");
 });
 
-test("formatReviewSummary lists threads and an escalation callout", () => {
+test("formatReviewSummary lists threads and an author-reply-needed callout", () => {
   const out = formatReviewSummary(sidecar());
   expect(out).toContain("Round 1");
-  expect(out).toContain("escalated");
+  expect(out).toContain("author reply needed");
   expect(out).toContain("Reviewer: Give the feedback to the outer agent.");
-  expect(out).toContain("1 comment escalated to you");
+  expect(out).toContain("1 comment needs an author reply from you");
 });
 
-test("formatReviewSummary omits the callout when nothing escalated", () => {
+test("formatReviewSummary omits the callout when no author reply is needed", () => {
   const s = sidecar();
   s.rounds[0]!.comments = [s.rounds[0]!.comments[1]!];
   const out = formatReviewSummary(s);
-  expect(out).not.toContain("escalated to you");
+  expect(out).not.toContain("author reply from you");
 });
 
 test("collectEscalations: escalation with no preceding human message has empty request", () => {
   const s = sidecar();
   s.rounds[0]!.comments[0]!.thread = [
-    { role: "agent", name: "Claude", message: "Escalating this one.", escalate: true },
+    { role: "agent", name: "Claude", message: "Author reply needed here.", escalate: true },
   ];
   const esc = collectEscalations(s);
   expect(esc).toHaveLength(1);
   expect(esc[0]!.request).toBe("");
-  expect(esc[0]!.note).toBe("Escalating this one.");
+  expect(esc[0]!.note).toBe("Author reply needed here.");
 });
 
 test("collectEscalations: revision_reason is preferred over message for the note", () => {

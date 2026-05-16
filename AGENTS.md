@@ -196,12 +196,12 @@ JSON was tried first and abandoned: agent replies frequently contain quotes, cod
 
 The verdict is **agent-owned**. The human cannot flip it directly. Disagreement flows through a follow-up reply, which gives the agent a chance to re-classify rather than be silently overridden.
 
-## Escalation to the launching agent
+## Author handoff
 
-The inline review agent and the agent that *launched* `redline` share no live channel — the sidecar is the only persisted artifact, and the launching agent only regains control when the session exits. So two mechanisms carry feedback back to it:
+The inline review agent and the agent that *authored/launched* `redline` share no live channel yet — the sidecar is the only persisted artifact, and the authoring agent only regains control when the session exits. So two mechanisms carry feedback back to it:
 
-- **`ESCALATE` verdict.** A second, orthogonal flag in the reply envelope. The agent sets `ESCALATE: true` when a comment can't be acted on from inside the review — it needs the launching agent's project context, tools, or authority (an external style guide, a spec to check against, a wider-project decision). It's stored as `escalate?: boolean` on the agent's `ThreadEntry` and rendered as an "↑ Escalated" badge on the comment and an "↑ Routed to the launching agent" note in the thread. Escalation is independent of `requires_revision` — the agent judges each on its own.
-- **Closeout transcript.** On `finished`, the CLI loads the sidecar and prints every comment thread verbatim via [src/reviewSummary.ts](src/reviewSummary.ts) (`formatReviewSummary`), with a dedicated callout listing escalated comments (`collectEscalations`). The escalation count is also written to `.review/<file>.result` and appended to the `REDLINE_RESULT:` line. This is the launching agent's read point — it sees the transcript when control hands back.
+- **`ESCALATE` verdict.** The storage/envelope name is still `ESCALATE` for compatibility, but product language is **author reply needed**. The inline agent sets `ESCALATE: true` when a comment needs author-level input: information, tools, authority, or project context it cannot access from the document and comment thread (an external style guide, a spec to check against, a wider-project decision). It does **not** set it for ordinary requested edits, reframes, emphasis changes, rewrites, or approvals; those are handled by `requires_revision`. It's stored as `escalate?: boolean` on the agent's `ThreadEntry` and rendered as an "↑ Author reply needed" badge on the comment. The author handoff signal is independent of `requires_revision` — the agent judges each on its own.
+- **Closeout transcript.** On `finished`, the CLI loads the sidecar and prints every comment thread verbatim via [src/reviewSummary.ts](src/reviewSummary.ts) (`formatReviewSummary`), with a dedicated callout listing comments that need author input (`collectEscalations`). The count is also written to `.review/<file>.result` and appended to the `REDLINE_RESULT:` line. This is the authoring agent's fallback read point until M9 adds live in-thread author replies.
 
 ## Security & resilience as built
 

@@ -18,7 +18,7 @@ test("parseReply: well-formed JSON with revise verdict", () => {
 test("parseReply: delimiter envelope with ESCALATE: true", () => {
   const raw =
     "REQUIRES_REVISION: false\nESCALATE: true\nREASON: \n" +
-    "---MESSAGE---\nI don't have the style guide — routed to the launching agent.\n---END---";
+    "---MESSAGE---\nI don't have the style guide — an author reply is needed.\n---END---";
   const r = parseReply(raw);
   expect(r.escalate).toBe(true);
   expect(r.requires_revision).toBe(false);

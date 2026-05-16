@@ -204,8 +204,8 @@ test("revision crash → abandon writes error result, not abandoned", async () =
 }, 15_000);
 
 test("abandon path carries escalations into the result file", async () => {
-  // Escalations must survive a session that ends on abandon, not just a clean
-  // finish — otherwise feedback meant for the launching agent is lost when a
+  // Author-needed feedback must survive a session that ends on abandon, not just a clean
+  // finish — otherwise feedback meant for the authoring agent is lost when a
   // review is interrupted.
   const { filePath, dir } = createTestFile();
   const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" }, ["--no-agent"]);
@@ -218,7 +218,7 @@ test("abandon path carries escalations into the result file", async () => {
     body: JSON.stringify({
       role: "agent",
       name: "Claude",
-      message: "Routed to the launching agent.",
+      message: "Author reply needed.",
       requires_revision: false,
       escalate: true,
     }),
@@ -491,8 +491,8 @@ test("/api/finish writes approved result file and exits 0", async () => {
   expect(typeof result.comments).toBe("number");
 }, 15_000);
 
-test("/api/finish: escalated comment surfaces in the result file escalations array", async () => {
-  // --no-agent so no claude shim is needed; we post the escalated agent reply
+test("/api/finish: author-needed comment surfaces in the result file escalations array", async () => {
+  // --no-agent so no claude shim is needed; we post the author-needed agent reply
   // directly. Exercises the closeout path: sidecar → reviewSummary → result file.
   const { filePath, dir } = createTestFile();
   const { proc, port } = await spawnTracked(filePath, {}, ["--no-agent"]);
@@ -505,7 +505,7 @@ test("/api/finish: escalated comment surfaces in the result file escalations arr
     body: JSON.stringify({
       role: "agent",
       name: "Claude",
-      message: "I don't have the style guide — routed to the launching agent.",
+      message: "I don't have the style guide — an author reply is needed.",
       requires_revision: false,
       escalate: true,
     }),

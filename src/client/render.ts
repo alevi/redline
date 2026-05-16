@@ -346,15 +346,15 @@ export function applyRoundState(): void {
           bannerText = `${reviseCount} of ${total} comments imply edits.`;
         }
         banner.textContent = bannerText;
-        // Escalations are orthogonal to the revise/accept verdict — a comment
-        // can be answered in-thread yet still need the launching agent. Call
+        // Author handoff is orthogonal to the revise/accept verdict — a comment
+        // can be answered in-thread yet still need authoring-agent input. Call
         // it out on its own line so it survives all three banner branches.
         const escCount = state.comments.filter(isEscalated).length;
         if (escCount > 0) {
           const escLine = document.createElement("div");
           escLine.className = "banner-escalation";
           escLine.textContent =
-            `↑ ${escCount} comment${escCount !== 1 ? "s" : ""} escalated to the launching agent.`;
+            `↑ ${escCount} comment${escCount !== 1 ? "s need" : " needs"} an author reply.`;
           banner.appendChild(escLine);
         }
         banner.style.display = "block";

@@ -168,7 +168,7 @@ test("delimiter envelope: ESCALATE flag flows through to the sidecar", async () 
     "ESCALATE: true\n" +
     "REASON: \n" +
     "---MESSAGE---\n" +
-    "I don't have the style guide — routed to the launching agent.\n" +
+    "I don't have the style guide — an author reply is needed.\n" +
     "---END---";
 
   const { filePath, claudeShim } = makeTestDir(SAMPLE);
@@ -211,9 +211,10 @@ test("reply prompt says ordinary edit requests are not escalations", async () =>
   const agentSource = await readFile(path.join(import.meta.dir, "../src/agent.ts"), "utf-8");
 
   expect(agentSource).toContain("ESCALATE is rare");
-  expect(agentSource).toContain("Do NOT escalate ordinary requested edits");
+  expect(agentSource).toContain("Do NOT route ordinary requested edits");
   expect(agentSource).toContain("emphasis changes");
   expect(agentSource).toContain("If the comment can be satisfied by editing this document, set ESCALATE: false");
+  expect(agentSource).toContain("an author reply is needed");
 }, 20_000);
 
 // ── Resolve / revision flow ──────────────────────────────────────────────

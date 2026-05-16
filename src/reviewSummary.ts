@@ -1,10 +1,10 @@
 // Closeout summary of a finished review.
 //
-// The inline review agent (src/agent.ts) and the agent that *launched* redline
+// The inline review agent (src/agent.ts) and the agent that *authored/launched* redline
 // share no live channel — the sidecar is the only persisted artifact, and the
-// launching agent only regains control when the session exits. So at closeout
+// authoring agent only regains control when the session exits. So at closeout
 // the CLI prints every comment thread verbatim. Anything the reviewer said —
-// including feedback meant for the launching agent — lands in front of it.
+// including feedback meant for the authoring agent — lands in front of it.
 //
 // Comments the inline agent explicitly flagged (`escalate: true`) get a
 // dedicated section so they aren't lost in the full transcript.
@@ -15,7 +15,7 @@ export interface EscalationItem {
   round: number;
   quote: string;
   request: string; // the reviewer message the inline agent couldn't act on
-  note: string;    // the agent's escalation note
+  note: string;    // the agent's author-handoff note
 }
 
 function flatten(s: string, n: number): string {
@@ -27,7 +27,7 @@ function isEscalated(c: Comment): boolean {
   return c.thread.some((e) => e.role === "agent" && e.escalate === true);
 }
 
-// Pull out every comment the inline agent routed to the launching agent.
+// Pull out every comment the inline agent routed to the authoring agent.
 export function collectEscalations(sidecar: Sidecar): EscalationItem[] {
   const items: EscalationItem[] = [];
   for (const round of sidecar.rounds) {
@@ -35,8 +35,8 @@ export function collectEscalations(sidecar: Sidecar): EscalationItem[] {
       const escIdx = c.thread.findIndex((e) => e.role === "agent" && e.escalate === true);
       if (escIdx === -1) continue;
       const agentEntry = c.thread[escIdx]!;
-      // The reviewer message immediately before the escalation is the request
-      // the inline agent couldn't fulfill.
+      // The reviewer message immediately before the author handoff is the
+      // request the inline agent couldn't fulfill.
       let request = "";
       for (let i = escIdx - 1; i >= 0; i--) {
         if (c.thread[i]!.role === "human") { request = c.thread[i]!.message; break; }
@@ -52,8 +52,8 @@ export function collectEscalations(sidecar: Sidecar): EscalationItem[] {
   return items;
 }
 
-// A readable transcript of every comment thread, plus an escalation callout.
-// Printed to stdout on session close so the launching agent can read it.
+// A readable transcript of every comment thread, plus an author-handoff callout.
+// Printed to stdout on session close so the authoring agent can read it.
 export function formatReviewSummary(sidecar: Sidecar): string {
   const lines: string[] = [`Review threads — ${sidecar.file}`];
 
@@ -62,7 +62,7 @@ export function formatReviewSummary(sidecar: Sidecar): string {
     lines.push("", `Round ${round.round}`);
     round.comments.forEach((c, i) => {
       const tags = [c.resolved ? "resolved" : "open"];
-      if (isEscalated(c)) tags.push("escalated");
+      if (isEscalated(c)) tags.push("author reply needed");
       lines.push(`  ${i + 1}. "${flatten(c.quote, 80)}" — ${tags.join(" · ")}`);
       for (const e of c.thread) {
         const who = e.role === "human" ? "Reviewer" : (e.name || "Agent");
@@ -75,7 +75,7 @@ export function formatReviewSummary(sidecar: Sidecar): string {
   if (esc.length > 0) {
     lines.push(
       "",
-      `⚠ ${esc.length} comment${esc.length !== 1 ? "s" : ""} escalated to you (the launching agent):`,
+      `⚠ ${esc.length} comment${esc.length !== 1 ? "s need" : " needs"} an author reply from you:`,
     );
     for (const e of esc) {
       lines.push(`  • "${e.quote}" (round ${e.round})`);
@@ -84,7 +84,7 @@ export function formatReviewSummary(sidecar: Sidecar): string {
     }
     lines.push(
       "",
-      "The inline review agent couldn't act on these. Address them in the",
+      "The inline review agent marked these for author-level input. Address them in the",
       "document or with the user before considering the review closed out.",
     );
   }

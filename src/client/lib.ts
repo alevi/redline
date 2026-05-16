@@ -45,7 +45,7 @@ export function latestVerdict(comment: ClientComment): "revise" | "accept" | nul
   return null;
 }
 
-// True when an agent reply flagged this comment for the launching agent.
+// True when an agent reply flagged this comment for authoring-agent input.
 export function isEscalated(comment: ClientComment): boolean {
   return (comment.thread || []).some((e) => e.role === "agent" && e.escalate === true);
 }

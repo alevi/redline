@@ -315,7 +315,7 @@ if (args[0] === "resolve") {
     const status = lastRevisionError ? "error" : "abandoned";
     const payload: Record<string, unknown> = { status, file: resolved };
     if (lastRevisionError) payload.reason = lastRevisionError;
-    // Carry escalations through the error/abandon path too — on an incomplete
+    // Carry author handoffs through the error/abandon path too — on an incomplete
     // session they matter more, not less. Read the sidecar synchronously:
     // abandon runs in signal context where async I/O may not complete.
     let escalations: import("./reviewSummary").EscalationItem[] = [];
@@ -334,7 +334,7 @@ if (args[0] === "resolve") {
     } catch { /* best effort */ }
     if (escalations.length) {
       console.log(
-        `\n⚠ ${escalations.length} comment${escalations.length !== 1 ? "s" : ""} escalated to the launching agent — see ${path.basename(resultFile)}`
+        `\n⚠ ${escalations.length} comment${escalations.length !== 1 ? "s need" : " needs"} an author reply — see ${path.basename(resultFile)}`
       );
     }
     const escSuffix = escalations.length ? ` escalations=${escalations.length}` : "";
@@ -355,9 +355,9 @@ if (args[0] === "resolve") {
     console.log(`   Revised document: ${resolved}`);
     console.log(`${line}`);
 
-    // Print the full comment threads so the launching agent — which has no
+    // Print the full comment threads so the authoring agent — which has no
     // live channel to the inline review agent — sees everything the reviewer
-    // said, including escalated feedback meant for it.
+    // said, including author-level feedback meant for it.
     let escalations: import("./reviewSummary").EscalationItem[] = [];
     try {
       const { loadSidecar } = await import("./sidecar");

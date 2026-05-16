@@ -302,7 +302,7 @@ test("POST /api/comment/:id/reply persists agent escalate flag", async () => {
     body: JSON.stringify({
       role: "agent",
       name: "Claude",
-      message: "Routed to the launching agent.",
+      message: "Author reply needed.",
       requires_revision: false,
       escalate: true,
     }),
