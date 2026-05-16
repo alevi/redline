@@ -37,6 +37,7 @@ redline <file> --no-agent      # manual annotation mode — no agent spawn, no p
 redline resolve <file>         # one-shot: read the sidecar, run the revision pass, write back
 redline author-needed <file>   # list comments where the inline agent requested author input
 redline author-reply <file> <comment-id> --message "..." # post an author-marked reply into the thread
+redline author-wait <file>     # block until author input is needed or the review result is written
 ```
 
 The bare-arg path also spawns a dedicated agent subprocess alongside the server — see "The dedicated agent process" below.
@@ -203,7 +204,7 @@ The verdict is **agent-owned**. The human cannot flip it directly. Disagreement 
 The inline review agent and the agent that *authored/launched* `redline` are separate processes. The sidecar is the persisted artifact, and `.startup.json` gives the authoring agent a local API bridge while the session is live. Two mechanisms carry feedback back to it:
 
 - **`ESCALATE` verdict.** The storage/envelope name is still `ESCALATE` for compatibility, but product language is **author reply needed**. The inline agent sets `ESCALATE: true` when a comment needs author-level input: information, tools, authority, or project context it cannot access from the document and comment thread (an external style guide, a spec to check against, a wider-project decision). It does **not** set it for ordinary requested edits, reframes, emphasis changes, rewrites, or approvals; those are handled by `requires_revision`. It's stored as `escalate?: boolean` on the agent's `ThreadEntry` and rendered as an "↑ Author reply needed" badge on the comment. The author handoff signal is independent of `requires_revision` — the agent judges each on its own.
-- **Live author replies.** The authoring agent can run `redline author-needed <file> --json` while a session is open to list pending author-needed comments. It can then run `redline author-reply <file> <comment-id> --message "..."` to post back into the same thread. When the server is live, the command uses `.review/<file>.startup.json` and the local API so the browser soft-refreshes; if the server is gone, it falls back to a locked sidecar write.
+- **Live author replies.** The authoring agent can run `redline author-wait <file>` while a session is open; it returns JSON when either a pending author-needed comment appears or the final `.result` is written. For pending comments, it can run `redline author-reply <file> <comment-id> --message "..."` to post back into the same thread, then wait again. When the server is live, the reply command uses `.review/<file>.startup.json` and the local API so the browser soft-refreshes; if the server is gone, it falls back to a locked sidecar write.
 - **Closeout transcript.** On `finished`, the CLI loads the sidecar and prints every comment thread verbatim via [src/reviewSummary.ts](src/reviewSummary.ts) (`formatReviewSummary`), with a dedicated callout listing comments that need author input (`collectEscalations`). The count is also written to `.review/<file>.result` and appended to the `REDLINE_RESULT:` line. This remains the fallback read point for abandoned or unfinished sessions.
 
 ## Security & resilience as built

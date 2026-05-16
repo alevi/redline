@@ -1,8 +1,8 @@
 import { afterEach, test, expect } from "bun:test";
 import { spawnSync } from "child_process";
-import { readFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
-import { collectAuthorNeeded, formatAuthorNeeded, postAuthorReply } from "../src/authorHandoff";
+import { collectAuthorNeeded, formatAuthorNeeded, postAuthorReply, waitForAuthorEvent } from "../src/authorHandoff";
 import { saveSidecar, type Sidecar } from "../src/sidecar";
 import { BUN, CLI, createTestFile, postComment, spawnCLI, TEST_ENV } from "./helpers";
 
@@ -168,4 +168,70 @@ test("CLI author-reply uses the live server when startup metadata is present", a
     author: true,
     message: "Use sentence case.",
   });
+}, 20_000);
+
+test("waitForAuthorEvent returns pending author-needed comments before result", async () => {
+  const { filePath } = createTestFile();
+  await saveSidecar(filePath, sidecar());
+
+  const result = await waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 500 });
+
+  expect(result.kind).toBe("author-needed");
+  if (result.kind === "author-needed") {
+    expect(result.author_needed).toHaveLength(1);
+    expect(result.author_needed[0]!.commentId).toBe("c1");
+  }
+});
+
+test("waitForAuthorEvent returns the review result when no author input is pending", async () => {
+  const { filePath, dir } = createTestFile();
+  const resultPath = path.join(dir, ".review", "test.md.result");
+  await mkdir(path.dirname(resultPath), { recursive: true });
+  await writeFile(resultPath, JSON.stringify({ status: "approved", file: filePath }), "utf-8");
+
+  const result = await waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 500 });
+
+  expect(result).toEqual({
+    kind: "result",
+    file: filePath,
+    result: { status: "approved", file: filePath },
+  });
+});
+
+test("waitForAuthorEvent times out when neither author input nor result appears", async () => {
+  const { filePath } = createTestFile();
+
+  await expect(waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 100 })).rejects.toThrow(/Timed out/);
+});
+
+test("CLI author-wait prints author-needed JSON", async () => {
+  const { filePath } = createTestFile();
+  await saveSidecar(filePath, sidecar());
+
+  const wait = spawnSync(BUN, ["run", CLI, "author-wait", filePath, "--timeout-ms", "500", "--interval-ms", "50"], {
+    env: TEST_ENV,
+    encoding: "utf-8",
+  });
+
+  expect(wait.status).toBe(0);
+  const parsed = JSON.parse(wait.stdout);
+  expect(parsed.kind).toBe("author-needed");
+  expect(parsed.author_needed[0].commentId).toBe("c1");
+}, 20_000);
+
+test("CLI author-wait prints result JSON", async () => {
+  const { filePath, dir } = createTestFile();
+  const resultPath = path.join(dir, ".review", "test.md.result");
+  await mkdir(path.dirname(resultPath), { recursive: true });
+  await writeFile(resultPath, JSON.stringify({ status: "approved", file: filePath }), "utf-8");
+
+  const wait = spawnSync(BUN, ["run", CLI, "author-wait", filePath, "--timeout-ms", "500", "--interval-ms", "50"], {
+    env: TEST_ENV,
+    encoding: "utf-8",
+  });
+
+  expect(wait.status).toBe(0);
+  const parsed = JSON.parse(wait.stdout);
+  expect(parsed.kind).toBe("result");
+  expect(parsed.result.status).toBe("approved");
 }, 20_000);

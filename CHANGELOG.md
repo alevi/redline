@@ -5,7 +5,7 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 ## [Unreleased]
 
 ### Added
-- Added author-handoff CLI commands: `redline author-needed <file>` lists pending author-needed comments, and `redline author-reply <file> <comment-id> --message "..."` posts an author-marked reply back into the thread.
+- Added author-handoff CLI commands: `redline author-needed <file>` lists pending author-needed comments, `redline author-reply <file> <comment-id> --message "..."` posts an author-marked reply back into the thread, and `redline author-wait <file>` blocks until either author input is needed or the review finishes.
 
 ### Changed
 - Reframed M9 author handoff language from "escalated to the launching agent" to "author reply needed" while preserving the existing `ESCALATE`/`escalations` compatibility fields.
