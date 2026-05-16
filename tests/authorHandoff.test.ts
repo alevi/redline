@@ -204,6 +204,22 @@ test("waitForAuthorEvent times out when neither author input nor result appears"
   await expect(waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 100 })).rejects.toThrow(/Timed out/);
 });
 
+test("waitForAuthorEvent reports session-ended when startup pid is gone and no result exists", async () => {
+  const { filePath, dir } = createTestFile();
+  const startupPath = path.join(dir, ".review", "test.md.startup.json");
+  await mkdir(path.dirname(startupPath), { recursive: true });
+  await writeFile(startupPath, JSON.stringify({ pid: 999_999_999, url: "http://localhost:9" }), "utf-8");
+
+  const result = await waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 500 });
+
+  expect(result).toEqual({
+    kind: "session-ended",
+    file: filePath,
+    pid: 999_999_999,
+    message: "Redline session process ended before writing a result.",
+  });
+});
+
 test("CLI author-wait prints author-needed JSON", async () => {
   const { filePath } = createTestFile();
   await saveSidecar(filePath, sidecar());
@@ -234,4 +250,21 @@ test("CLI author-wait prints result JSON", async () => {
   const parsed = JSON.parse(wait.stdout);
   expect(parsed.kind).toBe("result");
   expect(parsed.result.status).toBe("approved");
+}, 20_000);
+
+test("CLI author-wait prints session-ended JSON", async () => {
+  const { filePath, dir } = createTestFile();
+  const startupPath = path.join(dir, ".review", "test.md.startup.json");
+  await mkdir(path.dirname(startupPath), { recursive: true });
+  await writeFile(startupPath, JSON.stringify({ pid: 999_999_999, url: "http://localhost:9" }), "utf-8");
+
+  const wait = spawnSync(BUN, ["run", CLI, "author-wait", filePath, "--timeout-ms", "500", "--interval-ms", "50"], {
+    env: TEST_ENV,
+    encoding: "utf-8",
+  });
+
+  expect(wait.status).toBe(0);
+  const parsed = JSON.parse(wait.stdout);
+  expect(parsed.kind).toBe("session-ended");
+  expect(parsed.pid).toBe(999_999_999);
 }, 20_000);

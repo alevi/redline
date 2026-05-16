@@ -66,7 +66,8 @@ export interface AuthorReplyResult {
 
 export type AuthorWaitResult =
   | { kind: "author-needed"; file: string; author_needed: AuthorNeededItem[] }
-  | { kind: "result"; file: string; result: Record<string, unknown> };
+  | { kind: "result"; file: string; result: Record<string, unknown> }
+  | { kind: "session-ended"; file: string; pid: number; message: string };
 
 function startupPath(filePath: string): string {
   return path.join(path.dirname(filePath), ".review", path.basename(filePath) + ".startup.json");
@@ -76,13 +77,24 @@ function resultPath(filePath: string): string {
   return path.join(path.dirname(filePath), ".review", path.basename(filePath) + ".result");
 }
 
-function readStartup(filePath: string): { url?: string; csrf_token?: string } | null {
+function readStartup(filePath: string): { url?: string; csrf_token?: string; pid?: number } | null {
   const sp = startupPath(filePath);
   if (!existsSync(sp)) return null;
   try {
-    return JSON.parse(readFileSync(sp, "utf-8")) as { url?: string; csrf_token?: string };
+    return JSON.parse(readFileSync(sp, "utf-8")) as { url?: string; csrf_token?: string; pid?: number };
   } catch {
     return null;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    // EPERM means the process exists but this user cannot signal it.
+    return code === "EPERM";
   }
 }
 
@@ -181,6 +193,16 @@ export async function waitForAuthorEvent(
     if (existsSync(rp)) {
       const raw = await readFile(rp, "utf-8");
       return { kind: "result", file: filePath, result: JSON.parse(raw) as Record<string, unknown> };
+    }
+
+    const startup = readStartup(filePath);
+    if (typeof startup?.pid === "number" && !processIsAlive(startup.pid)) {
+      return {
+        kind: "session-ended",
+        file: filePath,
+        pid: startup.pid,
+        message: "Redline session process ended before writing a result.",
+      };
     }
 
     if (deadline != null && Date.now() >= deadline) {
