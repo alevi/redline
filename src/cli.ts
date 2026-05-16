@@ -45,7 +45,7 @@ preflightDependencies();
 // Dynamic imports so preflight runs before module resolution pulls in third-party deps.
 const { createServer } = await import("./server");
 const { resolve } = await import("./resolve");
-const { formatAuthorNeeded, listAuthorNeeded, postAuthorReply } = await import("./authorHandoff");
+const { formatAuthorNeeded, listAuthorNeeded, postAuthorReply, waitForAuthorEvent } = await import("./authorHandoff");
 const {
   getAgentProvider,
   invalidProviderMessage,
@@ -169,6 +169,36 @@ if (args[0] === "author-reply") {
   process.exit(0);
 }
 
+// redline author-wait <file> [--timeout-ms <ms>] [--interval-ms <ms>]
+if (args[0] === "author-wait") {
+  const filePath = args[1];
+  if (!filePath) {
+    console.error("Usage: redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]");
+    process.exit(1);
+  }
+  const resolved = path.resolve(filePath);
+  if (!existsSync(resolved)) {
+    console.error(`File not found: ${resolved}`);
+    process.exit(1);
+  }
+  const timeoutRaw = argValue(args, "--timeout-ms");
+  const intervalRaw = argValue(args, "--interval-ms");
+  const timeoutMs = timeoutRaw != null ? Number(timeoutRaw) : undefined;
+  const intervalMs = intervalRaw != null ? Number(intervalRaw) : undefined;
+  if ((timeoutRaw != null && !Number.isFinite(timeoutMs)) || (intervalRaw != null && !Number.isFinite(intervalMs))) {
+    console.error("--timeout-ms and --interval-ms must be numbers");
+    process.exit(1);
+  }
+  try {
+    const result = await waitForAuthorEvent(resolved, { timeoutMs, intervalMs });
+    console.log(JSON.stringify(result, null, 2));
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 // redline resolve <file> [--model <id>]
 if (args[0] === "resolve") {
   const filePath = args[1];
@@ -194,7 +224,7 @@ if (args[0] === "resolve") {
   // redline <file>  — open review reader
   const filePath = args[0];
   if (!filePath) {
-    console.error("Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline author-needed <file.md> [--json]\n       redline author-reply <file.md> <comment-id> --message \"...\" [--name \"Author\"]\n       redline install-skill [--agent claude|codex|both]");
+    console.error("Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline author-needed <file.md> [--json]\n       redline author-reply <file.md> <comment-id> --message \"...\" [--name \"Author\"]\n       redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]\n       redline install-skill [--agent claude|codex|both]");
     process.exit(1);
   }
   const resolved = path.resolve(filePath);

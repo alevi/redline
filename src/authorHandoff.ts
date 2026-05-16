@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "fs";
+import { readFile } from "fs/promises";
 import path from "path";
 import { loadSidecar, withSidecar, type Comment, type Sidecar, type ThreadEntry } from "./sidecar";
 
@@ -63,8 +64,16 @@ export interface AuthorReplyResult {
   commentId: string;
 }
 
+export type AuthorWaitResult =
+  | { kind: "author-needed"; file: string; author_needed: AuthorNeededItem[] }
+  | { kind: "result"; file: string; result: Record<string, unknown> };
+
 function startupPath(filePath: string): string {
   return path.join(path.dirname(filePath), ".review", path.basename(filePath) + ".startup.json");
+}
+
+function resultPath(filePath: string): string {
+  return path.join(path.dirname(filePath), ".review", path.basename(filePath) + ".result");
 }
 
 function readStartup(filePath: string): { url?: string; csrf_token?: string } | null {
@@ -149,4 +158,34 @@ export function formatAuthorNeeded(items: AuthorNeededItem[]): string {
     if (item.note) lines.push(`  Inline agent: ${item.note}`);
   }
   return lines.join("\n");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function waitForAuthorEvent(
+  filePath: string,
+  options: { intervalMs?: number; timeoutMs?: number } = {},
+): Promise<AuthorWaitResult> {
+  const intervalMs = Math.max(50, options.intervalMs ?? 500);
+  const deadline = options.timeoutMs != null ? Date.now() + options.timeoutMs : null;
+  const rp = resultPath(filePath);
+
+  while (true) {
+    const authorNeeded = await listAuthorNeeded(filePath);
+    if (authorNeeded.length > 0) {
+      return { kind: "author-needed", file: filePath, author_needed: authorNeeded };
+    }
+
+    if (existsSync(rp)) {
+      const raw = await readFile(rp, "utf-8");
+      return { kind: "result", file: filePath, result: JSON.parse(raw) as Record<string, unknown> };
+    }
+
+    if (deadline != null && Date.now() >= deadline) {
+      throw new Error("Timed out waiting for author-needed comments or review result");
+    }
+    await sleep(intervalMs);
+  }
 }
