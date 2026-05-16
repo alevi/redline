@@ -103,6 +103,16 @@ test("collectEscalations: multiple escalations across rounds, in order", () => {
   expect(esc.map((e) => e.round)).toEqual([1, 2]);
 });
 
+test("collectEscalations: author reply clears a pending handoff", () => {
+  const s = sidecar();
+  s.rounds[0]!.comments[0]!.thread.push(
+    { role: "agent", name: "Author", message: "The house style says sentence case.", at: "", author: true },
+  );
+
+  expect(collectEscalations(s)).toHaveLength(0);
+  expect(formatReviewSummary(s)).not.toContain("author reply from you");
+});
+
 test("formatReviewSummary: open (unresolved) comments are tagged open", () => {
   const s = sidecar();
   s.rounds[0]!.comments[1]!.resolved = false;

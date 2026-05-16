@@ -121,6 +121,23 @@ test("POST /api/comment/:id/reply does NOT broadcast for agent replies", async (
   await expect(evP).rejects.toThrow(/Timed out/);
 }, 15_000);
 
+test("POST /api/comment/:id/reply broadcasts comment-reply for author replies", async () => {
+  const { filePath } = createTestFile(SAMPLE);
+  const { port } = await start(filePath);
+
+  const c = await postComment(port, { quote: "First paragraph" }, "x");
+
+  const evP = waitForEvent(port, "comment-reply", { predicate: (d) => d.commentId === c.id });
+  await evP.ready;
+  await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
+    method: "POST",
+    headers: CSRF_JSON_HEADERS,
+    body: JSON.stringify({ role: "agent", name: "Author", message: "Use sentence case.", author: true }),
+  });
+  const ev = await evP;
+  expect(ev.data.round).toBe(1);
+}, 15_000);
+
 test("POST /api/comment/:id/thinking broadcasts comment-thinking", async () => {
   const { filePath } = createTestFile(SAMPLE);
   const { port } = await start(filePath);

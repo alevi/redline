@@ -472,6 +472,7 @@ export function createServer(
       requires_revision?: boolean;
       revision_reason?: string;
       escalate?: boolean;
+      author?: boolean;
     }>();
     if (!body.message?.trim()) return c.json({ ok: false, error: "message is required" }, 400);
     const role = (body.role === "human" ? "human" : "agent") as "human" | "agent";
@@ -491,12 +492,13 @@ export function createServer(
           if (body.revision_reason?.trim()) entry.revision_reason = body.revision_reason.trim();
         }
         if (body.escalate === true) entry.escalate = true;
+        if (body.author === true) entry.author = true;
       }
       comment.thread.push(entry);
       return { skip: false as const, roundNumber: round.round, comment };
     });
     if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
-    if (role === "human") {
+    if (role === "human" || (role === "agent" && body.author === true)) {
       broadcast("comment-reply", { round: out.roundNumber, commentId: id });
     }
     return c.json({ ok: true, comment: out.comment });

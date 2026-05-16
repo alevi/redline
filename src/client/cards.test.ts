@@ -233,4 +233,54 @@ describe("author reply needed badge", () => {
 
     expect(card.querySelector(".escalate-badge")).toBeNull();
   });
+
+  test("clears the author-reply badge after an author reply lands", async () => {
+    const { buildCommentCard, setCardCallbacks } = await loadCards();
+    setCardCallbacks(noopCallbacks);
+
+    const card = buildCommentCard({
+      id: "c-author-answered",
+      quote: "hi",
+      resolved: false,
+      thread: [
+        { role: "human", message: "run the style guide" },
+        { role: "agent", name: "Claude", message: "Needs author input.", escalate: true },
+        { role: "agent", name: "Author", message: "Use sentence case.", author: true },
+      ],
+    });
+    document.body.appendChild(card);
+
+    expect(card.querySelector(".escalate-badge")).toBeNull();
+    expect(card.querySelector(".verdict.escalate")).not.toBeNull();
+  });
+});
+
+describe("author replies", () => {
+  test("renders author-marked agent entries with author styling and label", async () => {
+    const { buildCommentCard, setCardCallbacks } = await loadCards();
+    setCardCallbacks({
+      focusComment: () => {},
+      updateNav: () => {},
+      positionCards: () => {},
+      resolveComment: () => {},
+      reopenComment: () => {},
+      toggleReplyForm: () => {},
+      submitReply: () => {},
+    });
+
+    const card = buildCommentCard({
+      id: "c-author",
+      quote: "hi",
+      resolved: false,
+      thread: [
+        { role: "agent", name: "Author", message: "Use sentence case.", author: true },
+      ],
+    });
+    document.body.appendChild(card);
+
+    const entry = card.querySelector(".thread-entry.author-entry");
+    expect(entry).not.toBeNull();
+    expect(entry?.querySelector(".thread-role")?.textContent).toBe("Author");
+    expect(entry?.querySelector(".thread-message")?.textContent).toContain("Use sentence case.");
+  });
 });

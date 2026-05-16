@@ -164,9 +164,9 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
 
 function buildThreadEntry(entry: ThreadEntry, isLatestVerdict: boolean): HTMLDivElement {
   const role = entry.role ?? "agent";
-  const label = entry.name ?? (role === "agent" ? "Agent" : "Human");
+  const label = entry.name ?? (entry.author ? "Author" : role === "agent" ? "Agent" : "Human");
   const div = document.createElement("div");
-  div.className = "thread-entry";
+  div.className = "thread-entry" + (entry.author ? " author-entry" : "");
   let verdictHtml = "";
   if (role === "agent" && entry.requires_revision === true && isLatestVerdict) {
     const reason = entry.revision_reason ? escapeHtml(entry.revision_reason) : "edit queued";

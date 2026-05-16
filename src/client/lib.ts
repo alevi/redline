@@ -23,6 +23,7 @@ export type ThreadEntry = {
   requires_revision?: boolean;
   revision_reason?: string;
   escalate?: boolean;
+  author?: boolean;
 };
 
 export function escapeHtml(s: string): string {
@@ -47,7 +48,16 @@ export function latestVerdict(comment: ClientComment): "revise" | "accept" | nul
 
 // True when an agent reply flagged this comment for authoring-agent input.
 export function isEscalated(comment: ClientComment): boolean {
-  return (comment.thread || []).some((e) => e.role === "agent" && e.escalate === true);
+  const thread = comment.thread || [];
+  let escIdx = -1;
+  let authorIdx = -1;
+  for (let i = thread.length - 1; i >= 0; i--) {
+    const entry = thread[i]!;
+    if (escIdx === -1 && entry.role === "agent" && entry.escalate === true) escIdx = i;
+    if (authorIdx === -1 && entry.role === "agent" && entry.author === true) authorIdx = i;
+    if (escIdx !== -1 && authorIdx !== -1) break;
+  }
+  return escIdx !== -1 && authorIdx < escIdx;
 }
 
 export function nearestCell(node: Node): HTMLElement | null {

@@ -24,7 +24,10 @@ function flatten(s: string, n: number): string {
 }
 
 function isEscalated(c: Comment): boolean {
-  return c.thread.some((e) => e.role === "agent" && e.escalate === true);
+  const escIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.escalate === true);
+  if (escIdx === -1) return false;
+  const authorIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.author === true);
+  return authorIdx < escIdx;
 }
 
 // Pull out every comment the inline agent routed to the authoring agent.
@@ -32,8 +35,10 @@ export function collectEscalations(sidecar: Sidecar): EscalationItem[] {
   const items: EscalationItem[] = [];
   for (const round of sidecar.rounds) {
     for (const c of round.comments) {
-      const escIdx = c.thread.findIndex((e) => e.role === "agent" && e.escalate === true);
+      const escIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.escalate === true);
       if (escIdx === -1) continue;
+      const authorIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.author === true);
+      if (authorIdx > escIdx) continue;
       const agentEntry = c.thread[escIdx]!;
       // The reviewer message immediately before the author handoff is the
       // request the inline agent couldn't fulfill.
@@ -50,6 +55,13 @@ export function collectEscalations(sidecar: Sidecar): EscalationItem[] {
     }
   }
   return items;
+}
+
+function latestIndex(thread: Comment["thread"], predicate: (entry: Comment["thread"][number]) => boolean): number {
+  for (let i = thread.length - 1; i >= 0; i--) {
+    if (predicate(thread[i]!)) return i;
+  }
+  return -1;
 }
 
 // A readable transcript of every comment thread, plus an author-handoff callout.
