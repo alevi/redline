@@ -11,7 +11,7 @@ When you've produced a markdown document that the human needs to read, comment o
 
 The redline launcher lives at `__REDLINE_BIN__` (substituted at install time — if you see the literal placeholder string, the skill was installed incorrectly; tell the human to re-run `redline install-skill`). Always invoke it by this absolute path. Do not call bare `redline` and do not try to "fix" PATH issues by running `bun link` or guessing where the repo lives.
 
-**Always detach the launcher with `nohup` and poll.** Never run `__REDLINE_BIN__` as a foreground/blocking shell call: agent shell tools often buffer stdout until the process exits, so you would never see the URL the human needs to click and your "I'll wait while you review" message would be a lie. Also do not use a plain trailing `&` without `nohup`: in Codex-style short shell calls, the shell can exit and take the Redline server with it. Use this pattern:
+**Always detach the launcher with Node and poll.** Never run `__REDLINE_BIN__` as a foreground/blocking shell call: agent shell tools often buffer stdout until the process exits, so you would never see the URL the human needs to click and your "I'll wait while you review" message would be a lie. Also do not use `nohup` or a plain trailing `&`: in Codex-style short shell calls, the runner can clean up the shell's process group and take the Redline server with it. Use this pattern:
 
 ```bash
 FILE=/abs/path/to/file.md
@@ -20,8 +20,20 @@ STARTUP="$DIR/.review/$BASE.startup.json"
 RESULT="$DIR/.review/$BASE.result"
 LOG=/tmp/redline-$BASE.log
 
-# Kick off the review detached from this short-lived shell and open it in the user's real browser.
-nohup __REDLINE_BIN__ "$FILE" --open > "$LOG" 2>&1 < /dev/null &
+# Kick off the review in a detached process group and open it in the user's real browser.
+node - "__REDLINE_BIN__" "$FILE" "$LOG" <<'JS'
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const [launcher, file, logPath] = process.argv.slice(2);
+const out = fs.openSync(logPath, "a");
+const child = spawn(launcher, [file, "--open"], {
+  detached: true,
+  stdio: ["ignore", out, out],
+  env: process.env,
+});
+child.unref();
+console.log(child.pid);
+JS
 
 # Step 1: wait for startup, read the URL.
 for i in $(seq 1 60); do [ -f "$STARTUP" ] && break; sleep 0.5; done
