@@ -4,6 +4,8 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-05-17
+
 ### Fixed
 - Revision validation now tolerates implementation-slice renumbering and reviewer-authorized topic removals, avoiding false failures when a review intentionally cuts one section and renumbers the remaining headings.
 
@@ -87,7 +89,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/alevi/redline/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/alevi/redline/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/alevi/redline/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/alevi/redline/compare/v0.4.1...v0.5.0
