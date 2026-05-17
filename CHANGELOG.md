@@ -4,6 +4,9 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+- Revision validation now tolerates implementation-slice renumbering and reviewer-authorized topic removals, avoiding false failures when a review intentionally cuts one section and renumbers the remaining headings.
+
 ## [0.5.2] - 2026-05-16
 
 ### Fixed

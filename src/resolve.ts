@@ -190,25 +190,68 @@ export async function resolve(filePath: string, options: { model?: string; agent
 
 const HEADING_RE = /^#{1,6} .+$/gm;
 
+function normalizeHeadingKey(heading: string): string {
+  return heading
+    .replace(/^#{1,6}\s+/, "")
+    // Milestone/task headings often get legitimately renumbered when a nearby
+    // slice is removed. Keep the semantic title as the identity.
+    .replace(/^[A-Z]+\d+[a-z]?(?:\.\d+)*:\s+/i, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function termsForHeading(heading: string): string[] {
+  const key = normalizeHeadingKey(heading);
+  const words = key.split(/\s+/).filter((w) => w.length >= 4);
+  const phrases = new Set<string>();
+  const numberedPrefix = heading.replace(/^#{1,6}\s+/, "").match(/^([A-Z]+\d+[a-z]?(?:\.\d+)*):\s+/i)?.[1];
+  if (numberedPrefix) phrases.add(numberedPrefix.toLowerCase());
+  if (words.length >= 2) phrases.add(key);
+  for (let size = 2; size <= 3; size++) {
+    for (let i = 0; i <= words.length - size; i++) {
+      phrases.add(words.slice(i, i + size).join(" "));
+    }
+  }
+  return [...phrases].filter((p) => p.length >= 4);
+}
+
+function settledText(settled: Comment[]): string {
+  return settled
+    .flatMap((c) => [
+      c.quote,
+      c.context_before,
+      c.context_after,
+      ...c.thread.flatMap((e) => [e.message, e.revision_reason ?? ""]),
+    ])
+    .join("\n")
+    .toLowerCase();
+}
+
 // Headings present in `inputDoc` but missing from `outputDoc` whose section the
-// reviewer never commented on. A comment quoting text inside a section means
-// the reviewer was working there, so dropping/reworking it is authorized; a
-// section vanishing with no comment near it means the model mangled the doc.
+// reviewer never authorized touching. A comment quoting text inside a section
+// means the reviewer was working there; a thread/revision reason naming the
+// section topic also authorizes removal/reworking. Exact heading strings are
+// intentionally not the only identity because model revisions may legitimately
+// renumber implementation slices after cutting a nearby slice.
 function droppedSections(inputDoc: string, outputDoc: string, settled: Comment[]): string[] {
-  const outHeadings = new Set(outputDoc.match(HEADING_RE) ?? []);
+  const outHeadingKeys = new Set((outputDoc.match(HEADING_RE) ?? []).map(normalizeHeadingKey));
   const inMatches = [...inputDoc.matchAll(HEADING_RE)];
   const quotes = settled.map((c) => c.quote.trim()).filter((q) => q.length > 0);
+  const settledTopicText = settledText(settled);
 
   const unauthorized: string[] = [];
   for (let i = 0; i < inMatches.length; i++) {
     const heading = inMatches[i]![0];
-    if (outHeadings.has(heading)) continue;
+    if (outHeadingKeys.has(normalizeHeadingKey(heading))) continue;
     // This heading's section runs from the heading to the next one (or EOF).
     const start = inMatches[i]!.index!;
     const end = i + 1 < inMatches.length ? inMatches[i + 1]!.index! : inputDoc.length;
     const section = inputDoc.slice(start, end);
     const commented = quotes.some((q) => section.includes(q));
-    if (!commented) unauthorized.push(heading);
+    const topicNamed = termsForHeading(heading).some((term) => settledTopicText.includes(term));
+    if (!commented && !topicNamed) unauthorized.push(heading);
   }
   return unauthorized;
 }
