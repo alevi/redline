@@ -45,7 +45,7 @@
     "access": "public"
   },
   "scripts": {
-    "check": "bun test",
+    "check": "bun run format:check && bun test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "start": "bun src/cli.ts",
