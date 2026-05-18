@@ -63,13 +63,19 @@ function findFirstObject(s: string): [number, number] | null {
   let escape = false;
   for (let i = start; i < s.length; i++) {
     const ch = s[i];
-    if (escape) { escape = false; continue; }
+    if (escape) {
+      escape = false;
+      continue;
+    }
     if (inStr) {
       if (ch === "\\") escape = true;
       else if (ch === '"') inStr = false;
       continue;
     }
-    if (ch === '"') { inStr = true; continue; }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
     if (ch === "{") depth++;
     else if (ch === "}") {
       depth--;
@@ -103,7 +109,9 @@ export function parseReply(raw: string): ParsedReply {
           escalate: obj.escalate === true,
         };
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
     return null;
   };
 
@@ -119,5 +127,10 @@ export function parseReply(raw: string): ParsedReply {
     if (obj) return obj;
   }
 
-  return { message: trimmed, requires_revision: true, reason: "", escalate: false };
+  return {
+    message: trimmed,
+    requires_revision: true,
+    reason: "",
+    escalate: false,
+  };
 }

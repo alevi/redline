@@ -33,7 +33,9 @@ setCardCallbacks({
 
 // Click-to-clear-focus
 document.addEventListener("click", (e) => {
-  const inCard = (e.target as HTMLElement).closest(".comment-card, .new-comment-form");
+  const inCard = (e.target as HTMLElement).closest(
+    ".comment-card, .new-comment-form",
+  );
   const inMark = (e.target as HTMLElement).closest("mark.rl-highlight");
   const inNav = (e.target as HTMLElement).closest("#comment-nav");
   if (!inCard && !inMark && !inNav) clearFocus();
@@ -63,7 +65,8 @@ document.getElementById("nav-next")!.addEventListener("click", () => {
 function swapBrokenImg(img: HTMLImageElement): void {
   const placeholder = document.createElement("div");
   placeholder.className = "broken-img";
-  placeholder.textContent = "Image failed to load" + (img.alt ? ": " + img.alt : "");
+  placeholder.textContent =
+    "Image failed to load" + (img.alt ? ": " + img.alt : "");
   img.replaceWith(placeholder);
 }
 document.querySelectorAll("#prose img").forEach((img) => {
@@ -74,13 +77,15 @@ document.querySelectorAll("#prose img").forEach((img) => {
 
 // Syntax highlighting
 if (window.hljs) {
-  document.querySelectorAll('#prose pre code[class*="language-"]').forEach((el) => {
-    try {
-      window.hljs!.highlightElement(el as HTMLElement);
-    } catch {
-      /* unknown language */
-    }
-  });
+  document
+    .querySelectorAll('#prose pre code[class*="language-"]')
+    .forEach((el) => {
+      try {
+        window.hljs!.highlightElement(el as HTMLElement);
+      } catch {
+        /* unknown language */
+      }
+    });
 }
 
 // Initial render
@@ -93,8 +98,14 @@ applyRoundState();
 const justRevised = sessionStorage.getItem("just-revised");
 if (justRevised) sessionStorage.removeItem("just-revised");
 const diffPersisted = (() => {
-  try { return sessionStorage.getItem(diffStateKey(window.__REDLINE__.contextTitle)) === "1"; }
-  catch { return false; }
+  try {
+    return (
+      sessionStorage.getItem(diffStateKey(window.__REDLINE__.contextTitle)) ===
+      "1"
+    );
+  } catch {
+    return false;
+  }
 })();
 if (justRevised || diffPersisted) {
   void enableDiffMode();

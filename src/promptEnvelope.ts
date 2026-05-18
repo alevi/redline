@@ -36,7 +36,9 @@ function uuid(): string {
 export function newEnvelope(): Envelope {
   let id = uuid();
   return {
-    get uuid() { return id; },
+    get uuid() {
+      return id;
+    },
     wrap(label: string, text: string): string {
       // Re-roll the UUID until no ancestor marker prefix appears in the text.
       // Probability is astronomically low; the loop is a belt for the

@@ -37,7 +37,11 @@ function getClientBundle(): Promise<string> {
   if (!clientBundlePromise) {
     clientBundlePromise = (async () => {
       const entrypoint = path.resolve(import.meta.dir, "client/main.ts");
-      const result = await Bun.build({ entrypoints: [entrypoint], target: "browser", minify: false });
+      const result = await Bun.build({
+        entrypoints: [entrypoint],
+        target: "browser",
+        minify: false,
+      });
       if (!result.success) {
         const errs = result.logs.map((l) => l.message).join("\n");
         throw new Error("client bundle failed to build:\n" + errs);
@@ -50,7 +54,12 @@ function getClientBundle(): Promise<string> {
 
 export function createServer(
   filePath: string,
-  opts: { context?: string; csrfToken?: string; noAgent?: boolean; agentName?: string } = {}
+  opts: {
+    context?: string;
+    csrfToken?: string;
+    noAgent?: boolean;
+    agentName?: string;
+  } = {},
 ) {
   const app = new Hono();
   const fileName = path.basename(filePath);
@@ -69,7 +78,9 @@ export function createServer(
     if (m === "GET" || m === "HEAD" || m === "OPTIONS") return next();
     const got = c.req.header("X-Redline-Token");
     if (got !== csrfToken) {
-      return new Response("forbidden: missing or wrong X-Redline-Token", { status: 403 });
+      return new Response("forbidden: missing or wrong X-Redline-Token", {
+        status: 403,
+      });
     }
     return next();
   });
@@ -77,7 +88,9 @@ export function createServer(
   // Kick off the bundle build immediately so it's ready by the time the
   // browser hits /. In practice the build finishes long before the browser
   // requests /client.js, but await it on the route just in case.
-  getClientBundle().catch((err) => console.error("client bundle build error:", err));
+  getClientBundle().catch((err) =>
+    console.error("client bundle build error:", err),
+  );
 
   app.get("/client.js", async (c) => {
     const js = await getClientBundle();
@@ -90,7 +103,10 @@ export function createServer(
   let cssCache: string | null = null;
   app.get("/styles.css", async (c) => {
     if (!cssCache) {
-      cssCache = await readFile(path.resolve(import.meta.dir, "client/styles.css"), "utf-8");
+      cssCache = await readFile(
+        path.resolve(import.meta.dir, "client/styles.css"),
+        "utf-8",
+      );
     }
     return new Response(cssCache, {
       headers: { "Content-Type": "text/css; charset=utf-8" },
@@ -149,7 +165,9 @@ export function createServer(
   let hadBrowser = false;
   let abandonTimer: ReturnType<typeof setTimeout> | null = null;
   let onAbandonCallback: (() => void) | undefined;
-  let onFinishedCallback: ((payload: { totalRounds: number; totalComments: number }) => void) | undefined;
+  let onFinishedCallback:
+    | ((payload: { totalRounds: number; totalComments: number }) => void)
+    | undefined;
   let onRevisionErrorCallback: ((message: string) => void) | undefined;
   let onRevisionRecoveredCallback: (() => void) | undefined;
 
@@ -172,7 +190,10 @@ export function createServer(
   // sidecar mutation and broadcasts a spurious revision-stalled event.
   let revisionWatchdogId = 0;
   function clearRevisionWatchdog() {
-    if (revisionWatchdog) { clearTimeout(revisionWatchdog); revisionWatchdog = null; }
+    if (revisionWatchdog) {
+      clearTimeout(revisionWatchdog);
+      revisionWatchdog = null;
+    }
     revisionWatchdogId += 1;
   }
   function startRevisionWatchdog() {
@@ -181,14 +202,18 @@ export function createServer(
     revisionWatchdog = setTimeout(async () => {
       revisionWatchdog = null;
       const reason = `revision did not complete within ${REVISION_TIMEOUT_MS / 1000}s`;
-      console.error(`[redline] ${reason} — un-resolving round and notifying browser.`);
+      console.error(
+        `[redline] ${reason} — un-resolving round and notifying browser.`,
+      );
       try {
         await withSidecar(filePath, (sidecar) => {
           // Re-check inside the lock: another endpoint may have bumped
           // revisionWatchdogId after this callback was queued (the race the
           // token is here to close).
           if (myId !== revisionWatchdogId) return false as const;
-          const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
+          const lastResolved = [...sidecar.rounds]
+            .reverse()
+            .find((r) => r.resolved_at !== null);
           if (!lastResolved) return false as const;
           lastResolved.resolved_at = null;
         });
@@ -212,7 +237,9 @@ export function createServer(
       // Re-check at fire time: a tab may have (re)connected during the grace
       // — a reload, or a second tab — in which case nothing is abandoned.
       if (browserClients.size > 0) return;
-      console.log(`\n[redline] No browser connected for ${graceMs / 1000}s — assuming abandoned.`);
+      console.log(
+        `\n[redline] No browser connected for ${graceMs / 1000}s — assuming abandoned.`,
+      );
       onAbandonCallback?.();
     }, graceMs);
   }
@@ -220,32 +247,52 @@ export function createServer(
   function checkBrowserPresence() {
     if (browserClients.size > 0) {
       hadBrowser = true;
-      if (abandonTimer) { clearTimeout(abandonTimer); abandonTimer = null; }
+      if (abandonTimer) {
+        clearTimeout(abandonTimer);
+        abandonTimer = null;
+      }
     } else if (hadBrowser && !abandonTimer) {
       armAbandonTimer(ABANDON_GRACE_MS);
     }
   }
 
   function broadcast(event: string, data: Record<string, unknown> = {}) {
-    const msg = enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const msg = enc.encode(
+      `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+    );
     for (const ctrl of sseClients) {
-      try { ctrl.enqueue(msg); } catch { sseClients.delete(ctrl); browserClients.delete(ctrl); }
+      try {
+        ctrl.enqueue(msg);
+      } catch {
+        sseClients.delete(ctrl);
+        browserClients.delete(ctrl);
+      }
     }
   }
 
   app.get("/api/events", (c) => {
-    const isBrowser = new URL(c.req.url).searchParams.get("client") === "browser";
+    const isBrowser =
+      new URL(c.req.url).searchParams.get("client") === "browser";
     let ctrl: ReadableStreamDefaultController<Uint8Array>;
     let keepaliveTimer: ReturnType<typeof setInterval>;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         ctrl = controller;
         sseClients.add(controller);
-        if (isBrowser) { browserClients.add(controller); checkBrowserPresence(); }
+        if (isBrowser) {
+          browserClients.add(controller);
+          checkBrowserPresence();
+        }
         controller.enqueue(enc.encode(": connected\n\n"));
         keepaliveTimer = setInterval(() => {
-          try { controller.enqueue(enc.encode(": ping\n\n")); }
-          catch { clearInterval(keepaliveTimer); sseClients.delete(controller); browserClients.delete(controller); checkBrowserPresence(); }
+          try {
+            controller.enqueue(enc.encode(": ping\n\n"));
+          } catch {
+            clearInterval(keepaliveTimer);
+            sseClients.delete(controller);
+            browserClients.delete(controller);
+            checkBrowserPresence();
+          }
         }, 8000);
       },
       cancel() {
@@ -259,7 +306,7 @@ export function createServer(
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     });
   });
@@ -275,7 +322,22 @@ export function createServer(
     const agentRepliedAt = latestRound?.agent_replied_at ?? null;
     const roundNumber = latestRound?.round ?? 1;
     const totalRounds = sidecar.rounds.length;
-    return c.html(pageTemplate(fileName, html, serializeCommentsForClient(comments), roundResolved, agentRepliedAt, roundNumber, totalRounds, sidecar.context, false, csrfToken, opts.noAgent ?? false, opts.agentName));
+    return c.html(
+      pageTemplate(
+        fileName,
+        html,
+        serializeCommentsForClient(comments),
+        roundResolved,
+        agentRepliedAt,
+        roundNumber,
+        totalRounds,
+        sidecar.context,
+        false,
+        csrfToken,
+        opts.noAgent ?? false,
+        opts.agentName,
+      ),
+    );
   });
 
   // Add a comment to the active round
@@ -299,7 +361,11 @@ export function createServer(
         context_before: body.context_before,
         context_after: body.context_after,
         thread: [
-          { role: "human", message: body.message, at: new Date().toISOString() },
+          {
+            role: "human",
+            message: body.message,
+            at: new Date().toISOString(),
+          },
         ],
         resolved: false,
       };
@@ -315,15 +381,23 @@ export function createServer(
     const id = c.req.param("id");
     const out = await withSidecar(filePath, (sidecar) => {
       const round = activeRound(sidecar);
-      if (!round) return { skip: true as const, status: 400, error: "No active round" };
+      if (!round)
+        return { skip: true as const, status: 400, error: "No active round" };
       const comment = round.comments.find((cm) => cm.id === id);
-      if (!comment) return { skip: true as const, status: 404, error: "Comment not found" };
+      if (!comment)
+        return { skip: true as const, status: 404, error: "Comment not found" };
       comment.resolved = true;
-      const allResolved = round.comments.length > 0 && round.comments.every((cm) => cm.resolved);
+      const allResolved =
+        round.comments.length > 0 && round.comments.every((cm) => cm.resolved);
       return { skip: false as const, roundNumber: round.round, allResolved };
     });
-    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
-    broadcast("comment-resolved", { round: out.roundNumber, commentId: id, allResolved: out.allResolved });
+    if (out.skip)
+      return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
+    broadcast("comment-resolved", {
+      round: out.roundNumber,
+      commentId: id,
+      allResolved: out.allResolved,
+    });
     return c.json({ ok: true, allResolved: out.allResolved });
   });
 
@@ -332,15 +406,29 @@ export function createServer(
     const id = c.req.param("id");
     const out = await withSidecar(filePath, (sidecar) => {
       const latestRound = sidecar.rounds[sidecar.rounds.length - 1] ?? null;
-      if (!latestRound) return { skip: true as const, status: 400, error: "No round found" };
+      if (!latestRound)
+        return { skip: true as const, status: 400, error: "No round found" };
       const comment = latestRound.comments.find((cm) => cm.id === id);
-      if (!comment) return { skip: true as const, status: 404, error: "Comment not found" };
+      if (!comment)
+        return { skip: true as const, status: 404, error: "Comment not found" };
       comment.resolved = false;
-      const allResolved = latestRound.comments.length > 0 && latestRound.comments.every((cm) => cm.resolved);
-      return { skip: false as const, roundNumber: latestRound.round, allResolved, comment };
+      const allResolved =
+        latestRound.comments.length > 0 &&
+        latestRound.comments.every((cm) => cm.resolved);
+      return {
+        skip: false as const,
+        roundNumber: latestRound.round,
+        allResolved,
+        comment,
+      };
     });
-    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
-    broadcast("comment-resolved", { round: out.roundNumber, commentId: id, allResolved: out.allResolved });
+    if (out.skip)
+      return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
+    broadcast("comment-resolved", {
+      round: out.roundNumber,
+      commentId: id,
+      allResolved: out.allResolved,
+    });
     return c.json({ ok: true, comment: out.comment });
   });
 
@@ -348,13 +436,24 @@ export function createServer(
   app.post("/api/submit", async (c) => {
     const out = await withSidecar(filePath, (sidecar) => {
       const round = activeRound(sidecar);
-      if (!round) return { skip: true as const, status: 400, error: "No active round" };
-      if (round.comments.length === 0) return { skip: true as const, status: 400, error: "No comments to submit" };
+      if (!round)
+        return { skip: true as const, status: 400, error: "No active round" };
+      if (round.comments.length === 0)
+        return {
+          skip: true as const,
+          status: 400,
+          error: "No comments to submit",
+        };
       round.submitted_at = new Date().toISOString();
       round.agent_replied_at = null; // clear so agent knows to respond again
-      return { skip: false as const, roundNumber: round.round, count: round.comments.length };
+      return {
+        skip: false as const,
+        roundNumber: round.round,
+        count: round.comments.length,
+      };
     });
-    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400);
+    if (out.skip)
+      return c.json({ ok: false, error: out.error }, out.status as 400);
     broadcast("submitted", { round: out.roundNumber, comments: out.count });
     return c.json({ ok: true });
   });
@@ -380,14 +479,31 @@ export function createServer(
       const round = activeRound(sidecar);
       if (!round) return { skip: true as const };
       round.resolved_at = new Date().toISOString();
-      const totalRounds = sidecar.rounds.filter((r: any) => r.resolved_at).length;
-      const totalComments = sidecar.rounds.reduce((n: number, r: any) => n + (r.comments?.length ?? 0), 0);
-      return { skip: false as const, roundNumber: round.round, totalRounds, totalComments };
+      const totalRounds = sidecar.rounds.filter(
+        (r: any) => r.resolved_at,
+      ).length;
+      const totalComments = sidecar.rounds.reduce(
+        (n: number, r: any) => n + (r.comments?.length ?? 0),
+        0,
+      );
+      return {
+        skip: false as const,
+        roundNumber: round.round,
+        totalRounds,
+        totalComments,
+      };
     });
     if (out.skip) return c.json({ ok: false, error: "No active round" }, 400);
     broadcast("finished", { round: out.roundNumber });
     // Let the CLI handle the summary printout, result-file writing, and process exit.
-    setTimeout(() => onFinishedCallback?.({ totalRounds: out.totalRounds, totalComments: out.totalComments }), 500);
+    setTimeout(
+      () =>
+        onFinishedCallback?.({
+          totalRounds: out.totalRounds,
+          totalComments: out.totalComments,
+        }),
+      500,
+    );
     return c.json({ ok: true });
   });
 
@@ -420,7 +536,9 @@ export function createServer(
     clearRevisionWatchdog();
     const { message } = await c.req.json();
     await withSidecar(filePath, (sidecar) => {
-      const lastResolved = [...sidecar.rounds].reverse().find((r) => r.resolved_at !== null);
+      const lastResolved = [...sidecar.rounds]
+        .reverse()
+        .find((r) => r.resolved_at !== null);
       if (!lastResolved) return false as const;
       lastResolved.resolved_at = null;
     });
@@ -439,7 +557,9 @@ export function createServer(
     try {
       const body = await c.req.json<{ reason?: string }>();
       if (body.reason?.trim()) reason = body.reason.trim();
-    } catch { /* empty body is fine */ }
+    } catch {
+      /* empty body is fine */
+    }
     broadcast("agent-unavailable", { reason });
     return c.json({ ok: true });
   });
@@ -474,22 +594,32 @@ export function createServer(
       escalate?: boolean;
       author?: boolean;
     }>();
-    if (!body.message?.trim()) return c.json({ ok: false, error: "message is required" }, 400);
-    const role = (body.role === "human" ? "human" : "agent") as "human" | "agent";
+    if (!body.message?.trim())
+      return c.json({ ok: false, error: "message is required" }, 400);
+    const role = (body.role === "human" ? "human" : "agent") as
+      | "human"
+      | "agent";
     const name = body.name?.trim() || undefined;
 
     const out = await withSidecar(filePath, (sidecar) => {
       const round = activeRound(sidecar);
-      if (!round) return { skip: true as const, status: 400, error: "No active round" };
+      if (!round)
+        return { skip: true as const, status: 400, error: "No active round" };
       const comment = round.comments.find((c) => c.id === id);
-      if (!comment) return { skip: true as const, status: 404, error: "Comment not found" };
-      const entry: import("./sidecar").ThreadEntry = { role, message: body.message.trim(), at: new Date().toISOString() };
+      if (!comment)
+        return { skip: true as const, status: 404, error: "Comment not found" };
+      const entry: import("./sidecar").ThreadEntry = {
+        role,
+        message: body.message.trim(),
+        at: new Date().toISOString(),
+      };
       if (name) entry.name = name;
       // Verdict only meaningful on agent replies; ignore on human entries.
       if (role === "agent") {
         if (typeof body.requires_revision === "boolean") {
           entry.requires_revision = body.requires_revision;
-          if (body.revision_reason?.trim()) entry.revision_reason = body.revision_reason.trim();
+          if (body.revision_reason?.trim())
+            entry.revision_reason = body.revision_reason.trim();
         }
         if (body.escalate === true) entry.escalate = true;
         if (body.author === true) entry.author = true;
@@ -497,7 +627,8 @@ export function createServer(
       comment.thread.push(entry);
       return { skip: false as const, roundNumber: round.round, comment };
     });
-    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
+    if (out.skip)
+      return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
     if (role === "human" || (role === "agent" && body.author === true)) {
       broadcast("comment-reply", { round: out.roundNumber, commentId: id });
     }
@@ -521,12 +652,19 @@ export function createServer(
   app.post("/api/resolve", async (c) => {
     const out = await withSidecar(filePath, (sidecar) => {
       const round = activeRound(sidecar);
-      if (!round) return { skip: true as const, status: 400, error: "No active round" };
-      if (round.comments.length === 0) return { skip: true as const, status: 400, error: "No comments to submit" };
+      if (!round)
+        return { skip: true as const, status: 400, error: "No active round" };
+      if (round.comments.length === 0)
+        return {
+          skip: true as const,
+          status: 400,
+          error: "No comments to submit",
+        };
       round.submitted_at = new Date().toISOString();
       return { skip: false as const };
     });
-    if (out.skip) return c.json({ ok: false, error: out.error }, out.status as 400);
+    if (out.skip)
+      return c.json({ ok: false, error: out.error }, out.status as 400);
     return c.json({ ok: true });
   });
 
@@ -563,7 +701,9 @@ export function createServer(
       const { readdir } = await import("fs/promises");
       const files = await readdir(historyDir);
       snapshots = files.filter((f) => f.startsWith(base + ".")).sort();
-    } catch { /* no history */ }
+    } catch {
+      /* no history */
+    }
 
     // Snapshot[n-1] (0-indexed, ascending sort) = document state during round n.
     // The first snapshot was saved just before round 2's revision overwrote round 1's file, etc.
@@ -579,20 +719,22 @@ export function createServer(
     }
 
     const html = renderMarkdown(docContent);
-    return c.html(pageTemplate(
-      fileName,
-      html,
-      serializeCommentsForClient(roundData.comments),
-      true,   // treat as resolved (read-only)
-      roundData.agent_replied_at ?? null,
-      n,
-      sidecar.rounds.length,
-      sidecar.context,
-      true,   // readOnly
-      csrfToken,
-      opts.noAgent ?? false,
-      opts.agentName
-    ));
+    return c.html(
+      pageTemplate(
+        fileName,
+        html,
+        serializeCommentsForClient(roundData.comments),
+        true, // treat as resolved (read-only)
+        roundData.agent_replied_at ?? null,
+        n,
+        sidecar.rounds.length,
+        sidecar.context,
+        true, // readOnly
+        csrfToken,
+        opts.noAgent ?? false,
+        opts.agentName,
+      ),
+    );
   });
 
   // Line diff between most recent history snapshot and current file
@@ -607,12 +749,18 @@ export function createServer(
         .filter((f) => f.startsWith(base + "."))
         .sort()
         .reverse();
-    } catch { /* no history dir yet */ }
+    } catch {
+      /* no history dir yet */
+    }
 
-    if (snapshots.length === 0) return c.json({ ok: false, error: "No history snapshot found" });
+    if (snapshots.length === 0)
+      return c.json({ ok: false, error: "No history snapshot found" });
 
     const { readFile } = await import("fs/promises");
-    const oldText = await readFile(path.join(historyDir, snapshots[0]), "utf-8");
+    const oldText = await readFile(
+      path.join(historyDir, snapshots[0]),
+      "utf-8",
+    );
     const newText = await readFile(filePath, "utf-8");
     const html = renderDocDiff(oldText, newText);
     return c.json({ ok: true, html });
@@ -634,8 +782,10 @@ export function createServer(
       return c.notFound();
     }
     const requested = path.resolve(docDir, "." + urlPath);
-    if (!requested.startsWith(docDir + path.sep) && requested !== docDir) return c.notFound();
-    if (requested.startsWith(path.join(docDir, ".review") + path.sep)) return c.notFound();
+    if (!requested.startsWith(docDir + path.sep) && requested !== docDir)
+      return c.notFound();
+    if (requested.startsWith(path.join(docDir, ".review") + path.sep))
+      return c.notFound();
     if (requested === path.resolve(filePath)) return c.notFound(); // the markdown itself is served at "/"
 
     // Resolve symlinks before reading. If `requested` is a symlink (or any
@@ -652,7 +802,10 @@ export function createServer(
       // symlink target is missing (also 404). Either way: 404.
       return c.notFound();
     }
-    if (!realRequested.startsWith(realDocDir + path.sep) && realRequested !== realDocDir) {
+    if (
+      !realRequested.startsWith(realDocDir + path.sep) &&
+      realRequested !== realDocDir
+    ) {
       return c.notFound();
     }
 
@@ -660,14 +813,22 @@ export function createServer(
       const data = await readFile(realRequested);
       const ext = path.extname(realRequested).toLowerCase();
       const ct =
-        ext === ".png" ? "image/png" :
-        ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
-        ext === ".gif" ? "image/gif" :
-        ext === ".svg" ? "image/svg+xml" :
-        ext === ".webp" ? "image/webp" :
-        ext === ".pdf" ? "application/pdf" :
-        "application/octet-stream";
-      return new Response(data, { headers: { "Content-Type": ct, "Cache-Control": "no-cache" } });
+        ext === ".png"
+          ? "image/png"
+          : ext === ".jpg" || ext === ".jpeg"
+            ? "image/jpeg"
+            : ext === ".gif"
+              ? "image/gif"
+              : ext === ".svg"
+                ? "image/svg+xml"
+                : ext === ".webp"
+                  ? "image/webp"
+                  : ext === ".pdf"
+                    ? "application/pdf"
+                    : "application/octet-stream";
+      return new Response(data, {
+        headers: { "Content-Type": ct, "Cache-Control": "no-cache" },
+      });
     } catch {
       return c.notFound();
     }
@@ -676,11 +837,19 @@ export function createServer(
   return {
     fetch: app.fetch.bind(app),
     csrfToken,
-    onAbandon(cb: () => void) { onAbandonCallback = cb; },
-    onFinished(cb: (payload: { totalRounds: number; totalComments: number }) => void) {
+    onAbandon(cb: () => void) {
+      onAbandonCallback = cb;
+    },
+    onFinished(
+      cb: (payload: { totalRounds: number; totalComments: number }) => void,
+    ) {
       onFinishedCallback = cb;
     },
-    onRevisionError(cb: (message: string) => void) { onRevisionErrorCallback = cb; },
-    onRevisionRecovered(cb: () => void) { onRevisionRecoveredCallback = cb; },
+    onRevisionError(cb: (message: string) => void) {
+      onRevisionErrorCallback = cb;
+    },
+    onRevisionRecovered(cb: () => void) {
+      onRevisionRecoveredCallback = cb;
+    },
   };
 }

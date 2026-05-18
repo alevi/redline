@@ -1,4 +1,10 @@
-import { escapeHtml, isEscalated, latestVerdict, type ClientComment, type ThreadEntry } from "./lib";
+import {
+  escapeHtml,
+  isEscalated,
+  latestVerdict,
+  type ClientComment,
+  type ThreadEntry,
+} from "./lib";
 import { state } from "./state";
 
 export type CardCallbacks = {
@@ -37,7 +43,8 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
     if (verdict) {
       const vbadge = document.createElement("span");
       vbadge.className = "verdict-badge " + verdict;
-      vbadge.textContent = verdict === "revise" ? "\u270E Edit queued" : "\u2713 Answered";
+      vbadge.textContent =
+        verdict === "revise" ? "\u270E Edit queued" : "\u2713 Answered";
       quote.appendChild(vbadge);
     }
   }
@@ -51,12 +58,15 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
   card.appendChild(quote);
 
   if (comment.resolved) {
-    const lastAgentMsg = [...comment.thread].reverse().find((e) => e.role === "agent");
+    const lastAgentMsg = [...comment.thread]
+      .reverse()
+      .find((e) => e.role === "agent");
     if (lastAgentMsg) {
       const full = lastAgentMsg.message;
       const sentenceEnd = full.search(/[.!?](\s|$)/);
       let summary = sentenceEnd !== -1 ? full.slice(0, sentenceEnd + 1) : full;
-      if (summary.length > 140) summary = summary.slice(0, 137).trimEnd() + "\u2026";
+      if (summary.length > 140)
+        summary = summary.slice(0, 137).trimEnd() + "\u2026";
       const commitment = document.createElement("div");
       commitment.className = "card-commitment";
       commitment.textContent = summary;
@@ -103,8 +113,10 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
 
     const resolveBtn = document.createElement("button");
     const verdict = latestVerdict(comment);
-    resolveBtn.className = "btn-resolve-comment" + (verdict === "revise" ? " revise" : "");
-    resolveBtn.textContent = verdict === "revise" ? "Resolve \u2192 queue edit" : "Resolve";
+    resolveBtn.className =
+      "btn-resolve-comment" + (verdict === "revise" ? " revise" : "");
+    resolveBtn.textContent =
+      verdict === "revise" ? "Resolve \u2192 queue edit" : "Resolve";
     resolveBtn.addEventListener("click", () => cb().resolveComment(comment.id));
     actions.appendChild(resolveBtn);
   }
@@ -133,13 +145,14 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
     ta.value = "";
     cb().submitReply(comment.id, message);
   };
-  replyForm.querySelector(".reply-submit")!.addEventListener("click", sendReply);
-  (replyForm.querySelector(".reply-input") as HTMLTextAreaElement).addEventListener(
-    "keydown",
-    (e: KeyboardEvent) => {
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply();
-    },
-  );
+  replyForm
+    .querySelector(".reply-submit")!
+    .addEventListener("click", sendReply);
+  (
+    replyForm.querySelector(".reply-input") as HTMLTextAreaElement
+  ).addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply();
+  });
   body.appendChild(replyForm);
 
   card.appendChild(body);
@@ -153,7 +166,11 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
   }
 
   card.addEventListener("click", (e) => {
-    if ((e.target as HTMLElement).tagName === "BUTTON" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
+    if (
+      (e.target as HTMLElement).tagName === "BUTTON" ||
+      (e.target as HTMLElement).tagName === "TEXTAREA"
+    )
+      return;
     if (comment.resolved) return;
     cb().focusComment(comment.id);
     cb().updateNav();
@@ -162,14 +179,21 @@ export function buildCommentCard(comment: ClientComment): HTMLDivElement {
   return card;
 }
 
-function buildThreadEntry(entry: ThreadEntry, isLatestVerdict: boolean): HTMLDivElement {
+function buildThreadEntry(
+  entry: ThreadEntry,
+  isLatestVerdict: boolean,
+): HTMLDivElement {
   const role = entry.role ?? "agent";
-  const label = entry.name ?? (entry.author ? "Author" : role === "agent" ? "Agent" : "Human");
+  const label =
+    entry.name ??
+    (entry.author ? "Author" : role === "agent" ? "Agent" : "Human");
   const div = document.createElement("div");
   div.className = "thread-entry" + (entry.author ? " author-entry" : "");
   let verdictHtml = "";
   if (role === "agent" && entry.requires_revision === true && isLatestVerdict) {
-    const reason = entry.revision_reason ? escapeHtml(entry.revision_reason) : "edit queued";
+    const reason = entry.revision_reason
+      ? escapeHtml(entry.revision_reason)
+      : "edit queued";
     verdictHtml = `<div class="verdict revise"><span class="verdict-icon">\u270E</span><span>${reason}</span></div>`;
   }
   if (role === "agent" && entry.escalate === true) {
@@ -305,14 +329,18 @@ export function schedulePositionCards(): void {
 }
 
 const _cardResizeObserver =
-  typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => schedulePositionCards()) : null;
+  typeof ResizeObserver !== "undefined"
+    ? new ResizeObserver(() => schedulePositionCards())
+    : null;
 
 export function observeCardSizes(): void {
   if (!_cardResizeObserver) return;
   _cardResizeObserver.disconnect();
-  document.querySelectorAll(".comment-card, #new-comment-form").forEach((el) => {
-    _cardResizeObserver.observe(el);
-  });
+  document
+    .querySelectorAll(".comment-card, #new-comment-form")
+    .forEach((el) => {
+      _cardResizeObserver.observe(el);
+    });
 }
 
 export function positionCards(): void {
@@ -325,7 +353,9 @@ export function positionCards(): void {
   state.comments.forEach((comment) => {
     const card = document.getElementById("card-" + comment.id);
     if (!card) return;
-    const mark = document.querySelector('[data-comment-id="' + comment.id + '"]');
+    const mark = document.querySelector(
+      '[data-comment-id="' + comment.id + '"]',
+    );
     let ideal: number;
     if (mark) {
       const markRect = mark.getBoundingClientRect();
@@ -347,7 +377,10 @@ export function positionCards(): void {
     const pendingMark = document.querySelector('[data-comment-id="pending"]');
     let ideal: number;
     if (pendingMark) {
-      ideal = Math.max(0, pendingMark.getBoundingClientRect().top - sidebarRect.top);
+      ideal = Math.max(
+        0,
+        pendingMark.getBoundingClientRect().top - sidebarRect.top,
+      );
     } else if (state.pendingSelection?._rectTop != null) {
       ideal = Math.max(0, state.pendingSelection._rectTop - sidebarRect.top);
     } else {

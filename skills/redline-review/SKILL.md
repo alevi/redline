@@ -56,6 +56,7 @@ __REDLINE_BIN__ author-wait "$FILE"
 The startup file at `.review/<basename>.startup.json` is written synchronously when the server begins listening; it contains `url`, `port`, `file`, `result_file`, `started_at`, `pid`. The result file at `.review/<basename>.result` is written when the session ends (approved, abandoned, or error).
 
 In practice, run the script above as **two separate shell calls** so you can tell the human the URL between steps:
+
 1. First call: everything through `echo "REDLINE_PID: $PID"`. Returns in ~1s with the URL and PID on stdout.
 2. Tell the human Redline opened in their browser, and include the URL only as a fallback (see "Surfacing the URL" below).
 3. Second call: `__REDLINE_BIN__ author-wait "$FILE"`. It returns `{ "kind": "author-needed", ... }`, `{ "kind": "result", ... }`, or `{ "kind": "session-ended", ... }`. Long timeout (`timeout: 1800000` = 30 min, or longer). If it returns author-needed JSON, answer with `author-reply`, then run `author-wait` again. If it returns session-ended, inspect `$LOG` and relaunch only after explaining the failed session to the human.
@@ -81,7 +82,12 @@ The `--open` flag launches the review in the user's real browser via the OS open
 When the polling loop's shell call returns, the `cat "$RESULT"` at the end of it has printed the result JSON to stdout.
 
 ```json
-{ "status": "approved", "file": "/abs/path/to/file.md", "rounds": 2, "comments": 5 }
+{
+  "status": "approved",
+  "file": "/abs/path/to/file.md",
+  "rounds": 2,
+  "comments": 5
+}
 ```
 
 Statuses:
@@ -104,7 +110,7 @@ The full loop, when you are the outer agent producing the doc:
 
 You usually do not need to reply to comments — Redline spawns its own inline agent subprocess for that. The exception is an author-needed handoff: if `author-wait` returns `kind: "author-needed"`, you are the authoring agent and should answer only when you have the project context, tools, or authority the inline agent lacked. You do not need to invoke `redline resolve` separately — revisions happen inside the session when the human accepts.
 
-## When *not* to use this
+## When _not_ to use this
 
 - The doc doesn't need human sign-off — just commit it.
 - The human is not at the keyboard (e.g. an autonomous run). Redline requires a live browser session.

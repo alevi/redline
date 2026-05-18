@@ -6,10 +6,21 @@ const DOC =
   "# Aurora\n\n## Headline\n\nFast copy here.\n\n## Body\n\nThe connective tissue.\n";
 
 function comment(quote: string): Comment {
-  return { id: "c", quote, context_before: "", context_after: "", thread: [], resolved: true };
+  return {
+    id: "c",
+    quote,
+    context_before: "",
+    context_after: "",
+    thread: [],
+    resolved: true,
+  };
 }
 
-function commentWithDiscussion(quote: string, message: string, revisionReason?: string): Comment {
+function commentWithDiscussion(
+  quote: string,
+  message: string,
+  revisionReason?: string,
+): Comment {
   return {
     id: "c",
     quote,
@@ -18,7 +29,13 @@ function commentWithDiscussion(quote: string, message: string, revisionReason?: 
     resolved: true,
     thread: [
       { role: "human", message, at: "" },
-      { role: "agent", message: "Got it.", at: "", requires_revision: true, revision_reason: revisionReason },
+      {
+        role: "agent",
+        message: "Got it.",
+        at: "",
+        requires_revision: true,
+        revision_reason: revisionReason,
+      },
     ],
   };
 }
@@ -44,7 +61,8 @@ test("validateRevision: strips <document> wrapper tags", () => {
 });
 
 test("validateRevision: strips a trailing meta-section", () => {
-  const withMeta = DOC.trimEnd() + "\n\n---\n\n## Changelog\n\n- reworded the body\n";
+  const withMeta =
+    DOC.trimEnd() + "\n\n---\n\n## Changelog\n\n- reworded the body\n";
   const r = validateRevision(withMeta, DOC, []);
   expect(r.ok).toBe(true);
   if (r.ok) {
@@ -74,7 +92,11 @@ test("validateRevision: prose-only output (input had headings) fails", () => {
 
 test("validateRevision: a genuinely heading-less document passes", () => {
   const plain = "Just a paragraph.\n\nAnd another.\n";
-  const r = validateRevision("Just a paragraph, revised.\n\nAnd another.\n", plain, []);
+  const r = validateRevision(
+    "Just a paragraph, revised.\n\nAnd another.\n",
+    plain,
+    [],
+  );
   expect(r.ok).toBe(true);
 });
 
@@ -114,7 +136,7 @@ test("validateRevision: implementation slice renumbering is not treated as dropp
     commentWithDiscussion(
       "Preview affordance decision",
       "I don't want to spec partial preview right now.",
-      "Remove partial preview from M9a scope throughout the doc."
+      "Remove partial preview from M9a scope throughout the doc.",
     ),
   ]);
 
@@ -132,7 +154,7 @@ test("validateRevision: thread text can authorize dropping a named section topic
     commentWithDiscussion(
       "early hosted preview",
       "I don't want to spec out the partial preview right now.",
-      "Remove partial preview from M9a scope throughout the doc."
+      "Remove partial preview from M9a scope throughout the doc.",
     ),
   ]);
 
@@ -172,7 +194,7 @@ test("validateRevision: Quip Rescue M9a-style preview cut keeps email and verifi
     commentWithDiscussion(
       "If an early hosted preview is available",
       "I don't want to spec out the partial preview right now. I think that it is not going to be that useful, so I mostly just want to say that we're not doing it now and we may consider it later.",
-      "Remove partial preview from M9a scope throughout the doc — policy section, running-job UX, M9a.3 slice, and acceptance criteria — replacing with a brief deferral note."
+      "Remove partial preview from M9a scope throughout the doc — policy section, running-job UX, M9a.3 slice, and acceptance criteria — replacing with a brief deferral note.",
     ),
   ]);
 
@@ -196,7 +218,7 @@ test("validateRevision: Quip Rescue M9a guard still catches unrelated dropped se
     commentWithDiscussion(
       "Preview affordance decision",
       "Partial preview is not useful right now.",
-      "Remove partial preview from M9a scope."
+      "Remove partial preview from M9a scope.",
     ),
   ]);
 

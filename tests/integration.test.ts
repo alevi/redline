@@ -15,19 +15,26 @@ import {
 } from "./helpers";
 
 const CSRF_HEADERS = { "X-Redline-Token": TEST_CSRF_TOKEN };
-const CSRF_JSON_HEADERS = { "Content-Type": "application/json", "X-Redline-Token": TEST_CSRF_TOKEN };
+const CSRF_JSON_HEADERS = {
+  "Content-Type": "application/json",
+  "X-Redline-Token": TEST_CSRF_TOKEN,
+};
 
 const procs: ReturnType<typeof Bun.spawn>[] = [];
 afterEach(() => {
   for (const p of procs.splice(0)) {
-    try { p.kill(); } catch { /* already dead */ }
+    try {
+      p.kill();
+    } catch {
+      /* already dead */
+    }
   }
 });
 
 async function spawnTracked(
   filePath: string,
   extraEnv: Record<string, string> = {},
-  extraArgs: string[] = []
+  extraArgs: string[] = [],
 ): Promise<SpawnedCLI> {
   const result = await spawnCLI(filePath, extraEnv, extraArgs);
   procs.push(result.proc);
@@ -52,15 +59,28 @@ test("mutating /api requests are rejected without X-Redline-Token", async () => 
   const noHeader = await fetch(`http://localhost:${port}/api/comment`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ quote: "test", context_before: "", context_after: "", message: "x" }),
+    body: JSON.stringify({
+      quote: "test",
+      context_before: "",
+      context_after: "",
+      message: "x",
+    }),
   });
   expect(noHeader.status).toBe(403);
 
   // Wrong header value: also 403.
   const wrongHeader = await fetch(`http://localhost:${port}/api/comment`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Redline-Token": "not-the-real-one" },
-    body: JSON.stringify({ quote: "test", context_before: "", context_after: "", message: "x" }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Redline-Token": "not-the-real-one",
+    },
+    body: JSON.stringify({
+      quote: "test",
+      context_before: "",
+      context_after: "",
+      message: "x",
+    }),
   });
   expect(wrongHeader.status).toBe(403);
 
@@ -68,7 +88,12 @@ test("mutating /api requests are rejected without X-Redline-Token", async () => 
   const ok = await fetch(`http://localhost:${port}/api/comment`, {
     method: "POST",
     headers: CSRF_JSON_HEADERS,
-    body: JSON.stringify({ quote: "test", context_before: "", context_after: "", message: "x" }),
+    body: JSON.stringify({
+      quote: "test",
+      context_before: "",
+      context_after: "",
+      message: "x",
+    }),
   });
   expect(ok.status).toBe(200);
 
@@ -116,7 +141,11 @@ test("startup file appears with URL the moment the server is listening", async (
   const { filePath, dir } = createTestFile();
   const { port } = await spawnTracked(filePath);
 
-  const startupPath = path.join(dir, ".review", path.basename(filePath) + ".startup.json");
+  const startupPath = path.join(
+    dir,
+    ".review",
+    path.basename(filePath) + ".startup.json",
+  );
 
   // Helper-promise resolves once spawnCLI sees the URL on stdout, so the
   // startup file must already exist by that point. Any later wait is belt-and-
@@ -129,20 +158,30 @@ test("startup file appears with URL the moment the server is listening", async (
   expect(data.file).toBe(filePath);
   expect(typeof data.pid).toBe("number");
   expect(typeof data.started_at).toBe("string");
-  expect(data.result_file).toBe(path.join(dir, ".review", path.basename(filePath) + ".result"));
+  expect(data.result_file).toBe(
+    path.join(dir, ".review", path.basename(filePath) + ".result"),
+  );
 }, 15_000);
 
 test("startup file is removed on abandon so a stale one can't fool the next run", async () => {
   const { filePath, dir } = createTestFile();
-  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
+  const { proc, port } = await spawnTracked(filePath, {
+    REDLINE_ABANDON_MS: "1000",
+  });
   await waitForServer(port);
 
-  const startupPath = path.join(dir, ".review", path.basename(filePath) + ".startup.json");
+  const startupPath = path.join(
+    dir,
+    ".review",
+    path.basename(filePath) + ".startup.json",
+  );
   expect(existsSync(startupPath)).toBe(true);
 
   // Trip the abandon timer the same way the tab-close test does.
   const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac.signal,
+  }).catch(() => {});
   await Bun.sleep(200);
   ac.abort();
 
@@ -157,7 +196,9 @@ test("startup file is removed on abandon so a stale one can't fool the next run"
 
 test("tab-close triggers abandon after grace period", async () => {
   const { filePath, dir } = createTestFile();
-  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
+  const { proc, port } = await spawnTracked(filePath, {
+    REDLINE_ABANDON_MS: "1000",
+  });
   await waitForServer(port);
 
   // Connect as a browser client, then disconnect
@@ -167,7 +208,7 @@ test("tab-close triggers abandon after grace period", async () => {
   }).catch(() => {});
 
   await Bun.sleep(200); // let connection register
-  ac.abort();           // disconnect — triggers hadBrowser timer
+  ac.abort(); // disconnect — triggers hadBrowser timer
 
   const code = await waitForExit(proc, 5000);
 
@@ -178,7 +219,9 @@ test("tab-close triggers abandon after grace period", async () => {
 
 test("revision crash → abandon writes error result, not abandoned", async () => {
   const { filePath, dir } = createTestFile();
-  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
+  const { proc, port } = await spawnTracked(filePath, {
+    REDLINE_ABANDON_MS: "1000",
+  });
   await waitForServer(port);
 
   // Simulate a revision crash: agent posts /api/revision-error with the failure reason.
@@ -191,7 +234,9 @@ test("revision crash → abandon writes error result, not abandoned", async () =
 
   // Connect a browser then drop it, tripping the abandon timer.
   const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac.signal,
+  }).catch(() => {});
   await Bun.sleep(200);
   ac.abort();
 
@@ -208,10 +253,18 @@ test("abandon path carries escalations into the result file", async () => {
   // finish — otherwise feedback meant for the authoring agent is lost when a
   // review is interrupted.
   const { filePath, dir } = createTestFile();
-  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" }, ["--no-agent"]);
+  const { proc, port } = await spawnTracked(
+    filePath,
+    { REDLINE_ABANDON_MS: "1000" },
+    ["--no-agent"],
+  );
   await waitForServer(port);
 
-  const c = await postComment(port, { quote: "a test" }, "Check this against the house style guide.");
+  const c = await postComment(
+    port,
+    { quote: "a test" },
+    "Check this against the house style guide.",
+  );
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
     headers: CSRF_JSON_HEADERS,
@@ -226,7 +279,9 @@ test("abandon path carries escalations into the result file", async () => {
 
   // Connect a browser then drop it, tripping the abandon timer.
   const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac.signal,
+  }).catch(() => {});
   await Bun.sleep(200);
   ac.abort();
 
@@ -242,7 +297,9 @@ test("abandon path carries escalations into the result file", async () => {
 
 test("revision crash → recovered → abandon writes abandoned, not error", async () => {
   const { filePath, dir } = createTestFile();
-  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "1000" });
+  const { proc, port } = await spawnTracked(filePath, {
+    REDLINE_ABANDON_MS: "1000",
+  });
   await waitForServer(port);
 
   // Crash...
@@ -252,10 +309,15 @@ test("revision crash → recovered → abandon writes abandoned, not error", asy
     body: JSON.stringify({ message: "boom" }),
   });
   // ...then a successful revision lands (clears the error).
-  await fetch(`http://localhost:${port}/api/reload`, { method: "POST", headers: CSRF_HEADERS });
+  await fetch(`http://localhost:${port}/api/reload`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
 
   const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac.signal,
+  }).catch(() => {});
   await Bun.sleep(200);
   ac.abort();
 
@@ -268,12 +330,16 @@ test("revision crash → recovered → abandon writes abandoned, not error", asy
 test("brief disconnect-reconnect within grace does NOT trip abandon", async () => {
   const { filePath } = createTestFile();
   // 2s grace gives us a window to disconnect, reconnect, and outlast the original timer
-  const { proc, port } = await spawnTracked(filePath, { REDLINE_ABANDON_MS: "2000" });
+  const { proc, port } = await spawnTracked(filePath, {
+    REDLINE_ABANDON_MS: "2000",
+  });
   await waitForServer(port);
 
   // First connection
   const ac1 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac1.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac1.signal,
+  }).catch(() => {});
   await Bun.sleep(200);
 
   // Drop it briefly — starts the abandon timer (2s)
@@ -282,7 +348,9 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
 
   // Reconnect well within the grace — should cancel the timer
   const ac2 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac2.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac2.signal,
+  }).catch(() => {});
   await Bun.sleep(200);
 
   // Wait past the original 2s grace window. If the timer wasn't cancelled, the server would have exited.
@@ -307,11 +375,16 @@ test("tab-closed beacon abandons on the short grace even when the backstop is lo
   await waitForServer(port);
 
   const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac.signal,
+  }).catch(() => {});
   await Bun.sleep(200); // let connection register so hadBrowser is set
 
   // Tab fires its close beacon, then the SSE drops — the order a real close hits.
-  await fetch(`http://localhost:${port}/api/tab-closed`, { method: "POST", headers: CSRF_HEADERS });
+  await fetch(`http://localhost:${port}/api/tab-closed`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
   ac.abort();
 
   const code = await waitForExit(proc, 5000);
@@ -329,15 +402,22 @@ test("tab-closed beacon followed by a reconnect (reload) does NOT abandon", asyn
   await waitForServer(port);
 
   const ac1 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac1.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac1.signal,
+  }).catch(() => {});
   await Bun.sleep(200);
 
   // Reload: beacon fires, old SSE drops, new SSE reconnects within the short grace.
-  await fetch(`http://localhost:${port}/api/tab-closed`, { method: "POST", headers: CSRF_HEADERS });
+  await fetch(`http://localhost:${port}/api/tab-closed`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
   ac1.abort();
   await Bun.sleep(300);
   const ac2 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, { signal: ac2.signal }).catch(() => {});
+  fetch(`http://localhost:${port}/api/events?client=browser`, {
+    signal: ac2.signal,
+  }).catch(() => {});
 
   // Outlast the short grace; the reconnect should have cancelled the timer.
   await Bun.sleep(2000);
@@ -360,14 +440,20 @@ test("--context flag persists to sidecar.context on first run", async () => {
 
   // Server's startup hook writes context into the sidecar asynchronously;
   // poll briefly so the assertion isn't racing the write.
-  const sidecarPath = path.join(dir, ".review", path.basename(filePath) + ".json");
+  const sidecarPath = path.join(
+    dir,
+    ".review",
+    path.basename(filePath) + ".json",
+  );
   let sidecar: any = null;
   for (let i = 0; i < 20; i++) {
     if (existsSync(sidecarPath)) {
       try {
         sidecar = JSON.parse(readFileSync(sidecarPath, "utf-8"));
         if (sidecar.context) break;
-      } catch { /* mid-write, retry */ }
+      } catch {
+        /* mid-write, retry */
+      }
     }
     await Bun.sleep(50);
   }
@@ -387,7 +473,9 @@ test("--no-agent skips agent spawn, server stays usable, page reports manual mod
   // arrives — agentReady should still be unresolved well past the window
   // a real spawn would settle in.
   let agentConnected = false;
-  agentReady.then(() => { agentConnected = true; });
+  agentReady.then(() => {
+    agentConnected = true;
+  });
   await Bun.sleep(750);
   expect(agentConnected).toBe(false);
 
@@ -395,7 +483,12 @@ test("--no-agent skips agent spawn, server stays usable, page reports manual mod
   const post = await fetch(`http://localhost:${port}/api/comment`, {
     method: "POST",
     headers: CSRF_JSON_HEADERS,
-    body: JSON.stringify({ quote: "first paragraph", context_before: "", context_after: "", message: "manual note" }),
+    body: JSON.stringify({
+      quote: "first paragraph",
+      context_before: "",
+      context_after: "",
+      message: "manual note",
+    }),
   });
   expect(post.status).toBe(200);
 
@@ -403,8 +496,8 @@ test("--no-agent skips agent spawn, server stays usable, page reports manual mod
   // shows the Manual mode pill. Inline-grep the HTML rather than spinning
   // up a real browser — the bootstrap is what the client actually reads.
   const html = await fetch(`http://localhost:${port}/`).then((r) => r.text());
-  expect(html).toContain('noAgent: true');
-  expect(html).toContain('Manual mode');
+  expect(html).toContain("noAgent: true");
+  expect(html).toContain("Manual mode");
 }, 15_000);
 
 test("agent restart cap → cli broadcasts agent-unavailable end-to-end", async () => {
@@ -456,18 +549,27 @@ test("two concurrent CLIs both write result files under simultaneous SIGTERM", a
   // path, even with two signals delivered at once. This codifies that.
   const a = createTestFile();
   const b = createTestFile();
-  const [sa, sb] = await Promise.all([spawnTracked(a.filePath), spawnTracked(b.filePath)]);
+  const [sa, sb] = await Promise.all([
+    spawnTracked(a.filePath),
+    spawnTracked(b.filePath),
+  ]);
   await Promise.all([waitForServer(sa.port), waitForServer(sb.port)]);
 
   // Fire both SIGTERMs as close to simultaneous as the runtime allows.
   process.kill(sa.proc.pid!, "SIGTERM");
   process.kill(sb.proc.pid!, "SIGTERM");
 
-  const [aCode, bCode] = await Promise.all([waitForExit(sa.proc, 5000), waitForExit(sb.proc, 5000)]);
+  const [aCode, bCode] = await Promise.all([
+    waitForExit(sa.proc, 5000),
+    waitForExit(sb.proc, 5000),
+  ]);
   expect(aCode).toBe(2);
   expect(bCode).toBe(2);
 
-  const [aRes, bRes] = await Promise.all([readResult(a.dir), readResult(b.dir)]);
+  const [aRes, bRes] = await Promise.all([
+    readResult(a.dir),
+    readResult(b.dir),
+  ]);
   expect(aRes.status).toBe("abandoned");
   expect(bRes.status).toBe("abandoned");
 }, 20_000);
@@ -478,7 +580,10 @@ test("/api/finish writes approved result file and exits 0", async () => {
   await waitForServer(port);
 
   // Server auto-creates an open round on startup — /api/finish should work
-  const res = await fetch(`http://localhost:${port}/api/finish`, { method: "POST", headers: CSRF_HEADERS });
+  const res = await fetch(`http://localhost:${port}/api/finish`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
   expect(res.status).toBe(200);
 
   const code = await waitForExit(proc, 5000);
@@ -498,7 +603,11 @@ test("/api/finish: author-needed comment surfaces in the result file escalations
   const { proc, port } = await spawnTracked(filePath, {}, ["--no-agent"]);
   await waitForServer(port);
 
-  const c = await postComment(port, { quote: "a test" }, "Run this past the house style guide.");
+  const c = await postComment(
+    port,
+    { quote: "a test" },
+    "Run this past the house style guide.",
+  );
   await fetch(`http://localhost:${port}/api/comment/${c.id}/reply`, {
     method: "POST",
     headers: CSRF_JSON_HEADERS,
@@ -511,7 +620,10 @@ test("/api/finish: author-needed comment surfaces in the result file escalations
     }),
   });
 
-  const res = await fetch(`http://localhost:${port}/api/finish`, { method: "POST", headers: CSRF_HEADERS });
+  const res = await fetch(`http://localhost:${port}/api/finish`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
   expect(res.status).toBe(200);
 
   const code = await waitForExit(proc, 5000);
@@ -531,7 +643,10 @@ test("/api/finish: no escalations → result file carries an empty escalations a
   const { proc, port } = await spawnTracked(filePath, {}, ["--no-agent"]);
   await waitForServer(port);
 
-  const res = await fetch(`http://localhost:${port}/api/finish`, { method: "POST", headers: CSRF_HEADERS });
+  const res = await fetch(`http://localhost:${port}/api/finish`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
   expect(res.status).toBe(200);
 
   const code = await waitForExit(proc, 5000);

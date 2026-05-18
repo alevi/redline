@@ -18,7 +18,7 @@ function pageTemplate(
   readOnly = false,
   csrfToken = "",
   noAgent = false,
-  agentName = "selected local"
+  agentName = "selected local",
 ): string {
   const commentsJson = JSON.stringify(comments);
 
@@ -39,36 +39,57 @@ function pageTemplate(
         <span class="doc-title">
           ${escapeHtml(title)}
           <span style="position:relative">
-            <span class="round-badge${totalRounds > 1 ? ' repeat' : ''}${totalRounds > 1 ? ' clickable' : ''}" id="round-badge">Round ${roundNumber} of ${totalRounds}</span>
-            ${totalRounds > 1 ? `<div class="round-picker" id="round-picker" style="display:none">${
-              Array.from({length: totalRounds}, (_, i) => i + 1).map(n => {
-                const isCurrent = n === roundNumber;
-                const href = n === totalRounds ? '/' : `/round/${n}`;
-                const label = n === totalRounds ? 'Round ' + n + ' — current' : 'Round ' + n;
-                return `<a class="round-picker-item${isCurrent ? ' current' : ''}" href="${href}">${label}</a>`;
-              }).join('')
-            }${!readOnly ? `<button class="round-picker-item round-picker-action" id="btn-compare" type="button">Compare with previous →</button>` : ''}</div>` : ''}
+            <span class="round-badge${totalRounds > 1 ? " repeat" : ""}${totalRounds > 1 ? " clickable" : ""}" id="round-badge">Round ${roundNumber} of ${totalRounds}</span>
+            ${
+              totalRounds > 1
+                ? `<div class="round-picker" id="round-picker" style="display:none">${Array.from(
+                    { length: totalRounds },
+                    (_, i) => i + 1,
+                  )
+                    .map((n) => {
+                      const isCurrent = n === roundNumber;
+                      const href = n === totalRounds ? "/" : `/round/${n}`;
+                      const label =
+                        n === totalRounds
+                          ? "Round " + n + " — current"
+                          : "Round " + n;
+                      return `<a class="round-picker-item${isCurrent ? " current" : ""}" href="${href}">${label}</a>`;
+                    })
+                    .join(
+                      "",
+                    )}${!readOnly ? `<button class="round-picker-item round-picker-action" id="btn-compare" type="button">Compare with previous →</button>` : ""}</div>`
+                : ""
+            }
           </span>
         </span>
         <div class="header-actions">
           <span id="agent-status" class="agent-status" hidden></span>
-          ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No ${escapeHtml(agentName)} replies, no revision pass.">Manual mode</span>` : ''}
-          ${!readOnly && totalRounds > 1 ? `<button class="btn-toggle-diff" id="btn-toggle-diff" type="button" aria-pressed="false">Show changes</button>` : ''}
-          ${readOnly
-            ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
-            : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>`
+          ${noAgent ? `<span class="manual-mode-pill" title="Started with --no-agent. No ${escapeHtml(agentName)} replies, no revision pass.">Manual mode</span>` : ""}
+          ${!readOnly && totalRounds > 1 ? `<button class="btn-toggle-diff" id="btn-toggle-diff" type="button" aria-pressed="false">Show changes</button>` : ""}
+          ${
+            readOnly
+              ? `<span style="font-size:13px;color:var(--text-muted);font-style:italic">Read-only — <a href="/" style="color:var(--accent)">back to current</a></span>`
+              : `<button class="btn-accept" id="btn-accept" disabled>Revise document</button>`
           }
         </div>
       </div>
-      ${context ? `<div class="context-banner" id="context-banner">
+      ${
+        context
+          ? `<div class="context-banner" id="context-banner">
         <span class="context-text">${escapeHtml(context)}</span>
         <button class="context-dismiss" onclick="dismissContextBanner()" aria-label="Dismiss">✕</button>
-      </div>` : ''}
-      ${!readOnly ? `<div class="first-run-banner" id="first-run-banner" hidden>
+      </div>`
+          : ""
+      }
+      ${
+        !readOnly
+          ? `<div class="first-run-banner" id="first-run-banner" hidden>
         <span class="first-run-icon" aria-hidden="true">⚠</span>
         <span class="first-run-text">Redline sends document and comment text to your ${escapeHtml(agentName)} agent. Use trusted docs.</span>
         <button class="first-run-dismiss" id="first-run-dismiss" aria-label="Dismiss">Got it</button>
-      </div>` : ''}
+      </div>`
+          : ""
+      }
       <article class="prose" id="prose">
         ${content}
       </article>

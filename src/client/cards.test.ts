@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 beforeAll(() => {
@@ -40,7 +47,9 @@ describe("reply form submit", () => {
       toggleReplyForm: () => {},
       submitReply: (id, message) => {
         captured.push({ id, message });
-        const ta = replyForm.current!.querySelector(".reply-input") as HTMLTextAreaElement;
+        const ta = replyForm.current!.querySelector(
+          ".reply-input",
+        ) as HTMLTextAreaElement;
         textareaValueAtCallback = ta.value;
       },
     });
@@ -53,10 +62,14 @@ describe("reply form submit", () => {
     });
     document.body.appendChild(card);
     replyForm.current = card.querySelector(".reply-form") as HTMLDivElement;
-    const ta = replyForm.current.querySelector(".reply-input") as HTMLTextAreaElement;
+    const ta = replyForm.current.querySelector(
+      ".reply-input",
+    ) as HTMLTextAreaElement;
     ta.value = "  my reply  ";
 
-    (replyForm.current.querySelector(".reply-submit") as HTMLButtonElement).click();
+    (
+      replyForm.current.querySelector(".reply-submit") as HTMLButtonElement
+    ).click();
 
     expect(captured).toEqual([{ id: "c1", message: "my reply" }]);
     expect(textareaValueAtCallback).toBe("");
@@ -88,7 +101,11 @@ describe("reply form submit", () => {
     const ta = form.querySelector(".reply-input") as HTMLTextAreaElement;
     ta.value = "via shortcut";
 
-    const evt = new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true });
+    const evt = new KeyboardEvent("keydown", {
+      key: "Enter",
+      metaKey: true,
+      bubbles: true,
+    });
     ta.dispatchEvent(evt);
 
     expect(captured).toEqual([{ id: "c2", message: "via shortcut" }]);
@@ -149,7 +166,8 @@ describe("thread message markdown", () => {
           role: "agent",
           name: "Claude",
           message: "Here are **two** options:\n1. first\n2. second",
-          messageHtml: "<p>Here are <strong>two</strong> options:</p><ol><li>first</li><li>second</li></ol>",
+          messageHtml:
+            "<p>Here are <strong>two</strong> options:</p><ol><li>first</li><li>second</li></ol>",
         },
       ],
     });
@@ -210,13 +228,22 @@ describe("author reply needed badge", () => {
       resolved: false,
       thread: [
         { role: "human", message: "run the style guide" },
-        { role: "agent", name: "Claude", message: "Needs author input.", escalate: true },
+        {
+          role: "agent",
+          name: "Claude",
+          message: "Needs author input.",
+          escalate: true,
+        },
       ],
     });
     document.body.appendChild(card);
 
-    expect(card.querySelector(".escalate-badge")?.textContent).toBe("↑ Author reply needed");
-    expect(card.querySelector(".verdict.escalate")?.textContent).toContain("Author reply needed");
+    expect(card.querySelector(".escalate-badge")?.textContent).toBe(
+      "↑ Author reply needed",
+    );
+    expect(card.querySelector(".verdict.escalate")?.textContent).toContain(
+      "Author reply needed",
+    );
   });
 
   test("no author-reply badge when no author input is needed", async () => {
@@ -244,8 +271,18 @@ describe("author reply needed badge", () => {
       resolved: false,
       thread: [
         { role: "human", message: "run the style guide" },
-        { role: "agent", name: "Claude", message: "Needs author input.", escalate: true },
-        { role: "agent", name: "Author", message: "Use sentence case.", author: true },
+        {
+          role: "agent",
+          name: "Claude",
+          message: "Needs author input.",
+          escalate: true,
+        },
+        {
+          role: "agent",
+          name: "Author",
+          message: "Use sentence case.",
+          author: true,
+        },
       ],
     });
     document.body.appendChild(card);
@@ -273,7 +310,12 @@ describe("author replies", () => {
       quote: "hi",
       resolved: false,
       thread: [
-        { role: "agent", name: "Author", message: "Use sentence case.", author: true },
+        {
+          role: "agent",
+          name: "Author",
+          message: "Use sentence case.",
+          author: true,
+        },
       ],
     });
     document.body.appendChild(card);
@@ -281,6 +323,8 @@ describe("author replies", () => {
     const entry = card.querySelector(".thread-entry.author-entry");
     expect(entry).not.toBeNull();
     expect(entry?.querySelector(".thread-role")?.textContent).toBe("Author");
-    expect(entry?.querySelector(".thread-message")?.textContent).toContain("Use sentence case.");
+    expect(entry?.querySelector(".thread-message")?.textContent).toContain(
+      "Use sentence case.",
+    );
   });
 });

@@ -1,5 +1,12 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync, statSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  unlinkSync,
+  readFileSync,
+  statSync,
+} from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { spawnSync } from "child_process";
 import { createRequire } from "module";
@@ -25,18 +32,31 @@ function preflightDependencies() {
   // skip the check entirely in that case.
   if (!existsSync(pkgPath)) return;
   let pkg: { dependencies?: Record<string, string> };
-  try { pkg = JSON.parse(readFileSync(pkgPath, "utf8")); } catch { return; }
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  } catch {
+    return;
+  }
   const deps = Object.keys(pkg.dependencies ?? {});
   const require = createRequire(pkgPath);
   const missing = deps.filter((d) => {
-    try { require.resolve(d); return false; } catch { return true; }
+    try {
+      require.resolve(d);
+      return false;
+    } catch {
+      return true;
+    }
   });
   if (missing.length === 0) return;
-  console.log(`[redline] Dependencies missing from ${root}/node_modules: ${missing.join(", ")}`);
+  console.log(
+    `[redline] Dependencies missing from ${root}/node_modules: ${missing.join(", ")}`,
+  );
   console.log(`[redline] Running \`bun install\` in the redline checkout…`);
   const r = spawnSync("bun", ["install"], { cwd: root, stdio: "inherit" });
   if (r.status !== 0) {
-    console.error(`\n[redline] \`bun install\` failed. Run it manually in ${root} and retry.`);
+    console.error(
+      `\n[redline] \`bun install\` failed. Run it manually in ${root} and retry.`,
+    );
     process.exit(1);
   }
 }
@@ -45,7 +65,12 @@ preflightDependencies();
 // Dynamic imports so preflight runs before module resolution pulls in third-party deps.
 const { createServer } = await import("./server");
 const { resolve } = await import("./resolve");
-const { formatAuthorNeeded, listAuthorNeeded, postAuthorReply, waitForAuthorEvent } = await import("./authorHandoff");
+const {
+  formatAuthorNeeded,
+  listAuthorNeeded,
+  postAuthorReply,
+  waitForAuthorEvent,
+} = await import("./authorHandoff");
 const {
   getAgentProvider,
   invalidProviderMessage,
@@ -90,13 +115,21 @@ function maybePrintGitignoreHint(filePath: string) {
     if (existsSync(gitignorePath) && statSync(gitignorePath).isFile()) {
       contents = readFileSync(gitignorePath, "utf-8");
     }
-  } catch { /* unreadable — fall through and hint */ }
+  } catch {
+    /* unreadable — fall through and hint */
+  }
   const lines = contents.split("\n").map((l) => l.trim());
-  const ignored = lines.some((l) =>
-    l === ".review" || l === ".review/" || l === "**/.review" || l === "**/.review/"
+  const ignored = lines.some(
+    (l) =>
+      l === ".review" ||
+      l === ".review/" ||
+      l === "**/.review" ||
+      l === "**/.review/",
   );
   if (ignored) return;
-  console.log(`\n  Tip: redline writes to .review/ next to your file. Add this to ${path.relative(process.cwd(), gitignorePath) || ".gitignore"} to keep it out of git:`);
+  console.log(
+    `\n  Tip: redline writes to .review/ next to your file. Add this to ${path.relative(process.cwd(), gitignorePath) || ".gitignore"} to keep it out of git:`,
+  );
   console.log(`    .review/`);
 }
 
@@ -105,7 +138,9 @@ const args = process.argv.slice(2);
 if (args[0] === "--version" || args[0] === "-v") {
   const pkgPath = path.resolve(import.meta.dir, "..", "package.json");
   try {
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+      version?: string;
+    };
     console.log(pkg.version ?? "unknown");
   } catch {
     console.log("unknown");
@@ -115,12 +150,19 @@ if (args[0] === "--version" || args[0] === "-v") {
 
 // redline install-skill [--agent claude|codex|both]
 if (args[0] === "install-skill") {
-  const script = path.resolve(import.meta.dir, "..", "scripts", "install-skill.sh");
+  const script = path.resolve(
+    import.meta.dir,
+    "..",
+    "scripts",
+    "install-skill.sh",
+  );
   if (!existsSync(script)) {
     console.error(`Install script not found: ${script}`);
     process.exit(1);
   }
-  const result = spawnSync("bash", [script, ...args.slice(1)], { stdio: "inherit" });
+  const result = spawnSync("bash", [script, ...args.slice(1)], {
+    stdio: "inherit",
+  });
   process.exit(result.status ?? 1);
 }
 
@@ -138,7 +180,9 @@ if (args[0] === "author-needed") {
   }
   const items = await listAuthorNeeded(resolved);
   if (args.includes("--json")) {
-    console.log(JSON.stringify({ file: resolved, author_needed: items }, null, 2));
+    console.log(
+      JSON.stringify({ file: resolved, author_needed: items }, null, 2),
+    );
   } else {
     console.log(formatAuthorNeeded(items));
   }
@@ -151,7 +195,9 @@ if (args[0] === "author-reply") {
   const commentId = args[2];
   const message = argValue(args, "--message");
   if (!filePath || !commentId || !message) {
-    console.error("Usage: redline author-reply <file.md> <comment-id> --message \"...\" [--name \"Author\"]");
+    console.error(
+      'Usage: redline author-reply <file.md> <comment-id> --message "..." [--name "Author"]',
+    );
     process.exit(1);
   }
   const resolved = path.resolve(filePath);
@@ -160,8 +206,12 @@ if (args[0] === "author-reply") {
     process.exit(1);
   }
   try {
-    const result = await postAuthorReply(resolved, commentId, message, { name: argValue(args, "--name") });
-    console.log(`Posted author reply to ${result.commentId} via ${result.via}.`);
+    const result = await postAuthorReply(resolved, commentId, message, {
+      name: argValue(args, "--name"),
+    });
+    console.log(
+      `Posted author reply to ${result.commentId} via ${result.via}.`,
+    );
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
     process.exit(1);
@@ -173,7 +223,9 @@ if (args[0] === "author-reply") {
 if (args[0] === "author-wait") {
   const filePath = args[1];
   if (!filePath) {
-    console.error("Usage: redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]");
+    console.error(
+      "Usage: redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]",
+    );
     process.exit(1);
   }
   const resolved = path.resolve(filePath);
@@ -185,12 +237,18 @@ if (args[0] === "author-wait") {
   const intervalRaw = argValue(args, "--interval-ms");
   const timeoutMs = timeoutRaw != null ? Number(timeoutRaw) : undefined;
   const intervalMs = intervalRaw != null ? Number(intervalRaw) : undefined;
-  if ((timeoutRaw != null && !Number.isFinite(timeoutMs)) || (intervalRaw != null && !Number.isFinite(intervalMs))) {
+  if (
+    (timeoutRaw != null && !Number.isFinite(timeoutMs)) ||
+    (intervalRaw != null && !Number.isFinite(intervalMs))
+  ) {
     console.error("--timeout-ms and --interval-ms must be numbers");
     process.exit(1);
   }
   try {
-    const result = await waitForAuthorEvent(resolved, { timeoutMs, intervalMs });
+    const result = await waitForAuthorEvent(resolved, {
+      timeoutMs,
+      intervalMs,
+    });
     console.log(JSON.stringify(result, null, 2));
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
@@ -203,7 +261,9 @@ if (args[0] === "author-wait") {
 if (args[0] === "resolve") {
   const filePath = args[1];
   if (!filePath) {
-    console.error("Usage: redline resolve <file.md> [--model <model-id>] [--agent claude|codex]");
+    console.error(
+      "Usage: redline resolve <file.md> [--model <model-id>] [--agent claude|codex]",
+    );
     process.exit(1);
   }
   const resolved = path.resolve(filePath);
@@ -224,7 +284,9 @@ if (args[0] === "resolve") {
   // redline <file>  — open review reader
   const filePath = args[0];
   if (!filePath) {
-    console.error("Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline author-needed <file.md> [--json]\n       redline author-reply <file.md> <comment-id> --message \"...\" [--name \"Author\"]\n       redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]\n       redline install-skill [--agent claude|codex|both]");
+    console.error(
+      'Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline author-needed <file.md> [--json]\n       redline author-reply <file.md> <comment-id> --message "..." [--name "Author"]\n       redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]\n       redline install-skill [--agent claude|codex|both]',
+    );
     process.exit(1);
   }
   const resolved = path.resolve(filePath);
@@ -250,14 +312,30 @@ if (args[0] === "resolve") {
   const context = argValue(args, "--context");
   const autoOpen = args.includes("--open");
 
-  const resultFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".result");
-  const startupFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".startup.json");
-  const sidecarFile = path.join(path.dirname(resolved), ".review", path.basename(resolved) + ".json");
+  const resultFile = path.join(
+    path.dirname(resolved),
+    ".review",
+    path.basename(resolved) + ".result",
+  );
+  const startupFile = path.join(
+    path.dirname(resolved),
+    ".review",
+    path.basename(resolved) + ".startup.json",
+  );
+  const sidecarFile = path.join(
+    path.dirname(resolved),
+    ".review",
+    path.basename(resolved) + ".json",
+  );
 
   // Clear stale state from a prior run so a polling agent can't be misled
   // by a leftover .result or .startup.json file that predates this process.
   for (const f of [resultFile, startupFile]) {
-    try { unlinkSync(f); } catch { /* not present is fine */ }
+    try {
+      unlinkSync(f);
+    } catch {
+      /* not present is fine */
+    }
   }
 
   async function writeResult(payload: Record<string, unknown>) {
@@ -275,8 +353,18 @@ if (args[0] === "resolve") {
   // caller can pin the token if it needs to.
   const csrfToken = process.env.REDLINE_TOKEN ?? crypto.randomUUID();
 
-  const app = createServer(resolved, { context, csrfToken, noAgent, agentName: provider.displayName });
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch, idleTimeout: 0 });
+  const app = createServer(resolved, {
+    context,
+    csrfToken,
+    noAgent,
+    agentName: provider.displayName,
+  });
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch: app.fetch,
+    idleTimeout: 0,
+  });
   const url = `http://localhost:${server.port}`;
 
   // Surface the URL to a calling agent that can't read this process's stdout.
@@ -285,16 +373,23 @@ if (args[0] === "resolve") {
   // clicked Done. Polling this file gives a deterministic, race-free signal.)
   try {
     mkdirSync(path.dirname(startupFile), { recursive: true });
-    writeFileSync(startupFile, JSON.stringify({
-      url,
-      port: server.port,
-      file: resolved,
-      result_file: resultFile,
-      started_at: new Date().toISOString(),
-      pid: process.pid,
-      csrf_token: csrfToken,
-      agent_provider: provider.id,
-    }, null, 2));
+    writeFileSync(
+      startupFile,
+      JSON.stringify(
+        {
+          url,
+          port: server.port,
+          file: resolved,
+          result_file: resultFile,
+          started_at: new Date().toISOString(),
+          pid: process.pid,
+          csrf_token: csrfToken,
+          agent_provider: provider.id,
+        },
+        null,
+        2,
+      ),
+    );
   } catch (e) {
     console.error("[redline] Failed to write startup file:", e);
   }
@@ -306,8 +401,12 @@ if (args[0] === "resolve") {
   console.log(`  URL:  ${url}`);
   console.log(`  Result: ${resultFile}`);
   console.log(`${bar}`);
-  if (noAgent) console.log(`  Mode: manual annotation (--no-agent — no ${provider.displayName} replies, no revision pass)`);
-  if (!autoOpen) console.log(`\n  → cmd-click the URL when you're ready to review\n`);
+  if (noAgent)
+    console.log(
+      `  Mode: manual annotation (--no-agent — no ${provider.displayName} replies, no revision pass)`,
+    );
+  if (!autoOpen)
+    console.log(`\n  → cmd-click the URL when you're ready to review\n`);
   else console.log("");
 
   maybePrintGitignoreHint(resolved);
@@ -325,35 +424,53 @@ if (args[0] === "resolve") {
 
   function spawnAgent() {
     const proc = Bun.spawn(
-      [process.execPath, "run", path.join(import.meta.dir, "agent.ts"), resolved],
+      [
+        process.execPath,
+        "run",
+        path.join(import.meta.dir, "agent.ts"),
+        resolved,
+      ],
       {
-        stdout: "inherit", stderr: "inherit", stdin: "ignore",
-        env: { ...process.env, REDLINE_PORT: String(server.port), REDLINE_TOKEN: csrfToken, REDLINE_AGENT: provider.id },
-      }
+        stdout: "inherit",
+        stderr: "inherit",
+        stdin: "ignore",
+        env: {
+          ...process.env,
+          REDLINE_PORT: String(server.port),
+          REDLINE_TOKEN: csrfToken,
+          REDLINE_AGENT: provider.id,
+        },
+      },
     );
     agentProc = proc;
     proc.exited.then((code) => {
       if (serverExiting) return;
       if (code === 0) return;
       const now = Date.now();
-      while (restartTimes.length && now - restartTimes[0] > RESTART_WINDOW_MS) restartTimes.shift();
+      while (restartTimes.length && now - restartTimes[0] > RESTART_WINDOW_MS)
+        restartTimes.shift();
       if (restartTimes.length >= MAX_RESTARTS) {
         const reason = `Agent crashed ${restartTimes.length}× in ${RESTART_WINDOW_MS / 1000}s — replies unavailable. Restart redline to recover.`;
         console.error(
-          `\n[redline] ${reason} The review can still be completed manually. Check .review/errors.log.`
+          `\n[redline] ${reason} The review can still be completed manually. Check .review/errors.log.`,
         );
         // Surface the dead-agent state to the browser so the user isn't left
         // wondering why replies stopped. Best-effort: server may already be down.
         fetch(`http://localhost:${server.port}/api/agent-unavailable`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-Redline-Token": csrfToken },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Redline-Token": csrfToken,
+          },
           body: JSON.stringify({ reason }),
-        }).catch(() => { /* server already gone */ });
+        }).catch(() => {
+          /* server already gone */
+        });
         return;
       }
       restartTimes.push(now);
       console.error(
-        `[redline] Agent exited unexpectedly (code ${code}) — restarting (${restartTimes.length}/${MAX_RESTARTS}).`
+        `[redline] Agent exited unexpectedly (code ${code}) — restarting (${restartTimes.length}/${MAX_RESTARTS}).`,
       );
       spawnAgent();
     });
@@ -368,15 +485,29 @@ if (args[0] === "resolve") {
   const SHUTDOWN_GRACE_MS = 2000;
   async function killAgent() {
     if (!agentProc) return;
-    try { agentProc.kill("SIGTERM"); } catch { return; /* already dead */ }
-    const deadline = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_GRACE_MS));
+    try {
+      agentProc.kill("SIGTERM");
+    } catch {
+      return; /* already dead */
+    }
+    const deadline = new Promise<void>((resolve) =>
+      setTimeout(resolve, SHUTDOWN_GRACE_MS),
+    );
     await Promise.race([agentProc.exited.then(() => undefined), deadline]);
     if (agentProc && agentProc.exitCode === null) {
-      try { agentProc.kill("SIGKILL"); } catch { /* already dead */ }
+      try {
+        agentProc.kill("SIGKILL");
+      } catch {
+        /* already dead */
+      }
     }
   }
   function killAgentSync() {
-    try { agentProc?.kill("SIGTERM"); } catch { /* already dead */ }
+    try {
+      agentProc?.kill("SIGTERM");
+    } catch {
+      /* already dead */
+    }
   }
   // Tracks the last unrecovered revision failure. If the session abandons while
   // this is set, the result file reports "error" instead of "abandoned" so a
@@ -386,8 +517,14 @@ if (args[0] === "resolve") {
   const abandon = () => {
     if (serverExiting) return;
     serverExiting = true;
-    killAgent().catch(() => { /* shutdown already in flight */ });
-    try { unlinkSync(startupFile); } catch { /* best effort */ }
+    killAgent().catch(() => {
+      /* shutdown already in flight */
+    });
+    try {
+      unlinkSync(startupFile);
+    } catch {
+      /* best effort */
+    }
     const status = lastRevisionError ? "error" : "abandoned";
     const payload: Record<string, unknown> = { status, file: resolved };
     if (lastRevisionError) payload.reason = lastRevisionError;
@@ -400,21 +537,29 @@ if (args[0] === "resolve") {
         const raw = readFileSync(sidecarFile, "utf-8");
         if (raw.trim()) escalations = collectEscalations(JSON.parse(raw));
       }
-    } catch { /* best effort — never block shutdown on the summary */ }
+    } catch {
+      /* best effort — never block shutdown on the summary */
+    }
     payload.escalations = escalations;
     // Synchronous write so the result file lands even if the runtime is
     // terminating due to a signal (async I/O may not complete in that case).
     try {
       mkdirSync(path.dirname(resultFile), { recursive: true });
       writeFileSync(resultFile, JSON.stringify(payload, null, 2));
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
     if (escalations.length) {
       console.log(
-        `\n⚠ ${escalations.length} comment${escalations.length !== 1 ? "s need" : " needs"} an author reply — see ${path.basename(resultFile)}`
+        `\n⚠ ${escalations.length} comment${escalations.length !== 1 ? "s need" : " needs"} an author reply — see ${path.basename(resultFile)}`,
       );
     }
-    const escSuffix = escalations.length ? ` escalations=${escalations.length}` : "";
-    console.log(`\nREDLINE_RESULT: ${status}${lastRevisionError ? ` reason="${lastRevisionError}"` : ""}${escSuffix}`);
+    const escSuffix = escalations.length
+      ? ` escalations=${escalations.length}`
+      : "";
+    console.log(
+      `\nREDLINE_RESULT: ${status}${lastRevisionError ? ` reason="${lastRevisionError}"` : ""}${escSuffix}`,
+    );
     // Exit 3 = revision error; 2 = abandoned. Both still distinguish from 0 (approved).
     process.exit(lastRevisionError ? 3 : 2);
   };
@@ -422,12 +567,20 @@ if (args[0] === "resolve") {
   // Happy-path finish: human clicked Done.
   app.onFinished(async ({ totalRounds, totalComments }) => {
     serverExiting = true;
-    killAgent().catch(() => { /* shutdown already in flight */ });
-    try { unlinkSync(startupFile); } catch { /* best effort */ }
+    killAgent().catch(() => {
+      /* shutdown already in flight */
+    });
+    try {
+      unlinkSync(startupFile);
+    } catch {
+      /* best effort */
+    }
     const line = "─".repeat(60);
     console.log(`\n${line}`);
     console.log(`✓  Review complete — ${path.basename(resolved)}`);
-    console.log(`   ${totalRounds} round${totalRounds !== 1 ? "s" : ""} · ${totalComments} comment${totalComments !== 1 ? "s" : ""} addressed`);
+    console.log(
+      `   ${totalRounds} round${totalRounds !== 1 ? "s" : ""} · ${totalComments} comment${totalComments !== 1 ? "s" : ""} addressed`,
+    );
     console.log(`   Revised document: ${resolved}`);
     console.log(`${line}`);
 
@@ -445,11 +598,20 @@ if (args[0] === "resolve") {
     }
 
     // Machine-greppable result line for a calling agent. Keep this stable.
-    const escSuffix = escalations.length ? ` escalations=${escalations.length}` : "";
-    console.log(`\nREDLINE_RESULT: approved file=${resolved} rounds=${totalRounds} comments=${totalComments}${escSuffix}`);
+    const escSuffix = escalations.length
+      ? ` escalations=${escalations.length}`
+      : "";
+    console.log(
+      `\nREDLINE_RESULT: approved file=${resolved} rounds=${totalRounds} comments=${totalComments}${escSuffix}`,
+    );
     console.log("");
-    writeResult({ status: "approved", file: resolved, rounds: totalRounds, comments: totalComments, escalations })
-      .finally(() => process.exit(0));
+    writeResult({
+      status: "approved",
+      file: resolved,
+      rounds: totalRounds,
+      comments: totalComments,
+      escalations,
+    }).finally(() => process.exit(0));
   });
 
   // Tab-close abandonment: if no browser reconnects within the abandon grace, exit cleanly.
@@ -462,11 +624,15 @@ if (args[0] === "resolve") {
     console.error(`[redline] Revision failed: ${message}`);
   });
   app.onRevisionRecovered(() => {
-    if (lastRevisionError) console.log("[redline] Revision-error state cleared.");
+    if (lastRevisionError)
+      console.log("[redline] Revision-error state cleared.");
     lastRevisionError = null;
   });
 
-  process.on("exit", () => { serverExiting = true; killAgentSync(); });
+  process.on("exit", () => {
+    serverExiting = true;
+    killAgentSync();
+  });
   // SIGINT/SIGTERM = abandoned session. Exit 2 so a calling agent can
   // distinguish "user gave up" from "user clicked Done" (exit 0).
   process.on("SIGINT", abandon);
@@ -474,8 +640,11 @@ if (args[0] === "resolve") {
 
   if (autoOpen) {
     const open =
-      process.platform === "darwin" ? "open" :
-      process.platform === "win32"  ? "start" : "xdg-open";
+      process.platform === "darwin"
+        ? "open"
+        : process.platform === "win32"
+          ? "start"
+          : "xdg-open";
     Bun.spawn([open, url]);
   }
 }

@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   escapeHtml,
@@ -30,7 +37,9 @@ function setBody(html: string) {
 
 describe("escapeHtml", () => {
   test("escapes the four html-significant chars", () => {
-    expect(escapeHtml("a & b < c > d \" e")).toBe("a &amp; b &lt; c &gt; d &quot; e");
+    expect(escapeHtml('a & b < c > d " e')).toBe(
+      "a &amp; b &lt; c &gt; d &quot; e",
+    );
   });
   test("idempotent on benign input", () => {
     expect(escapeHtml("plain text 123")).toBe("plain text 123");
@@ -42,8 +51,12 @@ describe("latestVerdict", () => {
     return { id: "c1", quote: "x", resolved: false, thread };
   }
   test("returns null when no agent reply has a verdict", () => {
-    expect(latestVerdict(makeComment([{ role: "human", message: "hi" }]))).toBeNull();
-    expect(latestVerdict(makeComment([{ role: "agent", message: "no verdict" }]))).toBeNull();
+    expect(
+      latestVerdict(makeComment([{ role: "human", message: "hi" }])),
+    ).toBeNull();
+    expect(
+      latestVerdict(makeComment([{ role: "agent", message: "no verdict" }])),
+    ).toBeNull();
   });
   test("returns latest agent verdict when present", () => {
     const c = makeComment([
@@ -64,7 +77,9 @@ describe("latestVerdict", () => {
 
 describe("nearestCell", () => {
   test("finds the enclosing td from a text node", () => {
-    setBody("<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>");
+    setBody(
+      "<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>",
+    );
     const td1 = document.getElementById("c1")!;
     const text = td1.firstChild!;
     expect(nearestCell(text)).toBe(td1);
@@ -78,7 +93,9 @@ describe("nearestCell", () => {
 
 describe("clampRangeToCell", () => {
   test("clamps to the start cell when range crosses cell boundary", () => {
-    setBody("<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>");
+    setBody(
+      "<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>",
+    );
     const c1 = document.getElementById("c1")!;
     const c2 = document.getElementById("c2")!;
     const r = document.createRange();
@@ -119,7 +136,11 @@ describe("captureSelection", () => {
     sel.removeAllRanges();
     sel.addRange(r);
 
-    const captured = captureSelection(prose, sel as unknown as Selection, "consectetur");
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "consectetur",
+    );
     expect(captured).not.toBeNull();
     expect(captured!.quote).toBe("consectetur");
     expect(captured!.context_before.endsWith("amet, ")).toBe(true);
@@ -145,7 +166,11 @@ describe("captureSelection", () => {
     sel.removeAllRanges();
     sel.addRange(r);
 
-    const captured = captureSelection(prose, sel as unknown as Selection, "consectetur");
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "consectetur",
+    );
     expect(captured).not.toBeNull();
     expect(captured!.quote).toBe("consectetur");
     expect(captured!.context_before.endsWith("amet, ")).toBe(true);
@@ -169,7 +194,11 @@ describe("captureSelection", () => {
     sel.removeAllRanges();
     sel.addRange(r);
 
-    const captured = captureSelection(prose, sel as unknown as Selection, "consectetur");
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "consectetur",
+    );
     expect(captured).not.toBeNull();
     expect(captured!.quote).toBe("consectetur");
     expect(captured!.context_after.startsWith(" adipiscing")).toBe(true);
@@ -248,7 +277,11 @@ describe("captureSelection", () => {
     sel.addRange(r);
 
     // The range is the source of truth — even a bogus text arg can't shift it.
-    const captured = captureSelection(prose, sel as unknown as Selection, "magna aliqua");
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "magna aliqua",
+    );
     expect(captured).not.toBeNull();
     expect(captured!.quote).toBe("Lorem");
   });
@@ -274,7 +307,11 @@ describe("captureSelection", () => {
     sel.removeAllRanges();
     sel.addRange(r);
 
-    const captured = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
     expect(captured).not.toBeNull();
     expect(captured!.quote.startsWith("ends here.")).toBe(true);
     expect(captured!.quote.endsWith("Second paragraph")).toBe(true);
@@ -299,7 +336,11 @@ describe("captureSelection", () => {
     sel.addRange(r);
 
     // Old behavior: rejected with "crosses sections". New behavior: anchors.
-    const captured = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
     expect(captured).not.toBeNull();
     expect(captured!.quote.startsWith("The last item")).toBe(true);
   });
@@ -314,7 +355,11 @@ describe("captureSelection", () => {
     const sel = window.getSelection()!;
     sel.removeAllRanges();
     sel.addRange(r);
-    const got = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    const got = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
     expect(got).not.toBeNull();
     expect(got!.quote).toBe("before [image: diagram] after");
   });
@@ -328,7 +373,11 @@ describe("captureSelection", () => {
     const sel = window.getSelection()!;
     sel.removeAllRanges();
     sel.addRange(r);
-    const got = captureSelection(prose, sel as unknown as Selection, sel.toString());
+    const got = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
     expect(got).not.toBeNull();
     expect(got!.quote).toBe("[image: diagram]");
   });
@@ -372,7 +421,9 @@ describe("highlightText", () => {
     expect(mark!.classList.contains("resolved")).toBe(true);
   });
   test("image quote wraps the matching <img> by alt", () => {
-    setBody("<div><p>before <img alt='hero'> middle <img alt='other'></p></div>");
+    setBody(
+      "<div><p>before <img alt='hero'> middle <img alt='other'></p></div>",
+    );
     const root = document.querySelector("div")!;
     const marks = highlightText(root, "[image: hero]", "c1", false, "");
     expect(marks.length).toBe(1);
@@ -383,7 +434,13 @@ describe("highlightText", () => {
   test("wraps a quote that mixes text and an image across multiple marks", () => {
     setBody("<div><p>see the <img alt='diagram'> below for details</p></div>");
     const root = document.querySelector("div")!;
-    const marks = highlightText(root, "the [image: diagram] below", "c1", false, "");
+    const marks = highlightText(
+      root,
+      "the [image: diagram] below",
+      "c1",
+      false,
+      "",
+    );
     expect(marks.length).toBe(3);
     const imgMark = marks.find((m) => m.classList.contains("rl-img"))!;
     expect(imgMark).toBeTruthy();

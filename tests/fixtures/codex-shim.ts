@@ -13,7 +13,10 @@ async function readStdin(): Promise<string> {
   const total = chunks.reduce((n, c) => n + c.length, 0);
   const buf = new Uint8Array(total);
   let offset = 0;
-  for (const c of chunks) { buf.set(c, offset); offset += c.length; }
+  for (const c of chunks) {
+    buf.set(c, offset);
+    offset += c.length;
+  }
   return new TextDecoder().decode(buf);
 }
 
@@ -26,7 +29,9 @@ function extractDocument(input: string): string {
   const m = input.match(/<document>\n?([\s\S]*?)\n?<\/document>/);
   if (!m) return "";
   const inner = m[1];
-  const env = inner.match(/^<<UNTRUSTED-[^>]+-document-START>>\n([\s\S]*?)\n<<UNTRUSTED-[^>]+-document-END>>$/);
+  const env = inner.match(
+    /^<<UNTRUSTED-[^>]+-document-START>>\n([\s\S]*?)\n<<UNTRUSTED-[^>]+-document-END>>$/,
+  );
   return env ? env[1] : inner;
 }
 
@@ -38,9 +43,13 @@ function bumpCounter(): number {
   const f = process.env.REDLINE_SHIM_COUNTER;
   if (!f) return 1;
   let n = 0;
-  try { n = parseInt(readFileSync(f, "utf8").trim() || "0", 10) || 0; } catch {}
+  try {
+    n = parseInt(readFileSync(f, "utf8").trim() || "0", 10) || 0;
+  } catch {}
   n += 1;
-  try { writeFileSync(f, String(n)); } catch {}
+  try {
+    writeFileSync(f, String(n));
+  } catch {}
   return n;
 }
 
@@ -62,7 +71,9 @@ async function main() {
     process.exit(1);
   }
 
-  const cleanRevision = doc.trimEnd() + "\n\n## Revised by codex shim\n\nThis section was added by the test codex-shim.\n";
+  const cleanRevision =
+    doc.trimEnd() +
+    "\n\n## Revised by codex shim\n\nThis section was added by the test codex-shim.\n";
   let revised: string;
   if (mode === "no-changes") {
     bumpCounter();
@@ -82,6 +93,8 @@ async function main() {
 }
 
 main().catch((e) => {
-  process.stderr.write(`codex shim: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.stderr.write(
+    `codex shim: ${e instanceof Error ? e.message : String(e)}\n`,
+  );
   process.exit(3);
 });

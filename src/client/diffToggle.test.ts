@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   applyDiffSwap,
@@ -8,9 +15,13 @@ import {
 } from "./diffToggle";
 
 beforeAll(() => GlobalRegistrator.register());
-afterAll(async () => { await GlobalRegistrator.unregister(); });
+afterAll(async () => {
+  await GlobalRegistrator.unregister();
+});
 
-beforeEach(() => { document.body.innerHTML = ""; });
+beforeEach(() => {
+  document.body.innerHTML = "";
+});
 
 describe("diffStateKey", () => {
   test("namespaces by context title so two files don't collide", () => {

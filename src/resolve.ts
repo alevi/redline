@@ -5,24 +5,39 @@ import type { Round, Comment } from "./sidecar";
 import { pickRevisionModel } from "./pickModel";
 import { newEnvelope } from "./promptEnvelope";
 import { contextBlock } from "./contextBlock";
-import { getAgentProvider, resolveProviderId, type AgentProviderId } from "./agentProvider";
+import {
+  getAgentProvider,
+  resolveProviderId,
+  type AgentProviderId,
+} from "./agentProvider";
 
-const serverBase = () => `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
-const csrfHeader = (): Record<string, string> => ({ "X-Redline-Token": process.env.REDLINE_TOKEN ?? "" });
+const serverBase = () =>
+  `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
+const csrfHeader = (): Record<string, string> => ({
+  "X-Redline-Token": process.env.REDLINE_TOKEN ?? "",
+});
 
-export async function resolve(filePath: string, options: { model?: string; agentProvider?: AgentProviderId } = {}) {
-  const provider = getAgentProvider(options.agentProvider ?? resolveProviderId());
+export async function resolve(
+  filePath: string,
+  options: { model?: string; agentProvider?: AgentProviderId } = {},
+) {
+  const provider = getAgentProvider(
+    options.agentProvider ?? resolveProviderId(),
+  );
   const model = options.model ?? null;
   const sidecar = await loadSidecar(filePath);
 
   // Find the most recently accepted round
   const resolvedRounds = sidecar.rounds.filter((r) => r.resolved_at != null);
   if (resolvedRounds.length === 0) {
-    throw new Error("No accepted round found — human must click 'Accept & revise' first");
+    throw new Error(
+      "No accepted round found — human must click 'Accept & revise' first",
+    );
   }
   const round: Round = resolvedRounds[resolvedRounds.length - 1];
   const settled = round.comments.filter((c) => c.resolved);
-  const chosenModel = model ?? provider.modelForTier(pickRevisionModel(settled));
+  const chosenModel =
+    model ?? provider.modelForTier(pickRevisionModel(settled));
 
   const docText = await readFile(filePath, "utf-8");
 
@@ -30,14 +45,24 @@ export async function resolve(filePath: string, options: { model?: string; agent
   const historyDir = path.join(path.dirname(filePath), ".review", "history");
   await mkdir(historyDir, { recursive: true });
   const snapTs = new Date().toISOString();
-  const snapFile = path.join(historyDir, `${path.basename(filePath)}.${snapTs}.md`);
+  const snapFile = path.join(
+    historyDir,
+    `${path.basename(filePath)}.${snapTs}.md`,
+  );
   await copyFile(filePath, snapFile);
   console.log(`Saved snapshot → .review/history/${path.basename(snapFile)}\n`);
 
   if (settled.length === 0) {
     console.log("No settled comments — no revision needed.");
     await openNextRound(sidecar, filePath);
-    try { await fetch(`${serverBase()}/api/reload`, { method: "POST", headers: csrfHeader() }); } catch { /* non-fatal */ }
+    try {
+      await fetch(`${serverBase()}/api/reload`, {
+        method: "POST",
+        headers: csrfHeader(),
+      });
+    } catch {
+      /* non-fatal */
+    }
     return;
   }
 
@@ -49,7 +74,10 @@ export async function resolve(filePath: string, options: { model?: string; agent
   const commentsBlock = settled
     .map((c, i) => {
       const discussion = c.thread
-        .map((e) => `    ${e.role === "agent" ? "Agent" : "Reviewer"}: ${e.message}`)
+        .map(
+          (e) =>
+            `    ${e.role === "agent" ? "Agent" : "Reviewer"}: ${e.message}`,
+        )
         .join("\n");
       return `${i + 1}. Quote:\n${env.wrap(`comment-${i}-quote`, c.quote)}\n   Discussion:\n${env.wrap(`comment-${i}-discussion`, discussion)}`;
     })
@@ -63,9 +91,11 @@ export async function resolve(filePath: string, options: { model?: string; agent
       r.comments
         .filter((c) => c.resolved)
         .map((c) => {
-          const lastAgent = [...c.thread].reverse().find((e) => e.role === "agent");
+          const lastAgent = [...c.thread]
+            .reverse()
+            .find((e) => e.role === "agent");
           return `- Round ${r.round}: ${env.wrap(`prior-${r.round}-quote`, c.quote)} → ${env.wrap(`prior-${r.round}-reply`, lastAgent?.message ?? "(resolved)")}`;
-        })
+        }),
     );
     if (lines.length > 0) {
       priorChangesBlock = `\n\n<previously-agreed-changes>\n${lines.join("\n")}\n</previously-agreed-changes>`;
@@ -128,7 +158,7 @@ export async function resolve(filePath: string, options: { model?: string; agent
     console.log(
       attempt === 1
         ? `Revising with ${provider.id}/${chosenModel}...\n`
-        : `\nRetrying revision with ${provider.id}/${chosenModel} (attempt ${attempt}/${MAX_ATTEMPTS})...\n`
+        : `\nRetrying revision with ${provider.id}/${chosenModel} (attempt ${attempt}/${MAX_ATTEMPTS})...\n`,
     );
     console.log("─".repeat(60));
     const run = await provider.runRevision({
@@ -142,12 +172,16 @@ export async function resolve(filePath: string, options: { model?: string; agent
     stderrText = run.stderr;
     exitCode = run.exitCode;
     console.log("\n" + "─".repeat(60));
-    console.log(`Model: ${provider.id}/${chosenModel}  ·  Duration: ${(run.durationMs / 1000).toFixed(1)}s  ·  Exit: ${exitCode}`);
+    console.log(
+      `Model: ${provider.id}/${chosenModel}  ·  Duration: ${(run.durationMs / 1000).toFixed(1)}s  ·  Exit: ${exitCode}`,
+    );
     console.log("─".repeat(60) + "\n");
 
     // A CLI crash is not retryable — fail immediately.
     if (exitCode !== 0) {
-      await fail(`${provider.id} CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`);
+      await fail(
+        `${provider.id} CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`,
+      );
     }
 
     const result = validateRevision(revised, docText, settled);
@@ -169,7 +203,14 @@ export async function resolve(filePath: string, options: { model?: string; agent
   if (trimmed === docText.trim()) {
     console.log("No changes — output identical to input. Skipping file write.");
     await openNextRound(sidecar, filePath);
-    try { await fetch(`${serverBase()}/api/revision-no-changes`, { method: "POST", headers: csrfHeader() }); } catch { /* non-fatal */ }
+    try {
+      await fetch(`${serverBase()}/api/revision-no-changes`, {
+        method: "POST",
+        headers: csrfHeader(),
+      });
+    } catch {
+      /* non-fatal */
+    }
     return;
   }
 
@@ -184,29 +225,38 @@ export async function resolve(filePath: string, options: { model?: string; agent
 
   // Notify browser to reload
   try {
-    await fetch(`${serverBase()}/api/reload`, { method: "POST", headers: csrfHeader() });
-  } catch { /* server may not be running — non-fatal */ }
+    await fetch(`${serverBase()}/api/reload`, {
+      method: "POST",
+      headers: csrfHeader(),
+    });
+  } catch {
+    /* server may not be running — non-fatal */
+  }
 }
 
 const HEADING_RE = /^#{1,6} .+$/gm;
 
 function normalizeHeadingKey(heading: string): string {
-  return heading
-    .replace(/^#{1,6}\s+/, "")
-    // Milestone/task headings often get legitimately renumbered when a nearby
-    // slice is removed. Keep the semantic title as the identity.
-    .replace(/^[A-Z]+\d+[a-z]?(?:\.\d+)*:\s+/i, "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+  return (
+    heading
+      .replace(/^#{1,6}\s+/, "")
+      // Milestone/task headings often get legitimately renumbered when a nearby
+      // slice is removed. Keep the semantic title as the identity.
+      .replace(/^[A-Z]+\d+[a-z]?(?:\.\d+)*:\s+/i, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+  );
 }
 
 function termsForHeading(heading: string): string[] {
   const key = normalizeHeadingKey(heading);
   const words = key.split(/\s+/).filter((w) => w.length >= 4);
   const phrases = new Set<string>();
-  const numberedPrefix = heading.replace(/^#{1,6}\s+/, "").match(/^([A-Z]+\d+[a-z]?(?:\.\d+)*):\s+/i)?.[1];
+  const numberedPrefix = heading
+    .replace(/^#{1,6}\s+/, "")
+    .match(/^([A-Z]+\d+[a-z]?(?:\.\d+)*):\s+/i)?.[1];
   if (numberedPrefix) phrases.add(numberedPrefix.toLowerCase());
   if (words.length >= 2) phrases.add(key);
   for (let size = 2; size <= 3; size++) {
@@ -235,8 +285,14 @@ function settledText(settled: Comment[]): string {
 // section topic also authorizes removal/reworking. Exact heading strings are
 // intentionally not the only identity because model revisions may legitimately
 // renumber implementation slices after cutting a nearby slice.
-function droppedSections(inputDoc: string, outputDoc: string, settled: Comment[]): string[] {
-  const outHeadingKeys = new Set((outputDoc.match(HEADING_RE) ?? []).map(normalizeHeadingKey));
+function droppedSections(
+  inputDoc: string,
+  outputDoc: string,
+  settled: Comment[],
+): string[] {
+  const outHeadingKeys = new Set(
+    (outputDoc.match(HEADING_RE) ?? []).map(normalizeHeadingKey),
+  );
   const inMatches = [...inputDoc.matchAll(HEADING_RE)];
   const quotes = settled.map((c) => c.quote.trim()).filter((q) => q.length > 0);
   const settledTopicText = settledText(settled);
@@ -247,10 +303,13 @@ function droppedSections(inputDoc: string, outputDoc: string, settled: Comment[]
     if (outHeadingKeys.has(normalizeHeadingKey(heading))) continue;
     // This heading's section runs from the heading to the next one (or EOF).
     const start = inMatches[i]!.index!;
-    const end = i + 1 < inMatches.length ? inMatches[i + 1]!.index! : inputDoc.length;
+    const end =
+      i + 1 < inMatches.length ? inMatches[i + 1]!.index! : inputDoc.length;
     const section = inputDoc.slice(start, end);
     const commented = quotes.some((q) => section.includes(q));
-    const topicNamed = termsForHeading(heading).some((term) => settledTopicText.includes(term));
+    const topicNamed = termsForHeading(heading).some((term) =>
+      settledTopicText.includes(term),
+    );
     if (!commented && !topicNamed) unauthorized.push(heading);
   }
   return unauthorized;
@@ -262,11 +321,12 @@ function droppedSections(inputDoc: string, outputDoc: string, settled: Comment[]
 export function validateRevision(
   revised: string,
   inputDoc: string,
-  settled: Comment[]
+  settled: Comment[],
 ): { ok: true; doc: string } | { ok: false; reason: string } {
   // Strip a wrapping code fence and any <document> wrapper tags the model
   // sometimes includes despite the system prompt.
-  let trimmed = revised.trim()
+  let trimmed = revised
+    .trim()
     .replace(/^```(?:markdown)?\n([\s\S]*)\n```$/, "$1")
     .replace(/^<document>\s*/i, "")
     .replace(/\s*<\/document>\s*$/i, "")
@@ -274,13 +334,22 @@ export function validateRevision(
 
   // Strip a trailing meta-section the model sometimes appends (Settled
   // comments, Changelog, …), plus a horizontal rule that often precedes it.
-  const metaHeading = trimmed.match(/\n#{2,3} (Settled comments|Previously agreed changes|Changelog|Revision notes)\b/i);
+  const metaHeading = trimmed.match(
+    /\n#{2,3} (Settled comments|Previously agreed changes|Changelog|Revision notes)\b/i,
+  );
   if (metaHeading) {
-    trimmed = trimmed.slice(0, metaHeading.index).trimEnd().replace(/\n+---\s*$/, "").trimEnd();
+    trimmed = trimmed
+      .slice(0, metaHeading.index)
+      .trimEnd()
+      .replace(/\n+---\s*$/, "")
+      .trimEnd();
   }
 
   if (!trimmed) {
-    return { ok: false, reason: "Revision produced empty output — no text was streamed back" };
+    return {
+      ok: false,
+      reason: "Revision produced empty output — no text was streamed back",
+    };
   }
 
   // If the input had headings, the output should too. Strip a preamble before
@@ -292,7 +361,11 @@ export function validateRevision(
     if (firstHeadingIdx > 0) {
       trimmed = trimmed.slice(firstHeadingIdx).trim();
     } else {
-      return { ok: false, reason: "Revision output has no Markdown headings — the model returned non-document content, not a revised document" };
+      return {
+        ok: false,
+        reason:
+          "Revision output has no Markdown headings — the model returned non-document content, not a revised document",
+      };
     }
   }
 
@@ -312,7 +385,14 @@ export function validateRevision(
 
 async function logRevisionFailure(
   filePath: string,
-  details: { reason: string; model: string; exitCode: number; stderr: string; stdoutSample: string; stdoutLength: number }
+  details: {
+    reason: string;
+    model: string;
+    exitCode: number;
+    stderr: string;
+    stdoutSample: string;
+    stdoutLength: number;
+  },
 ) {
   const logDir = path.join(path.dirname(filePath), ".review");
   await mkdir(logDir, { recursive: true });
@@ -324,7 +404,9 @@ async function logRevisionFailure(
     `exitCode:     ${details.exitCode}\n` +
     `stdoutLength: ${details.stdoutLength}\n` +
     (details.stderr ? `stderr:\n${details.stderr}\n` : "") +
-    (details.stdoutSample ? `stdoutSample (first 2000 chars):\n${details.stdoutSample}\n` : "") +
+    (details.stdoutSample
+      ? `stdoutSample (first 2000 chars):\n${details.stdoutSample}\n`
+      : "") +
     `===\n`;
   try {
     await appendFile(logPath, entry, "utf-8");
@@ -334,7 +416,11 @@ async function logRevisionFailure(
   }
 }
 
-function printChangeSummary(oldText: string, newText: string, filePath: string) {
+function printChangeSummary(
+  oldText: string,
+  newText: string,
+  filePath: string,
+) {
   const heading = (text: string) => text.match(/^#{1,3} .+$/gm) ?? [];
   const oldH = heading(oldText);
   const newH = heading(newText);
@@ -350,7 +436,10 @@ function printChangeSummary(oldText: string, newText: string, filePath: string) 
   }
 }
 
-async function openNextRound(sidecar: ReturnType<typeof loadSidecar> extends Promise<infer T> ? T : never, filePath: string) {
+async function openNextRound(
+  sidecar: ReturnType<typeof loadSidecar> extends Promise<infer T> ? T : never,
+  filePath: string,
+) {
   const hasOpenRound = sidecar.rounds.some((r) => r.resolved_at === null);
   if (!hasOpenRound) {
     const nextNum = sidecar.rounds.length + 1;

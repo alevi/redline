@@ -24,28 +24,40 @@ function renderDocDiffOld(oldText: string, newText: string): string {
   const newBlocks = splitBlocks(newText);
   const raw = lcsOps(oldBlocks, newBlocks, (a, b) => a === b);
 
-  type MergedOp = { type: 'equal'|'insert'|'delete'|'modify'; a?: string; b?: string };
+  type MergedOp = {
+    type: "equal" | "insert" | "delete" | "modify";
+    a?: string;
+    b?: string;
+  };
   const ops: MergedOp[] = [];
   for (let i = 0; i < raw.length; i++) {
-    if (raw[i].type === 'delete' && i+1 < raw.length && raw[i+1].type === 'insert') {
-      ops.push({ type: 'modify', a: raw[i].aVal, b: raw[i+1].bVal });
+    if (
+      raw[i].type === "delete" &&
+      i + 1 < raw.length &&
+      raw[i + 1].type === "insert"
+    ) {
+      ops.push({ type: "modify", a: raw[i].aVal, b: raw[i + 1].bVal });
       i++;
     } else {
       ops.push({ type: raw[i].type as any, a: raw[i].aVal, b: raw[i].bVal });
     }
   }
 
-  if (ops.every((o) => o.type === 'equal')) {
+  if (ops.every((o) => o.type === "equal")) {
     return '<div class="diff-no-changes">No changes between versions.</div>';
   }
 
   let html = '<div class="diff-prose">';
   for (const op of ops) {
-    if (op.type === 'equal') html += renderMarkdown(op.b!);
-    else if (op.type === 'insert') html += `<div class="diff-block diff-block-add">${renderMarkdown(op.b!)}</div>`;
-    else if (op.type === 'delete') html += `<div class="diff-block diff-block-del">${renderMarkdown(op.a!)}</div>`;
+    if (op.type === "equal") html += renderMarkdown(op.b!);
+    else if (op.type === "insert")
+      html += `<div class="diff-block diff-block-add">${renderMarkdown(op.b!)}</div>`;
+    else if (op.type === "delete")
+      html += `<div class="diff-block diff-block-del">${renderMarkdown(op.a!)}</div>`;
     else {
-      const isCode = op.a!.trimStart().startsWith('```') || op.b!.trimStart().startsWith('```');
+      const isCode =
+        op.a!.trimStart().startsWith("```") ||
+        op.b!.trimStart().startsWith("```");
       if (isCode) {
         html += `<div class="diff-block diff-block-del">${renderMarkdown(op.a!)}</div>`;
         html += `<div class="diff-block diff-block-add">${renderMarkdown(op.b!)}</div>`;
@@ -54,7 +66,7 @@ function renderDocDiffOld(oldText: string, newText: string): string {
       }
     }
   }
-  html += '</div>';
+  html += "</div>";
   return html;
 }
 

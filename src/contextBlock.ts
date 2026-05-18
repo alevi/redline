@@ -9,7 +9,10 @@ import type { Envelope } from "./promptEnvelope";
 //
 // Returns the empty string for missing/blank context so callers can prepend
 // unconditionally without an extra branch.
-export function contextBlock(context: string | null | undefined, env: Envelope): string {
+export function contextBlock(
+  context: string | null | undefined,
+  env: Envelope,
+): string {
   const trimmed = context?.trim();
   if (!trimmed) return "";
   return `## Reviewer's stated focus\n\n${env.wrap("context", trimmed)}\n\n---\n\n`;

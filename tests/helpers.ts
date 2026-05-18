@@ -12,7 +12,10 @@ import os from "os";
 export function installClaudeShim(dir: string): string {
   const shimPath = path.resolve(import.meta.dir, "fixtures", "claude-shim.ts");
   const wrapper = path.join(dir, "claude");
-  writeFileSync(wrapper, `#!/bin/sh\nexec ${process.execPath} ${shimPath} "$@"\n`);
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh\nexec ${process.execPath} ${shimPath} "$@"\n`,
+  );
   chmodSync(wrapper, 0o755);
   return wrapper;
 }
@@ -20,7 +23,10 @@ export function installClaudeShim(dir: string): string {
 export function installCodexShim(dir: string): string {
   const shimPath = path.resolve(import.meta.dir, "fixtures", "codex-shim.ts");
   const wrapper = path.join(dir, "codex");
-  writeFileSync(wrapper, `#!/bin/sh\nexec ${process.execPath} ${shimPath} "$@"\n`);
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh\nexec ${process.execPath} ${shimPath} "$@"\n`,
+  );
   chmodSync(wrapper, 0o755);
   return wrapper;
 }
@@ -39,15 +45,25 @@ export const TEST_ENV = {
 };
 
 /** Wrap fetch to attach X-Redline-Token on mutating tests. */
-export function mut(port: number, urlPath: string, init: RequestInit = {}): Promise<Response> {
+export function mut(
+  port: number,
+  urlPath: string,
+  init: RequestInit = {},
+): Promise<Response> {
   const m = (init.method || "GET").toUpperCase();
-  if (m === "GET" || m === "HEAD") return fetch(`http://localhost:${port}${urlPath}`, init);
-  const headers: Record<string, string> = { "X-Redline-Token": TEST_CSRF_TOKEN };
-  if (init.headers) Object.assign(headers, init.headers as Record<string, string>);
+  if (m === "GET" || m === "HEAD")
+    return fetch(`http://localhost:${port}${urlPath}`, init);
+  const headers: Record<string, string> = {
+    "X-Redline-Token": TEST_CSRF_TOKEN,
+  };
+  if (init.headers)
+    Object.assign(headers, init.headers as Record<string, string>);
   return fetch(`http://localhost:${port}${urlPath}`, { ...init, headers });
 }
 
-export function createTestFile(content = "# Test Document\n\nThis is a test.\n"): {
+export function createTestFile(
+  content = "# Test Document\n\nThis is a test.\n",
+): {
   filePath: string;
   dir: string;
 } {
@@ -68,7 +84,7 @@ export type SpawnedCLI = {
 export async function spawnCLI(
   filePath: string,
   extraEnv: Record<string, string> = {},
-  extraArgs: string[] = []
+  extraArgs: string[] = [],
 ): Promise<SpawnedCLI> {
   const proc = Bun.spawn([BUN, "run", CLI, filePath, ...extraArgs], {
     stdout: "pipe",
@@ -84,11 +100,19 @@ export async function spawnCLI(
   // first broadcast).
   let resolvePort!: (n: number) => void;
   let rejectPort!: (e: unknown) => void;
-  const portP = new Promise<number>((res, rej) => { resolvePort = res; rejectPort = rej; });
+  const portP = new Promise<number>((res, rej) => {
+    resolvePort = res;
+    rejectPort = rej;
+  });
 
   // Track every `[agent] connected` occurrence so tests can wait for restarts.
   let agentConnects = 0;
-  type Waiter = { n: number; resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
+  type Waiter = {
+    n: number;
+    resolve: () => void;
+    reject: (e: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  };
   const waiters: Waiter[] = [];
   const onAgentConnect = () => {
     agentConnects += 1;
@@ -102,27 +126,40 @@ export async function spawnCLI(
   };
 
   let resolveAgent!: () => void;
-  const agentReady = new Promise<void>((res) => { resolveAgent = res; });
+  const agentReady = new Promise<void>((res) => {
+    resolveAgent = res;
+  });
 
   watchStdout(proc.stdout, {
     onPort: resolvePort,
-    onAgentConnect: () => { onAgentConnect(); resolveAgent(); },
+    onAgentConnect: () => {
+      onAgentConnect();
+      resolveAgent();
+    },
     onError: rejectPort,
   });
   drainStream(proc.stderr);
 
   const port = await Promise.race([
     portP,
-    Bun.sleep(10_000).then(() => { throw new Error("CLI did not print URL within 10s"); }),
+    Bun.sleep(10_000).then(() => {
+      throw new Error("CLI did not print URL within 10s");
+    }),
   ]);
 
   const waitForAgentConnects = (n: number, timeoutMs = 10_000) =>
     new Promise<void>((resolve, reject) => {
       if (agentConnects >= n) return resolve();
       const timer = setTimeout(() => {
-        const idx = waiters.findIndex((w) => w.n === n && w.resolve === resolve);
+        const idx = waiters.findIndex(
+          (w) => w.n === n && w.resolve === resolve,
+        );
         if (idx !== -1) waiters.splice(idx, 1);
-        reject(new Error(`Timed out waiting for ${n}th [agent] connected (saw ${agentConnects})`));
+        reject(
+          new Error(
+            `Timed out waiting for ${n}th [agent] connected (saw ${agentConnects})`,
+          ),
+        );
       }, timeoutMs);
       waiters.push({ n, resolve, reject, timer });
     });
@@ -132,7 +169,11 @@ export async function spawnCLI(
 
 async function watchStdout(
   stream: ReadableStream<Uint8Array>,
-  cb: { onPort: (n: number) => void; onAgentConnect: () => void; onError: (e: unknown) => void }
+  cb: {
+    onPort: (n: number) => void;
+    onAgentConnect: () => void;
+    onError: (e: unknown) => void;
+  },
 ): Promise<void> {
   const reader = stream.getReader();
   const dec = new TextDecoder();
@@ -146,13 +187,17 @@ async function watchStdout(
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
-        if (!portSeen) cb.onError(new Error("stdout closed before URL appeared"));
+        if (!portSeen)
+          cb.onError(new Error("stdout closed before URL appeared"));
         return;
       }
       buf += dec.decode(value, { stream: true });
       if (!portSeen) {
         const m = buf.match(/URL:\s+http:\/\/localhost:(\d+)/);
-        if (m) { portSeen = true; cb.onPort(parseInt(m[1], 10)); }
+        if (m) {
+          portSeen = true;
+          cb.onPort(parseInt(m[1], 10));
+        }
       }
       // Scan for new "[agent] connected" occurrences past the last consumed offset.
       let idx;
@@ -182,23 +227,34 @@ function drainStream(stream: ReadableStream<Uint8Array>): void {
         const { done } = await reader.read();
         if (done) return;
       }
-    } catch { /* stream closed or already locked */ }
+    } catch {
+      /* stream closed or already locked */
+    }
   })();
 }
 
-export async function waitForServer(port: number, timeoutMs = 5000): Promise<void> {
+export async function waitForServer(
+  port: number,
+  timeoutMs = 5000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`http://localhost:${port}/`);
       if (res.ok) return;
-    } catch { /* not up yet */ }
+    } catch {
+      /* not up yet */
+    }
     await Bun.sleep(100);
   }
-  throw new Error(`Server on port ${port} did not become ready within ${timeoutMs}ms`);
+  throw new Error(
+    `Server on port ${port} did not become ready within ${timeoutMs}ms`,
+  );
 }
 
-export async function readResult(dir: string): Promise<Record<string, unknown>> {
+export async function readResult(
+  dir: string,
+): Promise<Record<string, unknown>> {
   const p = path.join(dir, ".review", "test.md.result");
   const raw = await readFile(p, "utf-8");
   return JSON.parse(raw);
@@ -206,24 +262,37 @@ export async function readResult(dir: string): Promise<Record<string, unknown>> 
 
 export async function waitForExit(
   proc: ReturnType<typeof Bun.spawn>,
-  timeoutMs = 5000
+  timeoutMs = 5000,
 ): Promise<number> {
   return Promise.race([
     proc.exited,
-    Bun.sleep(timeoutMs).then(() => { throw new Error(`Process did not exit within ${timeoutMs}ms`); }),
+    Bun.sleep(timeoutMs).then(() => {
+      throw new Error(`Process did not exit within ${timeoutMs}ms`);
+    }),
   ]);
 }
 
 /** Spawn a server, wait for readiness, return port + cleanup function. */
 export async function startServer(
   filePath: string,
-  extraEnv: Record<string, string> = {}
-): Promise<{ port: number; proc: ReturnType<typeof Bun.spawn>; stop: () => void }> {
+  extraEnv: Record<string, string> = {},
+): Promise<{
+  port: number;
+  proc: ReturnType<typeof Bun.spawn>;
+  stop: () => void;
+}> {
   const { proc, port } = await spawnCLI(filePath, extraEnv);
   await waitForServer(port);
-  return { port, proc, stop: () => { try { proc.kill(); } catch {} } };
+  return {
+    port,
+    proc,
+    stop: () => {
+      try {
+        proc.kill();
+      } catch {}
+    },
+  };
 }
-
 
 export type SseEvent = { event: string; data: any };
 
@@ -244,20 +313,34 @@ export type SseEvent = { event: string; data: any };
 export function waitForEvent(
   port: number,
   eventName: string,
-  options: { client?: string; timeoutMs?: number; predicate?: (data: any) => boolean } = {}
+  options: {
+    client?: string;
+    timeoutMs?: number;
+    predicate?: (data: any) => boolean;
+  } = {},
 ): Promise<SseEvent> & { stop: () => void; ready: Promise<void> } {
   const { client = "test", timeoutMs = 3000, predicate } = options;
   const ac = new AbortController();
   let stopped = false;
-  const stop = () => { stopped = true; try { ac.abort(); } catch {} };
+  const stop = () => {
+    stopped = true;
+    try {
+      ac.abort();
+    } catch {}
+  };
 
   let resolveReady: () => void;
-  const ready = new Promise<void>((res) => { resolveReady = res; });
+  const ready = new Promise<void>((res) => {
+    resolveReady = res;
+  });
 
   const promise = (async (): Promise<SseEvent> => {
-    const res = await fetch(`http://localhost:${port}/api/events?client=${client}`, {
-      signal: ac.signal,
-    });
+    const res = await fetch(
+      `http://localhost:${port}/api/events?client=${client}`,
+      {
+        signal: ac.signal,
+      },
+    );
     if (!res.body) throw new Error("SSE stream has no body");
 
     const reader = res.body.getReader();
@@ -271,7 +354,9 @@ export function waitForEvent(
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      try { ac.abort(); } catch {}
+      try {
+        ac.abort();
+      } catch {}
     }, timeoutMs);
 
     let foundEvent: SseEvent | undefined;
@@ -287,7 +372,8 @@ export function waitForEvent(
           throw e;
         }
         if (chunk.done) {
-          if (timedOut) throw new Error(`Timed out waiting for SSE event "${eventName}"`);
+          if (timedOut)
+            throw new Error(`Timed out waiting for SSE event "${eventName}"`);
           throw new Error("SSE stream closed before event arrived");
         }
         buf += dec.decode(chunk.value, { stream: true });
@@ -300,10 +386,16 @@ export function waitForEvent(
           // Skip comment frames (": connected", ": ping"). The first comment
           // frame doubles as the "you're connected" signal.
           if (frame.startsWith(":")) {
-            if (!signaledReady) { signaledReady = true; resolveReady(); }
+            if (!signaledReady) {
+              signaledReady = true;
+              resolveReady();
+            }
             continue;
           }
-          if (!signaledReady) { signaledReady = true; resolveReady(); }
+          if (!signaledReady) {
+            signaledReady = true;
+            resolveReady();
+          }
           const lines = frame.split("\n");
           let evType = "message";
           let dataStr = "";
@@ -313,7 +405,11 @@ export function waitForEvent(
           }
           if (evType !== eventName) continue;
           let data: any = null;
-          try { data = dataStr ? JSON.parse(dataStr) : null; } catch { /* not json */ }
+          try {
+            data = dataStr ? JSON.parse(dataStr) : null;
+          } catch {
+            /* not json */
+          }
           if (predicate && !predicate(data)) continue;
           foundEvent = { event: evType, data };
           break;
@@ -337,11 +433,14 @@ export function waitForEvent(
 export async function postComment(
   port: number,
   selection: { quote: string; context_before?: string; context_after?: string },
-  message: string
+  message: string,
 ): Promise<{ id: string; quote: string; thread: any[]; resolved: boolean }> {
   const res = await fetch(`http://localhost:${port}/api/comment`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Redline-Token": TEST_CSRF_TOKEN },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Redline-Token": TEST_CSRF_TOKEN,
+    },
     body: JSON.stringify({
       quote: selection.quote,
       context_before: selection.context_before ?? "",

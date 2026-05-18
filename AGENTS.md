@@ -44,7 +44,7 @@ The bare-arg path also spawns a dedicated agent subprocess alongside the server 
 
 ### Context-aware prompts
 
-When the user passes `--context "..."` (or the sidecar already has `context` set from a prior run), the string is rendered above the doc as a banner *and* prepended to both prompt builders:
+When the user passes `--context "..."` (or the sidecar already has `context` set from a prior run), the string is rendered above the doc as a banner _and_ prepended to both prompt builders:
 
 - [src/agent.ts](src/agent.ts) calls `loadSidecar` per reply and prepends a `Reviewer's stated focus` block to the user message before the document/comment sections.
 - [src/resolve.ts](src/resolve.ts) prepends the same block to the revision user message.
@@ -118,17 +118,17 @@ The Revise button is intentionally **not** styled green. It triggers a non-trivi
 
 ## SSE event vocabulary
 
-| Event | Fired when | Client behavior |
-|---|---|---|
-| `comment-added` | Human posts a new comment | Soft refresh + `applyHighlights()` (new highlight needed) |
-| `comment-reply` | Human or agent posts to existing thread | Soft refresh; remove that comment from `thinkingCommentIds` |
-| `comment-resolved` | Human resolves a comment | Soft refresh + `applyHighlights()` (color change) |
-| `comment-thinking` | Agent POSTs `/api/comment/:id/thinking` | Add to `thinkingCommentIds`, show dots in that thread (multiple threads can be active simultaneously) |
-| `agent-replied` | Agent POSTs `/api/agent-replied` after all in-flight replies finish | Clear `thinkingCommentIds`, soft refresh |
-| `accepted` | Human clicks "Revise document" | Agent's cue to run the resolve flow |
-| `finished` | Human clicks "Done" on a round with no comments, or "Looks good — close session" in the diff overlay | Replace body with a "Review complete — close this tab" splash |
-| `reload` | The resolve flow finishes writing the revised document | Full `window.location.reload()` |
-| `agent-unavailable` | CLI hits the agent restart cap (5 in 60s) | Show persistent "Agent offline" pill in header; sticky until page reload |
+| Event               | Fired when                                                                                           | Client behavior                                                                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `comment-added`     | Human posts a new comment                                                                            | Soft refresh + `applyHighlights()` (new highlight needed)                                             |
+| `comment-reply`     | Human or agent posts to existing thread                                                              | Soft refresh; remove that comment from `thinkingCommentIds`                                           |
+| `comment-resolved`  | Human resolves a comment                                                                             | Soft refresh + `applyHighlights()` (color change)                                                     |
+| `comment-thinking`  | Agent POSTs `/api/comment/:id/thinking`                                                              | Add to `thinkingCommentIds`, show dots in that thread (multiple threads can be active simultaneously) |
+| `agent-replied`     | Agent POSTs `/api/agent-replied` after all in-flight replies finish                                  | Clear `thinkingCommentIds`, soft refresh                                                              |
+| `accepted`          | Human clicks "Revise document"                                                                       | Agent's cue to run the resolve flow                                                                   |
+| `finished`          | Human clicks "Done" on a round with no comments, or "Looks good — close session" in the diff overlay | Replace body with a "Review complete — close this tab" splash                                         |
+| `reload`            | The resolve flow finishes writing the revised document                                               | Full `window.location.reload()`                                                                       |
+| `agent-unavailable` | CLI hits the agent restart cap (5 in 60s)                                                            | Show persistent "Agent offline" pill in header; sticky until page reload                              |
 
 Soft refresh = `GET /api/comments` then re-render the sidebar. Full reload = `window.location.reload()`. **Use soft refresh for everything except `reload`.** Full reloads scroll to top and feel jarring.
 
@@ -164,7 +164,7 @@ On startup the server checks the sidecar and auto-creates an open round if all r
 
 When you're acting as the agent on the other end of the SSE stream:
 
-1. POST `/api/comment/:id/thinking` *before* you start composing. This is the user's only signal that you saw their message.
+1. POST `/api/comment/:id/thinking` _before_ you start composing. This is the user's only signal that you saw their message.
 2. POST `/api/comment/:id/reply` with `{ role: "agent", name: "<provider display name>", message, requires_revision, revision_reason }`. The verdict fields are required of every agent reply — see "Verdict-aware resolve" below.
 3. POST `/api/agent-replied` to clear the thinking indicator and trigger a soft refresh.
 
@@ -201,7 +201,7 @@ The verdict is **agent-owned**. The human cannot flip it directly. Disagreement 
 
 ## Author handoff
 
-The inline review agent and the agent that *authored/launched* `redline` are separate processes. The sidecar is the persisted artifact, and `.startup.json` gives the authoring agent a local API bridge while the session is live. Two mechanisms carry feedback back to it:
+The inline review agent and the agent that _authored/launched_ `redline` are separate processes. The sidecar is the persisted artifact, and `.startup.json` gives the authoring agent a local API bridge while the session is live. Two mechanisms carry feedback back to it:
 
 - **`ESCALATE` verdict.** The storage/envelope name is still `ESCALATE` for compatibility, but product language is **author reply needed**. The inline agent sets `ESCALATE: true` when a comment needs author-level input: information, tools, authority, or project context it cannot access from the document and comment thread (an external style guide, a spec to check against, a wider-project decision). It does **not** set it for ordinary requested edits, reframes, emphasis changes, rewrites, or approvals; those are handled by `requires_revision`. It's stored as `escalate?: boolean` on the agent's `ThreadEntry` and rendered as an "↑ Author reply needed" badge on the comment. The author handoff signal is independent of `requires_revision` — the agent judges each on its own.
 - **Live author replies.** The authoring agent can run `redline author-wait <file>` while a session is open; it returns JSON when either a pending author-needed comment appears or the final `.result` is written. For pending comments, it can run `redline author-reply <file> <comment-id> --message "..."` to post back into the same thread, then wait again. When the server is live, the reply command uses `.review/<file>.startup.json` and the local API so the browser soft-refreshes; if the server is gone, it falls back to a locked sidecar write.

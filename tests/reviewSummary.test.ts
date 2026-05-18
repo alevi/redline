@@ -20,9 +20,23 @@ function sidecar(): Sidecar {
             context_after: "",
             resolved: true,
             thread: [
-              { role: "human", message: "Did you run the copy guidelines on this?", at: "" },
-              { role: "agent", name: "Claude", message: "I don't have them — an author reply is needed.", at: "", escalate: true },
-              { role: "human", message: "Give the feedback to the outer agent.", at: "" },
+              {
+                role: "human",
+                message: "Did you run the copy guidelines on this?",
+                at: "",
+              },
+              {
+                role: "agent",
+                name: "Claude",
+                message: "I don't have them — an author reply is needed.",
+                at: "",
+                escalate: true,
+              },
+              {
+                role: "human",
+                message: "Give the feedback to the outer agent.",
+                at: "",
+              },
             ],
           },
           {
@@ -33,7 +47,14 @@ function sidecar(): Sidecar {
             resolved: true,
             thread: [
               { role: "human", message: "typo", at: "" },
-              { role: "agent", name: "Claude", message: "Got it.", at: "", requires_revision: true, revision_reason: "fix typo" },
+              {
+                role: "agent",
+                name: "Claude",
+                message: "Got it.",
+                at: "",
+                requires_revision: true,
+                revision_reason: "fix typo",
+              },
             ],
           },
         ],
@@ -68,7 +89,12 @@ test("formatReviewSummary omits the callout when no author reply is needed", () 
 test("collectEscalations: escalation with no preceding human message has empty request", () => {
   const s = sidecar();
   s.rounds[0]!.comments[0]!.thread = [
-    { role: "agent", name: "Claude", message: "Author reply needed here.", escalate: true },
+    {
+      role: "agent",
+      name: "Claude",
+      message: "Author reply needed here.",
+      escalate: true,
+    },
   ];
   const esc = collectEscalations(s);
   expect(esc).toHaveLength(1);
@@ -80,7 +106,13 @@ test("collectEscalations: revision_reason is preferred over message for the note
   const s = sidecar();
   s.rounds[0]!.comments[0]!.thread = [
     { role: "human", message: "check the spec", at: "" },
-    { role: "agent", name: "Claude", message: "On it.", escalate: true, revision_reason: "needs the external spec" },
+    {
+      role: "agent",
+      name: "Claude",
+      message: "On it.",
+      escalate: true,
+      revision_reason: "needs the external spec",
+    },
   ];
   const esc = collectEscalations(s);
   expect(esc[0]!.note).toBe("needs the external spec");
@@ -90,14 +122,29 @@ test("collectEscalations: multiple escalations across rounds, in order", () => {
   const s = sidecar();
   s.rounds.push({
     round: 2,
-    started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: "x",
-    comments: [{
-      id: "c", quote: "round two quote", context_before: "", context_after: "", resolved: true,
-      thread: [
-        { role: "human", message: "second escalation", at: "" },
-        { role: "agent", name: "Claude", message: "routed", at: "", escalate: true },
-      ],
-    }],
+    started_at: "",
+    submitted_at: null,
+    agent_replied_at: null,
+    resolved_at: "x",
+    comments: [
+      {
+        id: "c",
+        quote: "round two quote",
+        context_before: "",
+        context_after: "",
+        resolved: true,
+        thread: [
+          { role: "human", message: "second escalation", at: "" },
+          {
+            role: "agent",
+            name: "Claude",
+            message: "routed",
+            at: "",
+            escalate: true,
+          },
+        ],
+      },
+    ],
   });
   const esc = collectEscalations(s);
   expect(esc.map((e) => e.round)).toEqual([1, 2]);
@@ -105,9 +152,13 @@ test("collectEscalations: multiple escalations across rounds, in order", () => {
 
 test("collectEscalations: author reply clears a pending handoff", () => {
   const s = sidecar();
-  s.rounds[0]!.comments[0]!.thread.push(
-    { role: "agent", name: "Author", message: "The house style says sentence case.", at: "", author: true },
-  );
+  s.rounds[0]!.comments[0]!.thread.push({
+    role: "agent",
+    name: "Author",
+    message: "The house style says sentence case.",
+    at: "",
+    author: true,
+  });
 
   expect(collectEscalations(s)).toHaveLength(0);
   expect(formatReviewSummary(s)).not.toContain("author reply from you");
@@ -133,7 +184,10 @@ test("formatReviewSummary: empty rounds are skipped", () => {
   const s = sidecar();
   s.rounds.push({
     round: 2,
-    started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: null,
+    started_at: "",
+    submitted_at: null,
+    agent_replied_at: null,
+    resolved_at: null,
     comments: [],
   });
   const out = formatReviewSummary(s);
