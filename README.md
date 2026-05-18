@@ -142,7 +142,7 @@ cd redline
 bun install
 bun link            # exposes `redline` on PATH
 redline ./sample.md
-bun test
+bun run check
 ```
 
 ## License
