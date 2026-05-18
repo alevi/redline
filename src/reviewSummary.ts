@@ -15,7 +15,7 @@ export interface EscalationItem {
   round: number;
   quote: string;
   request: string; // the reviewer message the inline agent couldn't act on
-  note: string;    // the agent's author-handoff note
+  note: string; // the agent's author-handoff note
 }
 
 function flatten(s: string, n: number): string {
@@ -24,9 +24,15 @@ function flatten(s: string, n: number): string {
 }
 
 function isEscalated(c: Comment): boolean {
-  const escIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.escalate === true);
+  const escIdx = latestIndex(
+    c.thread,
+    (e) => e.role === "agent" && e.escalate === true,
+  );
   if (escIdx === -1) return false;
-  const authorIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.author === true);
+  const authorIdx = latestIndex(
+    c.thread,
+    (e) => e.role === "agent" && e.author === true,
+  );
   return authorIdx < escIdx;
 }
 
@@ -35,16 +41,25 @@ export function collectEscalations(sidecar: Sidecar): EscalationItem[] {
   const items: EscalationItem[] = [];
   for (const round of sidecar.rounds) {
     for (const c of round.comments) {
-      const escIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.escalate === true);
+      const escIdx = latestIndex(
+        c.thread,
+        (e) => e.role === "agent" && e.escalate === true,
+      );
       if (escIdx === -1) continue;
-      const authorIdx = latestIndex(c.thread, (e) => e.role === "agent" && e.author === true);
+      const authorIdx = latestIndex(
+        c.thread,
+        (e) => e.role === "agent" && e.author === true,
+      );
       if (authorIdx > escIdx) continue;
       const agentEntry = c.thread[escIdx]!;
       // The reviewer message immediately before the author handoff is the
       // request the inline agent couldn't fulfill.
       let request = "";
       for (let i = escIdx - 1; i >= 0; i--) {
-        if (c.thread[i]!.role === "human") { request = c.thread[i]!.message; break; }
+        if (c.thread[i]!.role === "human") {
+          request = c.thread[i]!.message;
+          break;
+        }
       }
       items.push({
         round: round.round,
@@ -57,7 +72,10 @@ export function collectEscalations(sidecar: Sidecar): EscalationItem[] {
   return items;
 }
 
-function latestIndex(thread: Comment["thread"], predicate: (entry: Comment["thread"][number]) => boolean): number {
+function latestIndex(
+  thread: Comment["thread"],
+  predicate: (entry: Comment["thread"][number]) => boolean,
+): number {
   for (let i = thread.length - 1; i >= 0; i--) {
     if (predicate(thread[i]!)) return i;
   }
@@ -77,7 +95,7 @@ export function formatReviewSummary(sidecar: Sidecar): string {
       if (isEscalated(c)) tags.push("author reply needed");
       lines.push(`  ${i + 1}. "${flatten(c.quote, 80)}" — ${tags.join(" · ")}`);
       for (const e of c.thread) {
-        const who = e.role === "human" ? "Reviewer" : (e.name || "Agent");
+        const who = e.role === "human" ? "Reviewer" : e.name || "Agent";
         lines.push(`     ${who}: ${flatten(e.message, 280)}`);
       }
     });

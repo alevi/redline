@@ -51,9 +51,9 @@ export interface Comment {
 export interface Round {
   round: number;
   started_at: string;
-  submitted_at: string | null;    // human clicked "Submit for review" — agent should respond
+  submitted_at: string | null; // human clicked "Submit for review" — agent should respond
   agent_replied_at: string | null; // agent posted replies — human should review
-  resolved_at: string | null;     // human accepted — agent should revise the document
+  resolved_at: string | null; // human accepted — agent should revise the document
   comments: Comment[];
 }
 
@@ -88,7 +88,7 @@ export async function loadSidecar(filePath: string): Promise<Sidecar> {
 
 export async function saveSidecar(
   filePath: string,
-  sidecar: Sidecar
+  sidecar: Sidecar,
 ): Promise<void> {
   const sp = sidecarPath(filePath);
   await mkdir(path.dirname(sp), { recursive: true });
@@ -144,7 +144,7 @@ async function ensureLockTarget(filePath: string): Promise<string> {
  */
 export async function withSidecar<T>(
   filePath: string,
-  fn: (sidecar: Sidecar) => T | Promise<T>
+  fn: (sidecar: Sidecar) => T | Promise<T>,
 ): Promise<T> {
   const key = path.resolve(filePath);
   const prev = sidecarLocks.get(key) ?? Promise.resolve();
@@ -174,7 +174,10 @@ export async function withSidecar<T>(
   });
   // Catch errors so one failed mutator doesn't poison the queue for the next
   // caller. The original `next` promise still rejects for the current caller.
-  sidecarLocks.set(key, next.catch(() => {}));
+  sidecarLocks.set(
+    key,
+    next.catch(() => {}),
+  );
   return next;
 }
 

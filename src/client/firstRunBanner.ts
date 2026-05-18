@@ -15,12 +15,20 @@ export function initFirstRunBanner(doc: Document, win: Window): void {
   if (!banner) return;
 
   let ack: string | null = null;
-  try { ack = win.localStorage.getItem(ACK_KEY); } catch { /* private browsing */ }
+  try {
+    ack = win.localStorage.getItem(ACK_KEY);
+  } catch {
+    /* private browsing */
+  }
   if (ack) return;
 
   banner.removeAttribute("hidden");
   doc.getElementById("first-run-dismiss")?.addEventListener("click", () => {
-    try { win.localStorage.setItem(ACK_KEY, new Date().toISOString()); } catch { /* private browsing */ }
+    try {
+      win.localStorage.setItem(ACK_KEY, new Date().toISOString());
+    } catch {
+      /* private browsing */
+    }
     banner.setAttribute("hidden", "");
   });
 }

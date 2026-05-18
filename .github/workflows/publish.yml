@@ -18,7 +18,7 @@ name: publish
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   publish:
@@ -38,8 +38,8 @@ jobs:
           # Node 22's npm 10.x does not, and upgrading npm in place
           # (`npm i -g npm@latest`) hits a self-overwrite bug — npm removes its
           # own files mid-install and dies with MODULE_NOT_FOUND.
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
       - run: bun install --frozen-lockfile
 

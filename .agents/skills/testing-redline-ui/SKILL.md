@@ -23,7 +23,7 @@ This allows the server to start and the UI to render. Agent replies will echo "d
 
 ## Running the Server
 
-```bash
+````bash
 # Create a test markdown file with sections, tables, code blocks
 cat > test-doc.md << 'EOF'
 # Sample Review Document
@@ -48,13 +48,15 @@ Tables test the cell-boundary clamping logic.
 function hello() {
   console.log("Hello, world!");
 }
-```
+````
 
 Code blocks test syntax highlighting via hljs.
 EOF
 
 # Start the server
+
 bun run src/cli.ts test-doc.md
+
 ```
 
 The server prints the URL (usually `http://localhost:PORT`).
@@ -82,3 +84,4 @@ Execute in this order for maximum coverage:
 - Cards position themselves adjacent to their highlight in the prose area via `positionCards()`
 - The dummy agent always returns "edit queued" verdict, so all resolved comments will show the "Revise document" flow (not "Accept doc")
 - SSE connection may show reconnect attempts in the Network tab — this is normal zombie-SSE recovery behavior from `sse.ts`
+```

@@ -16,7 +16,10 @@ export function updateToggleButton(btn: HTMLButtonElement, on: boolean): void {
 // caller can restore it later, or null if the prose is already in diff mode
 // (we don't want to clobber the saved-original by overwriting it with the
 // diff HTML we just installed).
-export function applyDiffSwap(prose: HTMLElement, diffHtml: string): string | null {
+export function applyDiffSwap(
+  prose: HTMLElement,
+  diffHtml: string,
+): string | null {
   if (prose.dataset.diffMode === "on") return null;
   const previous = prose.innerHTML;
   prose.innerHTML = diffHtml;
@@ -24,7 +27,10 @@ export function applyDiffSwap(prose: HTMLElement, diffHtml: string): string | nu
   return previous;
 }
 
-export function revertDiffSwap(prose: HTMLElement, originalHtml: string): boolean {
+export function revertDiffSwap(
+  prose: HTMLElement,
+  originalHtml: string,
+): boolean {
   if (prose.dataset.diffMode !== "on") return false;
   prose.innerHTML = originalHtml;
   prose.dataset.diffMode = "off";

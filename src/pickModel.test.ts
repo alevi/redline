@@ -87,7 +87,9 @@ describe("pickRevisionModel", () => {
 
   test("revision keywords are different from reply keywords", () => {
     // 'rewrite' is a revision keyword but not a reply keyword
-    expect(pickRevisionModel([{ thread: [{ role: "human", message: "rewrite" }] }])).toBe(SMART_MODEL);
+    expect(
+      pickRevisionModel([{ thread: [{ role: "human", message: "rewrite" }] }]),
+    ).toBe(SMART_MODEL);
     expect(pickReplyModel("rewrite")).toBe(FAST_MODEL);
   });
 });

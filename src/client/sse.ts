@@ -20,7 +20,10 @@ export async function softRefresh({ rehighlight = false } = {}): Promise<void> {
   try {
     const res = await fetch("/api/comments");
     const data = await res.json();
-    if (typeof data.totalRounds === "number" && data.totalRounds > state.totalRounds) {
+    if (
+      typeof data.totalRounds === "number" &&
+      data.totalRounds > state.totalRounds
+    ) {
       window.location.reload();
       return;
     }
@@ -82,7 +85,9 @@ export function initSSE(): void {
     if (!revising) return;
     const silenceMs = Date.now() - lastEventAt;
     if (silenceMs > 30_000) {
-      forceReconnect(`no events for ${Math.round(silenceMs / 1000)}s during revision`);
+      forceReconnect(
+        `no events for ${Math.round(silenceMs / 1000)}s during revision`,
+      );
     }
   }, 5000);
 
@@ -132,7 +137,8 @@ export function initSSE(): void {
         const { text, kind } = JSON.parse(e.data);
         const stream = document.getElementById("revision-stream");
         if (stream) {
-          if (stream.style.display === "none" || !stream.style.display) stream.style.display = "block";
+          if (stream.style.display === "none" || !stream.style.display)
+            stream.style.display = "block";
           const span = document.createElement("span");
           span.className = kind === "thinking" ? "rs-thinking" : "rs-text";
           span.textContent = text;
@@ -144,7 +150,8 @@ export function initSSE(): void {
     on("revision-error", (e) => {
       let msg = "Revision failed.";
       try {
-        msg = "Revision failed: " + (JSON.parse(e.data).message ?? "unknown error");
+        msg =
+          "Revision failed: " + (JSON.parse(e.data).message ?? "unknown error");
       } catch {}
       softRefresh();
       const banner = document.getElementById("sidebar-status-banner");
@@ -159,7 +166,9 @@ export function initSSE(): void {
     on("revision-stalled", (e) => {
       let msg = "Revision did not complete.";
       try {
-        msg = "Revision did not complete: " + (JSON.parse(e.data).message ?? "unknown");
+        msg =
+          "Revision did not complete: " +
+          (JSON.parse(e.data).message ?? "unknown");
       } catch {}
       softRefresh();
       const banner = document.getElementById("sidebar-status-banner");

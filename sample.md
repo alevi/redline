@@ -1,6 +1,6 @@
 # Sample Document
 
-This is a sample document. Use it to test Redlines selection and commenting workflow on real Markdown content. You can select any text on this page and leave an inline comment. Some text is *italic*, some is **bold**, and some is ***both***. There's also ~~strikethrough~~ for things we considered and rejected.
+This is a sample document. Use it to test Redlines selection and commenting workflow on real Markdown content. You can select any text on this page and leave an inline comment. Some text is _italic_, some is **bold**, and some is **_both_**. There's also ~~strikethrough~~ for things we considered and rejected.
 
 Visit the [Redline repo](https://github.com/alevi/redline) for the source.
 
@@ -59,12 +59,12 @@ And some inline `code` too.
 
 ## A table
 
-| Component | Status | Owner |
-|-----------|--------|-------|
-| Reader | Done | Alon |
-| Sidecar | Done | Alon |
-| Agent loop | In progress | Claude |
-| Typed actions | Planned | — |
+| Component     | Status      | Owner  |
+| ------------- | ----------- | ------ |
+| Reader        | Done        | Alon   |
+| Sidecar       | Done        | Alon   |
+| Agent loop    | In progress | Claude |
+| Typed actions | Planned     | —      |
 
 ## Images
 

@@ -42,7 +42,10 @@ async function readStdin(): Promise<string> {
   const total = chunks.reduce((n, c) => n + c.length, 0);
   const buf = new Uint8Array(total);
   let offset = 0;
-  for (const c of chunks) { buf.set(c, offset); offset += c.length; }
+  for (const c of chunks) {
+    buf.set(c, offset);
+    offset += c.length;
+  }
   return new TextDecoder().decode(buf);
 }
 
@@ -66,7 +69,9 @@ function extractDocument(input: string): string {
   // A real model would output just the inner text per the system prompt; the
   // shim mirrors that by stripping the envelope before echoing.
   const inner = m[1];
-  const env = inner.match(/^<<UNTRUSTED-[^>]+-document-START>>\n([\s\S]*?)\n<<UNTRUSTED-[^>]+-document-END>>$/);
+  const env = inner.match(
+    /^<<UNTRUSTED-[^>]+-document-START>>\n([\s\S]*?)\n<<UNTRUSTED-[^>]+-document-END>>$/,
+  );
   return env ? env[1] : inner;
 }
 
@@ -81,9 +86,17 @@ function bumpCounter(): number {
   const f = process.env.REDLINE_SHIM_COUNTER;
   if (!f) return 1;
   let n = 0;
-  try { n = parseInt(readFileSync(f, "utf8").trim() || "0", 10) || 0; } catch { /* first call */ }
+  try {
+    n = parseInt(readFileSync(f, "utf8").trim() || "0", 10) || 0;
+  } catch {
+    /* first call */
+  }
   n += 1;
-  try { writeFileSync(f, String(n)); } catch { /* best effort */ }
+  try {
+    writeFileSync(f, String(n));
+  } catch {
+    /* best effort */
+  }
   return n;
 }
 
@@ -110,7 +123,9 @@ async function main() {
     process.exit(2);
   }
 
-  const cleanRevision = doc.trimEnd() + "\n\n## Revised by shim\n\nThis section was added by the test claude-shim.\n";
+  const cleanRevision =
+    doc.trimEnd() +
+    "\n\n## Revised by shim\n\nThis section was added by the test claude-shim.\n";
 
   let revised: string;
   if (mode === "no-changes") {

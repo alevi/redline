@@ -21,7 +21,9 @@ function captureSelection(sel: Selection, text: string) {
 }
 
 function isFormEmpty(): boolean {
-  const ta = document.querySelector("#new-comment-form textarea") as HTMLTextAreaElement | null;
+  const ta = document.querySelector(
+    "#new-comment-form textarea",
+  ) as HTMLTextAreaElement | null;
   return !ta || ta.value.trim() === "";
 }
 
@@ -80,7 +82,8 @@ export function showNewCommentForm(
   save.addEventListener("click", () => saveComment(form, textarea, selection!));
 
   textarea.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveComment(form, textarea, selection!);
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+      saveComment(form, textarea, selection!);
     if (e.key === "Escape") {
       dismissNewCommentForm();
     }
@@ -116,7 +119,8 @@ export function dismissNewCommentForm(): void {
 
 function applyPendingHighlight(range: Range): void {
   const ancestor = range.commonAncestorContainer;
-  const root = ancestor.nodeType === Node.TEXT_NODE ? ancestor.parentNode! : ancestor;
+  const root =
+    ancestor.nodeType === Node.TEXT_NODE ? ancestor.parentNode! : ancestor;
 
   const textNodes: Text[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -127,7 +131,8 @@ function applyPendingHighlight(range: Range): void {
 
   for (const tn of textNodes) {
     const start = tn === range.startContainer ? range.startOffset : 0;
-    const end = tn === range.endContainer ? range.endOffset : tn.nodeValue!.length;
+    const end =
+      tn === range.endContainer ? range.endOffset : tn.nodeValue!.length;
     if (start >= end) continue;
 
     const mark = document.createElement("mark");
@@ -170,7 +175,8 @@ export function initSelectionHandlers(): void {
     selectionTimer = setTimeout(() => {
       selectionTimer = null;
       if (document.getElementById("new-comment-form")) {
-        if ((window.getSelection()?.toString().trim().length ?? 0) >= 2) nudgeOpenForm();
+        if ((window.getSelection()?.toString().trim().length ?? 0) >= 2)
+          nudgeOpenForm();
         return;
       }
 
@@ -197,7 +203,9 @@ export function initSelectionHandlers(): void {
 
       const captured = captureSelection(sel, text);
       if (!captured) {
-        showError("Couldn't anchor that selection \u2014 try highlighting the passage again.");
+        showError(
+          "Couldn't anchor that selection \u2014 try highlighting the passage again.",
+        );
         sel.removeAllRanges();
         return;
       }
@@ -209,7 +217,9 @@ export function initSelectionHandlers(): void {
         _range: range.cloneRange(),
       };
 
-      const sidebarRect = document.querySelector(".sidebar-col")!.getBoundingClientRect();
+      const sidebarRect = document
+        .querySelector(".sidebar-col")!
+        .getBoundingClientRect();
       showNewCommentForm(state.pendingSelection, rect.top - sidebarRect.top);
     }, 250);
   });
@@ -232,8 +242,16 @@ export function initSelectionHandlers(): void {
       const quote = "[image: " + alt + "]";
 
       const rect = img.getBoundingClientRect();
-      const sidebarRect = document.querySelector(".sidebar-col")!.getBoundingClientRect();
-      state.pendingSelection = { quote, context_before: "", context_after: "", _rectTop: rect.top, _img: img };
+      const sidebarRect = document
+        .querySelector(".sidebar-col")!
+        .getBoundingClientRect();
+      state.pendingSelection = {
+        quote,
+        context_before: "",
+        context_after: "",
+        _rectTop: rect.top,
+        _img: img,
+      };
       showNewCommentForm(state.pendingSelection, rect.top - sidebarRect.top);
     },
     true,

@@ -38,18 +38,27 @@ export interface AgentProvider {
 
 export const PROVIDER_IDS: AgentProviderId[] = ["claude", "codex"];
 
-export function parseAgentProviderId(value: string | undefined): AgentProviderId | null {
+export function parseAgentProviderId(
+  value: string | undefined,
+): AgentProviderId | null {
   if (!value) return null;
-  return PROVIDER_IDS.includes(value as AgentProviderId) ? value as AgentProviderId : null;
+  return PROVIDER_IDS.includes(value as AgentProviderId)
+    ? (value as AgentProviderId)
+    : null;
 }
 
 export function resolveProviderId(raw?: string): AgentProviderId {
   const explicit = parseAgentProviderId(raw ?? process.env.REDLINE_AGENT);
   if (explicit) return explicit;
 
-  if (process.env.CLAUDE_CODE_EXECPATH && existsSync(process.env.CLAUDE_CODE_EXECPATH)) return "claude";
+  if (
+    process.env.CLAUDE_CODE_EXECPATH &&
+    existsSync(process.env.CLAUDE_CODE_EXECPATH)
+  )
+    return "claude";
   if (Bun.which("claude")) return "claude";
-  if (process.env.CODEX_EXECPATH && existsSync(process.env.CODEX_EXECPATH)) return "codex";
+  if (process.env.CODEX_EXECPATH && existsSync(process.env.CODEX_EXECPATH))
+    return "codex";
   if (Bun.which("codex")) return "codex";
   // Preserve the published behavior: if nothing can be detected, the
   // preflight on the default provider prints the actionable install message.
@@ -60,7 +69,11 @@ export function invalidProviderMessage(value: string): string {
   return `[redline] Unknown agent provider "${value}". Supported providers: ${PROVIDER_IDS.join(", ")}.`;
 }
 
-function requireExecutable(provider: AgentProviderId, envPath: string | undefined, bin: string): string {
+function requireExecutable(
+  provider: AgentProviderId,
+  envPath: string | undefined,
+  bin: string,
+): string {
   if (envPath && existsSync(envPath)) return envPath;
   const found = Bun.which(bin);
   if (found) return found;
@@ -70,8 +83,8 @@ function requireExecutable(provider: AgentProviderId, envPath: string | undefine
       : "Install Codex and make sure `codex` is on PATH, or set CODEX_EXECPATH.";
   throw new Error(
     `\n[redline] Could not find the ${provider} CLI.\n` +
-    `Redline shells out to a local ${provider} agent for replies and revisions.\n` +
-    `${install}\n`
+      `Redline shells out to a local ${provider} agent for replies and revisions.\n` +
+      `${install}\n`,
   );
 }
 
@@ -116,7 +129,11 @@ export const claudeProvider: AgentProvider = {
   id: "claude",
   displayName: "Claude",
   executable() {
-    return requireExecutable("claude", process.env.CLAUDE_CODE_EXECPATH, "claude");
+    return requireExecutable(
+      "claude",
+      process.env.CLAUDE_CODE_EXECPATH,
+      "claude",
+    );
   },
   preflight() {
     this.executable();
@@ -126,22 +143,40 @@ export const claudeProvider: AgentProvider = {
   },
   async runReply(input) {
     const proc = Bun.spawn(
-      [this.executable(), "-p", "--system-prompt", input.systemPrompt, "--model", input.model],
-      { stdin: "pipe", stdout: "pipe", stderr: "inherit", cwd: input.cwd }
+      [
+        this.executable(),
+        "-p",
+        "--system-prompt",
+        input.systemPrompt,
+        "--model",
+        input.model,
+      ],
+      { stdin: "pipe", stdout: "pipe", stderr: "inherit", cwd: input.cwd },
     );
     proc.stdin.write(input.userMessage);
     proc.stdin.end();
     const reply = await readAll(proc.stdout);
     const exitCode = await proc.exited;
-    if (exitCode !== 0) throw new Error(`claude CLI exited with code ${exitCode}`);
+    if (exitCode !== 0)
+      throw new Error(`claude CLI exited with code ${exitCode}`);
     return reply;
   },
   async runRevision(input) {
     const startedAt = Date.now();
     const proc = Bun.spawn(
-      [this.executable(), "-p", "--system-prompt", input.systemPrompt, "--model", input.model,
-       "--output-format", "stream-json", "--include-partial-messages", "--verbose"],
-      { stdin: "pipe", stdout: "pipe", stderr: "pipe", cwd: input.cwd }
+      [
+        this.executable(),
+        "-p",
+        "--system-prompt",
+        input.systemPrompt,
+        "--model",
+        input.model,
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--verbose",
+      ],
+      { stdin: "pipe", stdout: "pipe", stderr: "pipe", cwd: input.cwd },
     );
 
     proc.stdin.write(input.userMessage);
@@ -161,7 +196,10 @@ export const claudeProvider: AgentProvider = {
         if (!line.trim()) continue;
         try {
           const obj = JSON.parse(line);
-          if (obj.type === "stream_event" && obj.event?.type === "content_block_delta") {
+          if (
+            obj.type === "stream_event" &&
+            obj.event?.type === "content_block_delta"
+          ) {
             const delta = obj.event.delta;
             if (delta?.type === "text_delta" && delta.text) {
               revised += delta.text;
@@ -171,7 +209,9 @@ export const claudeProvider: AgentProvider = {
               input.onChunk?.(delta.thinking, "thinking");
             }
           }
-        } catch { /* malformed JSON line, skip */ }
+        } catch {
+          /* malformed JSON line, skip */
+        }
       }
     }
     const exitCode = await proc.exited;
@@ -199,17 +239,25 @@ export const codexProvider: AgentProvider = {
     const lastMessagePath = path.join(tmpDir, "last-message.md");
     const proc = Bun.spawn(
       [
-        this.executable(), "--ask-for-approval", "never", "exec",
-        "--model", input.model,
-        "--cd", input.cwd,
-        "--sandbox", "read-only",
+        this.executable(),
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "--model",
+        input.model,
+        "--cd",
+        input.cwd,
+        "--sandbox",
+        "read-only",
         "--skip-git-repo-check",
         "--ephemeral",
-        "--color", "never",
-        "--output-last-message", lastMessagePath,
+        "--color",
+        "never",
+        "--output-last-message",
+        lastMessagePath,
         "-",
       ],
-      { stdin: "pipe", stdout: "pipe", stderr: "inherit", cwd: input.cwd }
+      { stdin: "pipe", stdout: "pipe", stderr: "inherit", cwd: input.cwd },
     );
     proc.stdin.write(combinedPrompt(input.systemPrompt, input.userMessage));
     proc.stdin.end();
@@ -219,9 +267,12 @@ export const codexProvider: AgentProvider = {
     try {
       const fromFile = await readFile(lastMessagePath, "utf-8");
       if (fromFile.trim()) reply = fromFile;
-    } catch { /* fall back to stdout */ }
+    } catch {
+      /* fall back to stdout */
+    }
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    if (exitCode !== 0) throw new Error(`codex CLI exited with code ${exitCode}`);
+    if (exitCode !== 0)
+      throw new Error(`codex CLI exited with code ${exitCode}`);
     return reply;
   },
   async runRevision(input) {
@@ -230,17 +281,25 @@ export const codexProvider: AgentProvider = {
     const lastMessagePath = path.join(tmpDir, "last-message.md");
     const proc = Bun.spawn(
       [
-        this.executable(), "--ask-for-approval", "never", "exec",
-        "--model", input.model,
-        "--cd", input.cwd,
-        "--sandbox", "read-only",
+        this.executable(),
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "--model",
+        input.model,
+        "--cd",
+        input.cwd,
+        "--sandbox",
+        "read-only",
         "--skip-git-repo-check",
         "--ephemeral",
-        "--color", "never",
-        "--output-last-message", lastMessagePath,
+        "--color",
+        "never",
+        "--output-last-message",
+        lastMessagePath,
         "-",
       ],
-      { stdin: "pipe", stdout: "pipe", stderr: "pipe", cwd: input.cwd }
+      { stdin: "pipe", stdout: "pipe", stderr: "pipe", cwd: input.cwd },
     );
 
     proc.stdin.write(combinedPrompt(input.systemPrompt, input.userMessage));
@@ -255,7 +314,9 @@ export const codexProvider: AgentProvider = {
     try {
       const fromFile = await readFile(lastMessagePath, "utf-8");
       if (fromFile.trim()) revised = fromFile;
-    } catch { /* fall back to stdout */ }
+    } catch {
+      /* fall back to stdout */
+    }
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
 
     if (revised) {

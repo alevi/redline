@@ -35,7 +35,9 @@ export function escapeHtml(s: string): string {
 }
 
 // Latest agent verdict on a comment thread. Mirrors latestVerdict() in sidecar.ts.
-export function latestVerdict(comment: ClientComment): "revise" | "accept" | null {
+export function latestVerdict(
+  comment: ClientComment,
+): "revise" | "accept" | null {
   const t = comment.thread || [];
   for (let i = t.length - 1; i >= 0; i--) {
     const e = t[i]!;
@@ -53,8 +55,10 @@ export function isEscalated(comment: ClientComment): boolean {
   let authorIdx = -1;
   for (let i = thread.length - 1; i >= 0; i--) {
     const entry = thread[i]!;
-    if (escIdx === -1 && entry.role === "agent" && entry.escalate === true) escIdx = i;
-    if (authorIdx === -1 && entry.role === "agent" && entry.author === true) authorIdx = i;
+    if (escIdx === -1 && entry.role === "agent" && entry.escalate === true)
+      escIdx = i;
+    if (authorIdx === -1 && entry.role === "agent" && entry.author === true)
+      authorIdx = i;
     if (escIdx !== -1 && authorIdx !== -1) break;
   }
   return escIdx !== -1 && authorIdx < escIdx;
@@ -62,7 +66,9 @@ export function isEscalated(comment: ClientComment): boolean {
 
 export function nearestCell(node: Node): HTMLElement | null {
   const el = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
-  return el && (el as Element).closest ? ((el as Element).closest("td, th") as HTMLElement | null) : null;
+  return el && (el as Element).closest
+    ? ((el as Element).closest("td, th") as HTMLElement | null)
+    : null;
 }
 
 // Clamp a Range so both endpoints land inside the same cell. Returns a new
@@ -121,26 +127,45 @@ function imgToken(img: HTMLImageElement): string {
 // Text nodes contribute their value; <img> elements contribute an
 // `[image: alt]` token. Segments are in document order. captureSelection and
 // highlightText both build flat through here so their coordinates agree.
-function buildFlat(container: Element): { flat: string; segments: FlatSegment[] } {
+function buildFlat(container: Element): {
+  flat: string;
+  segments: FlatSegment[];
+} {
   const doc = container.ownerDocument || document;
-  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
-    acceptNode(n: Node) {
-      if (n.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-      return (n as Element).tagName === "IMG" ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+  const walker = doc.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode(n: Node) {
+        if (n.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+        return (n as Element).tagName === "IMG"
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_SKIP;
+      },
     },
-  });
+  );
   const segments: FlatSegment[] = [];
   let flat = "";
   let node: Node | null;
   while ((node = walker.nextNode())) {
     if (node.nodeType === Node.TEXT_NODE) {
       const v = (node as Text).nodeValue ?? "";
-      segments.push({ node: node as Text, start: flat.length, len: v.length, isImg: false });
+      segments.push({
+        node: node as Text,
+        start: flat.length,
+        len: v.length,
+        isImg: false,
+      });
       flat += v;
     } else {
       const img = node as HTMLImageElement;
       const tok = imgToken(img);
-      segments.push({ node: img, start: flat.length, len: tok.length, isImg: true });
+      segments.push({
+        node: img,
+        start: flat.length,
+        len: tok.length,
+        isImg: true,
+      });
       flat += tok;
     }
   }
@@ -159,7 +184,11 @@ function buildFlat(container: Element): { flat: string; segments: FlatSegment[] 
 // single source of truth, and highlightText re-finds the quote against the
 // same flat string later. `text` is kept only as a last-resort fallback for
 // the rare case where an endpoint can't be resolved.
-export function captureSelection(prose: Element, sel: Selection, text: string): Captured | null {
+export function captureSelection(
+  prose: Element,
+  sel: Selection,
+  text: string,
+): Captured | null {
   const range = sel.getRangeAt(0);
   const { flat, segments } = buildFlat(prose);
   if (segments.length === 0) return null;
@@ -167,7 +196,11 @@ export function captureSelection(prose: Element, sel: Selection, text: string): 
   // Map a range boundary point onto an index into `flat`. Text-node boundaries
   // are the common case; Chrome sometimes anchors a drag to an element node
   // plus a child index, which we resolve to the nearest segment edge.
-  const pointToFlat = (container: Node, offset: number, side: "start" | "end"): number => {
+  const pointToFlat = (
+    container: Node,
+    offset: number,
+    side: "start" | "end",
+  ): number => {
     for (const seg of segments) {
       if (seg.node === container) {
         if (seg.isImg) return offset > 0 ? seg.start + seg.len : seg.start;
@@ -182,13 +215,17 @@ export function captureSelection(prose: Element, sel: Selection, text: string): 
       if (ref) {
         for (const seg of segments) {
           if (ref === seg.node || ref.contains(seg.node)) return seg.start;
-          if (ref.compareDocumentPosition(seg.node) & Node.DOCUMENT_POSITION_FOLLOWING)
+          if (
+            ref.compareDocumentPosition(seg.node) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          )
             return seg.start;
         }
         return flat.length;
       }
       let end = -1;
-      for (const seg of segments) if (container.contains(seg.node)) end = segEnd(seg);
+      for (const seg of segments)
+        if (container.contains(seg.node)) end = segEnd(seg);
       return end === -1 ? flat.length : end;
     }
     const ref = offset > 0 ? kids[offset - 1]! : null;
@@ -198,14 +235,16 @@ export function captureSelection(prose: Element, sel: Selection, text: string): 
         if (
           ref === seg.node ||
           ref.contains(seg.node) ||
-          ref.compareDocumentPosition(seg.node) & Node.DOCUMENT_POSITION_PRECEDING
+          ref.compareDocumentPosition(seg.node) &
+            Node.DOCUMENT_POSITION_PRECEDING
         ) {
           end = segEnd(seg);
         }
       }
       return end === -1 ? 0 : end;
     }
-    for (const seg of segments) if (container.contains(seg.node)) return seg.start;
+    for (const seg of segments)
+      if (container.contains(seg.node)) return seg.start;
     return 0;
   };
 
@@ -324,7 +363,8 @@ export function computeNavState(
     };
   }
   const matchIdx = activeId ? open.findIndex((c) => c.id === activeId) : -1;
-  const navIdx = matchIdx >= 0 ? matchIdx : Math.min(prevNavIdx, open.length - 1);
+  const navIdx =
+    matchIdx >= 0 ? matchIdx : Math.min(prevNavIdx, open.length - 1);
   if (open.length === 1) {
     return {
       visible: true,
@@ -371,8 +411,17 @@ export function preserveScroll(
   const top = win.scrollY;
   const active = doc.activeElement as HTMLElement | null;
   const protect =
-    opts.protectFocusSelector && active && active.closest && active.closest(opts.protectFocusSelector);
-  if (!protect && active && active !== doc.body && typeof active.blur === "function") active.blur();
+    opts.protectFocusSelector &&
+    active &&
+    active.closest &&
+    active.closest(opts.protectFocusSelector);
+  if (
+    !protect &&
+    active &&
+    active !== doc.body &&
+    typeof active.blur === "function"
+  )
+    active.blur();
   fn();
   doc.documentElement.scrollTop = top;
   win.requestAnimationFrame(() => {

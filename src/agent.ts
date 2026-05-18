@@ -25,7 +25,11 @@ if (crashFile) {
   setTimeout(() => {
     if (!existsSync(crashFile)) return;
     console.log(`[agent] crash hook fired — exiting (file=${crashFile})`);
-    try { unlinkSync(crashFile); } catch { /* best effort */ }
+    try {
+      unlinkSync(crashFile);
+    } catch {
+      /* best effort */
+    }
     process.exit(99);
   }, 500);
 }
@@ -76,7 +80,7 @@ function replySystemPrompt(envelopeHint: string): string {
 const REPLY_SYSTEM_PROMPT_BODY =
   "You are an AI writing assistant responding to inline review comments on a Markdown document. " +
   "The reviewer has selected a passage and left a comment or question. Reply in the cards rail — keep it tight.\n" +
-  "- Match reply length to the reviewer's comment. A one-line comment gets a one-line reply. A typo flag gets \"Got it\" or similar.\n" +
+  '- Match reply length to the reviewer\'s comment. A one-line comment gets a one-line reply. A typo flag gets "Got it" or similar.\n' +
   "- Only propose replacement text or alternatives when the reviewer explicitly asks for them. Don't volunteer options they didn't request.\n" +
   "- If the reviewer asks a question, answer it directly. If they approve something, a short confirmation is enough.\n" +
   "- Never recap what they said back to them. No preamble. Start with the substance.\n" +
@@ -87,8 +91,8 @@ const REPLY_SYSTEM_PROMPT_BODY =
   "- requires_revision: false → the conversation answered it (clarifying question, approval, agent explanation that doesn't imply an edit)\n" +
   "\n" +
   "When requires_revision is true, the UI already shows the reason next to your reply — DO NOT restate the planned edit in your message. The message should engage with the reviewer (acknowledge, confirm, or briefly engage with their point); the reason describes the edit. Don't say the same thing twice.\n" +
-  "Bad:  message: \"Will add a line 3 to the example.\"  reason: \"Add a third line to the hard line breaks example\"  ← redundant\n" +
-  "Good: message: \"Got it.\"  reason: \"Add a third line to the hard line breaks example\"\n" +
+  'Bad:  message: "Will add a line 3 to the example."  reason: "Add a third line to the hard line breaks example"  ← redundant\n' +
+  'Good: message: "Got it."  reason: "Add a third line to the hard line breaks example"\n' +
   "When requires_revision is false, leave reason empty (or a very short note about why no edit). The reply IS the answer.\n" +
   "\n" +
   "Separately, decide whether this comment needs an AUTHOR reply from the agent that launched/wrote this document rather than you. ESCALATE is rare for now: set ESCALATE: true only when the reviewer explicitly asks for information, tools, authority, or project context you cannot access from the document and comment thread — for example an external style guide, a hidden spec, repo-wide code context, or a decision the authoring agent must make. Do NOT route ordinary requested edits, reframes, emphasis changes, priority changes, rewrites, or approvals; those are handled by requires_revision. If the comment can be satisfied by editing this document, set ESCALATE: false. When you do route to the author, briefly tell the reviewer that an author reply is needed. Author handoff does not change requires_revision — judge that on its own.\n" +
@@ -120,12 +124,19 @@ async function postReply(
   message: string,
   requires_revision: boolean,
   revision_reason: string,
-  escalate: boolean
+  escalate: boolean,
 ) {
   await fetch(`${BASE_URL}/api/comment/${commentId}/reply`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...CSRF_HEADER },
-    body: JSON.stringify({ role: "agent", name: provider.displayName, message, requires_revision, revision_reason, escalate }),
+    body: JSON.stringify({
+      role: "agent",
+      name: provider.displayName,
+      message,
+      requires_revision,
+      revision_reason,
+      escalate,
+    }),
   });
 }
 
@@ -147,7 +158,8 @@ async function handleComment(commentId: string) {
 
     // Only respond when the last message was from the human
     const thread: any[] = comment.thread ?? [];
-    if (thread.length === 0 || thread[thread.length - 1].role !== "human") return;
+    if (thread.length === 0 || thread[thread.length - 1].role !== "human")
+      return;
 
     await postThinking(commentId);
 
@@ -155,7 +167,10 @@ async function handleComment(commentId: string) {
     const sidecar = await loadSidecar(path.resolve(filePath));
     const env = newEnvelope();
     const threadText = thread
-      .map((e: any) => `${e.role === "human" ? "Reviewer" : "Agent"}: ${e.message}`)
+      .map(
+        (e: any) =>
+          `${e.role === "human" ? "Reviewer" : "Agent"}: ${e.message}`,
+      )
       .join("\n");
 
     // Wrap every user-controlled string (document, quote, thread, optional
@@ -172,7 +187,9 @@ async function handleComment(commentId: string) {
     const lastMessage = thread[thread.length - 1].message as string;
     const tier = pickReplyModel(lastMessage);
     const model = provider.modelForTier(tier);
-    console.log(`[agent] replying to ${commentId} with ${provider.id}/${model}`);
+    console.log(
+      `[agent] replying to ${commentId} with ${provider.id}/${model}`,
+    );
 
     const reply = await provider.runReply({
       systemPrompt: replySystemPrompt(env.systemPromptHint()),
@@ -183,8 +200,16 @@ async function handleComment(commentId: string) {
 
     if (reply.trim()) {
       const parsed = parseReply(reply);
-      console.log(`[agent] verdict for ${commentId}: requires_revision=${parsed.requires_revision} escalate=${parsed.escalate}`);
-      await postReply(commentId, parsed.message, parsed.requires_revision, parsed.reason, parsed.escalate);
+      console.log(
+        `[agent] verdict for ${commentId}: requires_revision=${parsed.requires_revision} escalate=${parsed.escalate}`,
+      );
+      await postReply(
+        commentId,
+        parsed.message,
+        parsed.requires_revision,
+        parsed.reason,
+        parsed.escalate,
+      );
     }
   } catch (err) {
     await logReplyFailure(commentId, err);
@@ -192,7 +217,9 @@ async function handleComment(commentId: string) {
   } finally {
     inProgress.delete(commentId);
     if (inProgress.size === 0) {
-      postAgentReplied().catch((e) => console.error("[agent] postAgentReplied failed:", e));
+      postAgentReplied().catch((e) =>
+        console.error("[agent] postAgentReplied failed:", e),
+      );
     }
   }
 }
@@ -210,18 +237,20 @@ async function handleAccepted() {
         headers: { "Content-Type": "application/json", ...CSRF_HEADER },
         body: JSON.stringify({ message: msg }),
       });
-    } catch { /* server may be down — non-fatal */ }
+    } catch {
+      /* server may be down — non-fatal */
+    }
   }
 }
 
 async function handleEvent(type: string, payload: any) {
   if (type === "comment-added" || type === "comment-reply") {
     handleComment(payload.commentId).catch((e) =>
-      console.error("[agent] error handling comment:", e)
+      console.error("[agent] error handling comment:", e),
     );
   } else if (type === "accepted") {
     handleAccepted().catch((e) =>
-      console.error("[agent] error handling accepted:", e)
+      console.error("[agent] error handling accepted:", e),
     );
   } else if (type === "finished") {
     console.log("[agent] review finished — no revision needed");
@@ -260,7 +289,7 @@ async function connect() {
             try {
               const payload = JSON.parse(data);
               handleEvent(eventType, payload).catch((e) =>
-                console.error("[agent] unhandled event error:", e)
+                console.error("[agent] unhandled event error:", e),
               );
             } catch {}
             eventType = "";

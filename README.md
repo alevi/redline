@@ -57,7 +57,7 @@ Two long-lived processes:
 - **Server** ([src/server.ts](src/server.ts)) — renders Markdown, serves the review UI, accepts comment / reply / resolve POSTs, broadcasts SSE events.
 - **Agent** ([src/agent.ts](src/agent.ts)) — child process listening to the SSE stream. Calls the selected local provider (`claude` or `codex`) to compose replies and post them back. When you accept a round, the agent runs the document revision pass and writes the result to disk.
 
-Review state lives in a sidecar JSON file at `.review/<filename>.json` next to the doc. History snapshots of every revision land in `.review/history/<filename>.<iso>.md` *before* the revision is written, so you can roll back from disk if a revision goes sideways. Both should be gitignored unless you want them in the repo.
+Review state lives in a sidecar JSON file at `.review/<filename>.json` next to the doc. History snapshots of every revision land in `.review/history/<filename>.<iso>.md` _before_ the revision is written, so you can roll back from disk if a revision goes sideways. Both should be gitignored unless you want them in the repo.
 
 After each revision, the new round opens with the document rendered inline as a diff against the previous round — insert and delete bands at the block level, word-level marks within modified paragraphs — so you can read the agent's changes in place. Use the **Show changes** / **Hide changes** toggle in the header to flip back to the clean view at any time. From there you either open another round of comments or click **Looks good** to finish.
 
