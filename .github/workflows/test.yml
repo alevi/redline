@@ -21,4 +21,4 @@ jobs:
           printf '#!/bin/sh\nexit 0\n' > "$HOME/bin/claude"
           chmod +x "$HOME/bin/claude"
           echo "$HOME/bin" >> "$GITHUB_PATH"
-      - run: bun test
+      - run: bun run check
