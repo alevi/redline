@@ -2,6 +2,8 @@
 
 This file orients an AI agent contributing to the Redline codebase. It captures the architecture, the load-bearing implementation decisions, and the non-obvious gotchas that have bitten previous changes. For product framing (what Redline is, who it's for, how to use it), see [README.md](README.md).
 
+When changing public-facing copy, UI text, README prose, or docs, run `scripts/scan-copy-style.sh` and review the advisory findings before finalizing.
+
 ## What you're working in
 
 Redline is a single-player, local Markdown review tool. The user points it at a `.md` file; it opens a browser-based reader; the user leaves inline comments; an agent process replies in real time; the user resolves and accepts; the document is revised. The two pieces are:
