@@ -2,7 +2,7 @@
 
 This file orients an AI agent contributing to the Redline codebase. It captures the architecture, the load-bearing implementation decisions, and the non-obvious gotchas that have bitten previous changes. For product framing (what Redline is, who it's for, how to use it), see [README.md](README.md).
 
-When changing public-facing copy, UI text, README prose, or docs, run `scripts/scan-copy-style.sh` and review the advisory findings before finalizing.
+When changing public-facing copy, UI text, README prose, or docs, run `scripts/scan-copy-style.sh <changed-copy-paths>` and review the advisory findings before finalizing. Scope it to the files or directories that contain the product copy you touched; run it with no paths only when intentionally auditing the project's main copy surfaces.
 
 ## What you're working in
 
