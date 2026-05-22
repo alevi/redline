@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   escapeHtml,
@@ -30,7 +37,9 @@ function setBody(html: string) {
 
 describe("escapeHtml", () => {
   test("escapes the four html-significant chars", () => {
-    expect(escapeHtml("a & b < c > d \" e")).toBe("a &amp; b &lt; c &gt; d &quot; e");
+    expect(escapeHtml('a & b < c > d " e')).toBe(
+      "a &amp; b &lt; c &gt; d &quot; e",
+    );
   });
   test("idempotent on benign input", () => {
     expect(escapeHtml("plain text 123")).toBe("plain text 123");
@@ -42,8 +51,12 @@ describe("latestVerdict", () => {
     return { id: "c1", quote: "x", resolved: false, thread };
   }
   test("returns null when no agent reply has a verdict", () => {
-    expect(latestVerdict(makeComment([{ role: "human", message: "hi" }]))).toBeNull();
-    expect(latestVerdict(makeComment([{ role: "agent", message: "no verdict" }]))).toBeNull();
+    expect(
+      latestVerdict(makeComment([{ role: "human", message: "hi" }])),
+    ).toBeNull();
+    expect(
+      latestVerdict(makeComment([{ role: "agent", message: "no verdict" }])),
+    ).toBeNull();
   });
   test("returns latest agent verdict when present", () => {
     const c = makeComment([
@@ -64,7 +77,9 @@ describe("latestVerdict", () => {
 
 describe("nearestCell", () => {
   test("finds the enclosing td from a text node", () => {
-    setBody("<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>");
+    setBody(
+      "<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>",
+    );
     const td1 = document.getElementById("c1")!;
     const text = td1.firstChild!;
     expect(nearestCell(text)).toBe(td1);
@@ -78,7 +93,9 @@ describe("nearestCell", () => {
 
 describe("clampRangeToCell", () => {
   test("clamps to the start cell when range crosses cell boundary", () => {
-    setBody("<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>");
+    setBody(
+      "<table><tr><td id='c1'>hello</td><td id='c2'>world</td></tr></table>",
+    );
     const c1 = document.getElementById("c1")!;
     const c2 = document.getElementById("c2")!;
     const r = document.createRange();
@@ -119,26 +136,250 @@ describe("captureSelection", () => {
     sel.removeAllRanges();
     sel.addRange(r);
 
-    const captured = captureSelection(prose, sel as unknown as Selection, "consectetur");
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "consectetur",
+    );
     expect(captured).not.toBeNull();
     expect(captured!.quote).toBe("consectetur");
     expect(captured!.context_before.endsWith("amet, ")).toBe(true);
     expect(captured!.context_after.startsWith(" adipiscing")).toBe(true);
   });
 
-  test("returns null when selected text doesn't appear in flat text (e.g. crossed image alt)", () => {
+  test("recovers when selection start has whitespace that the caller trimmed off", () => {
+    setBody(
+      "<div id='prose'><p>" +
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit." +
+        "</p></div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const text = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    const full = text.nodeValue!;
+    // Simulate a selection that includes the leading space before "consectetur"
+    // — caller will .trim() the text but range.startOffset still points at the space.
+    const wsStart = full.indexOf(" consectetur");
+    r.setStart(text, wsStart);
+    r.setEnd(text, wsStart + " consectetur".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "consectetur",
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("consectetur");
+    expect(captured!.context_before.endsWith("amet, ")).toBe(true);
+  });
+
+  test("recovers when selection includes trailing whitespace the caller trimmed off", () => {
+    setBody(
+      "<div id='prose'><p>" +
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit." +
+        "</p></div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const text = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    const full = text.nodeValue!;
+    const start = full.indexOf("consectetur");
+    // Selection extends past the word into the trailing space — caller .trim()s it off.
+    r.setStart(text, start);
+    r.setEnd(text, start + "consectetur ".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "consectetur",
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("consectetur");
+    expect(captured!.context_after.startsWith(" adipiscing")).toBe(true);
+  });
+
+  test("recovers when selection crosses a block boundary (sel.toString inserts \\n\\n, flat does not)", () => {
+    setBody(
+      "<div id='prose'>" +
+        "<p>First paragraph ends here.</p>" +
+        "<p>Second paragraph starts here.</p>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const ps = prose.querySelectorAll("p");
+    const r = document.createRange();
+    const first = ps[0].firstChild!;
+    const second = ps[1].firstChild!;
+    r.setStart(first, first.nodeValue!.indexOf("ends here."));
+    r.setEnd(second, "Second paragraph".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    // Real browsers' sel.toString() inserts "\n\n" between blocks, so the
+    // caller passes "ends here.\n\nSecond paragraph". flat is the concatenated
+    // text "ends here.Second paragraph", so captureSelection must normalize
+    // away the block-boundary newlines before matching.
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "ends here.\n\nSecond paragraph",
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("ends here.Second paragraph");
+  });
+
+  test("recovers when selection crosses a heading into a paragraph", () => {
+    setBody(
+      "<div id='prose'>" +
+        "<h3>A subsection (H3)</h3>" +
+        "<p>Specs typically nest. This is an H3 heading.</p>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const h3 = prose.querySelector("h3")!.firstChild!;
+    const p = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    r.setStart(h3, 0);
+    r.setEnd(p, "Specs typically nest.".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "A subsection (H3)\n\nSpecs typically nest.",
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("A subsection (H3)Specs typically nest.");
+  });
+
+  test("anchors to the range, not the text argument, when the two disagree", () => {
+    setBody(
+      "<div id='prose'><p>" +
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." +
+        "</p></div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const text = prose.querySelector("p")!.firstChild!;
+    const r = document.createRange();
+    r.setStart(text, 0);
+    r.setEnd(text, 5);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    // The range is the source of truth — even a bogus text arg can't shift it.
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      "magna aliqua",
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote).toBe("Lorem");
+  });
+
+  test("anchors a selection that crosses a block boundary with real inter-tag whitespace", () => {
+    // marked emits "\n" text nodes between block tags; the walker includes
+    // them in flat. A cross-block selection must still anchor.
+    setBody(
+      "<div id='prose'>" +
+        "<p>First paragraph ends here.</p>\n" +
+        "<h2>A heading</h2>\n" +
+        "<p>Second paragraph starts here.</p>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const ps = prose.querySelectorAll("p");
+    const r = document.createRange();
+    const first = ps[0]!.firstChild!;
+    const second = ps[1]!.firstChild!;
+    r.setStart(first, first.nodeValue!.indexOf("ends here."));
+    r.setEnd(second, "Second paragraph".length);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote.startsWith("ends here.")).toBe(true);
+    expect(captured!.quote.endsWith("Second paragraph")).toBe(true);
+  });
+
+  test("clamps a small overshoot past the end of a block", () => {
+    // The user selects a list item and drags a hair into the next heading.
+    setBody(
+      "<div id='prose'>" +
+        "<ul>\n<li>First item</li>\n<li>The last item</li>\n</ul>\n" +
+        "<h2>Next section</h2>" +
+        "</div>",
+    );
+    const prose = document.getElementById("prose")!;
+    const lastLi = prose.querySelectorAll("li")[1]!.firstChild!;
+    const heading = prose.querySelector("h2")!.firstChild!;
+    const r = document.createRange();
+    r.setStart(lastLi, 0);
+    r.setEnd(heading, 3); // dragged 3 chars into "Next section"
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    // Old behavior: rejected with "crosses sections". New behavior: anchors.
+    const captured = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.quote.startsWith("The last item")).toBe(true);
+  });
+
+  test("anchors a selection that spans an image, embedding an [image: alt] token", () => {
     setBody("<div id='prose'><p>before <img alt='diagram'> after</p></div>");
     const prose = document.getElementById("prose")!;
     const p = prose.querySelector("p")!;
     const r = document.createRange();
     r.setStart(p.firstChild!, 0);
-    r.setEnd(p.lastChild!, 5);
+    r.setEnd(p.lastChild!, 6);
     const sel = window.getSelection()!;
     sel.removeAllRanges();
     sel.addRange(r);
-    // simulate sel.toString() returning text with the alt embedded — won't match flat
-    const got = captureSelection(prose, sel as unknown as Selection, "before diagram afte");
-    expect(got).toBeNull();
+    const got = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
+    expect(got).not.toBeNull();
+    expect(got!.quote).toBe("before [image: diagram] after");
+  });
+
+  test("captures an image-only selection as an [image: alt] quote", () => {
+    setBody("<div id='prose'><p>before <img alt='diagram'> after</p></div>");
+    const prose = document.getElementById("prose")!;
+    const img = prose.querySelector("img")!;
+    const r = document.createRange();
+    r.selectNode(img);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+    const got = captureSelection(
+      prose,
+      sel as unknown as Selection,
+      sel.toString(),
+    );
+    expect(got).not.toBeNull();
+    expect(got!.quote).toBe("[image: diagram]");
   });
 });
 
@@ -180,13 +421,31 @@ describe("highlightText", () => {
     expect(mark!.classList.contains("resolved")).toBe(true);
   });
   test("image quote wraps the matching <img> by alt", () => {
-    setBody("<div><p>before <img alt='hero'> middle <img alt='other'></p></div>");
+    setBody(
+      "<div><p>before <img alt='hero'> middle <img alt='other'></p></div>",
+    );
     const root = document.querySelector("div")!;
     const marks = highlightText(root, "[image: hero]", "c1", false, "");
     expect(marks.length).toBe(1);
     const mark = marks[0]!;
     expect(mark.classList.contains("rl-img")).toBe(true);
     expect(mark.querySelector("img")?.getAttribute("alt")).toBe("hero");
+  });
+  test("wraps a quote that mixes text and an image across multiple marks", () => {
+    setBody("<div><p>see the <img alt='diagram'> below for details</p></div>");
+    const root = document.querySelector("div")!;
+    const marks = highlightText(
+      root,
+      "the [image: diagram] below",
+      "c1",
+      false,
+      "",
+    );
+    expect(marks.length).toBe(3);
+    const imgMark = marks.find((m) => m.classList.contains("rl-img"))!;
+    expect(imgMark).toBeTruthy();
+    expect(imgMark.querySelector("img")?.getAttribute("alt")).toBe("diagram");
+    expect(marks.filter((m) => !m.classList.contains("rl-img")).length).toBe(2);
   });
   test("returns no marks when quote isn't found", () => {
     setBody("<div><p>hello</p></div>");

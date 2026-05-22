@@ -1,5 +1,11 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "fs";
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+} from "fs";
 import path from "path";
 import os from "os";
 import {
@@ -61,8 +67,17 @@ describe("saveSidecar", () => {
               context_before: "A small ",
               context_after: " (ceremonial)",
               thread: [
-                { role: "human", message: "swap this", at: "2026-04-29T10:05:00Z" },
-                { role: "agent", name: "Claude", message: "ok", at: "2026-04-29T10:06:00Z" },
+                {
+                  role: "human",
+                  message: "swap this",
+                  at: "2026-04-29T10:05:00Z",
+                },
+                {
+                  role: "agent",
+                  name: "Claude",
+                  message: "ok",
+                  at: "2026-04-29T10:06:00Z",
+                },
               ],
               resolved: true,
             },
@@ -81,8 +96,22 @@ describe("activeRound", () => {
     const s: Sidecar = {
       file: "doc.md",
       rounds: [
-        { round: 1, started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: "x", comments: [] },
-        { round: 2, started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: null, comments: [] },
+        {
+          round: 1,
+          started_at: "",
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: "x",
+          comments: [],
+        },
+        {
+          round: 2,
+          started_at: "",
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: null,
+          comments: [],
+        },
       ],
     };
     expect(activeRound(s)?.round).toBe(2);
@@ -92,7 +121,14 @@ describe("activeRound", () => {
     const s: Sidecar = {
       file: "doc.md",
       rounds: [
-        { round: 1, started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: "x", comments: [] },
+        {
+          round: 1,
+          started_at: "",
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: "x",
+          comments: [],
+        },
       ],
     };
     expect(activeRound(s)).toBeNull();
@@ -104,7 +140,14 @@ describe("getOrCreateActiveRound", () => {
     const s: Sidecar = {
       file: "doc.md",
       rounds: [
-        { round: 1, started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: null, comments: [] },
+        {
+          round: 1,
+          started_at: "",
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: null,
+          comments: [],
+        },
       ],
     };
     const r = getOrCreateActiveRound(s);
@@ -116,8 +159,22 @@ describe("getOrCreateActiveRound", () => {
     const s: Sidecar = {
       file: "doc.md",
       rounds: [
-        { round: 1, started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: "x", comments: [] },
-        { round: 2, started_at: "", submitted_at: null, agent_replied_at: null, resolved_at: "x", comments: [] },
+        {
+          round: 1,
+          started_at: "",
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: "x",
+          comments: [],
+        },
+        {
+          round: 2,
+          started_at: "",
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: "x",
+          comments: [],
+        },
       ],
     };
     const r = getOrCreateActiveRound(s);
@@ -140,13 +197,19 @@ describe("withSidecar — concurrency", () => {
     // process calls; this is the regression guard.
     const promises = [];
     for (let i = 0; i < 50; i++) {
-      promises.push(withSidecar(docPath, (s) => {
-        const r = getOrCreateActiveRound(s);
-        r.comments.push({
-          id: `c${i}`, quote: "x", context_before: "", context_after: "",
-          thread: [], resolved: false,
-        });
-      }));
+      promises.push(
+        withSidecar(docPath, (s) => {
+          const r = getOrCreateActiveRound(s);
+          r.comments.push({
+            id: `c${i}`,
+            quote: "x",
+            context_before: "",
+            context_after: "",
+            thread: [],
+            resolved: false,
+          });
+        }),
+      );
     }
     await Promise.all(promises);
     const final = await loadSidecar(docPath);
@@ -158,13 +221,27 @@ describe("withSidecar — concurrency", () => {
     // sidecar concurrently. Without a file lock, ~half the writes get
     // dropped because each process's load → mutate → save cycle reads
     // a stale view of the other's last save.
-    const fixture = path.resolve(import.meta.dir, "..", "tests", "fixtures", "sidecar-writer.ts");
-    const a = Bun.spawn([process.execPath, "run", fixture, docPath, "A", "25"], {
-      stdout: "pipe", stderr: "pipe",
-    });
-    const b = Bun.spawn([process.execPath, "run", fixture, docPath, "B", "25"], {
-      stdout: "pipe", stderr: "pipe",
-    });
+    const fixture = path.resolve(
+      import.meta.dir,
+      "..",
+      "tests",
+      "fixtures",
+      "sidecar-writer.ts",
+    );
+    const a = Bun.spawn(
+      [process.execPath, "run", fixture, docPath, "A", "25"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const b = Bun.spawn(
+      [process.execPath, "run", fixture, docPath, "B", "25"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [aCode, bCode] = await Promise.all([a.exited, b.exited]);
     expect(aCode).toBe(0);
     expect(bCode).toBe(0);

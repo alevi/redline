@@ -1,0 +1,87 @@
+name: Bug report
+description: Something that should work doesn't. Include enough to reproduce.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        Before opening: please confirm you've checked existing issues (open and closed) to avoid duplicates.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear, short description of what went wrong.
+      placeholder: |
+        e.g. "Highlighting across a heading boundary fails with 'selections that cross images or sections can't be anchored.'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What did you think would happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Numbered steps. The smallest doc / shortest sequence that triggers it.
+      placeholder: |
+        1. Save a markdown file with a heading immediately followed by a paragraph.
+        2. Run `bunx @levistudio/redline ./file.md`.
+        3. Select text spanning the heading and the first line of the paragraph.
+        4. The selection is rejected with an error toast.
+    validations:
+      required: true
+
+  - type: input
+    id: redline-version
+    attributes:
+      label: Redline version
+      description: Output of `bunx @levistudio/redline --version`, or the npm version you installed.
+      placeholder: e.g. 0.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: bun-version
+    attributes:
+      label: Bun version
+      description: Output of `bun --version`.
+      placeholder: e.g. 1.3.13
+    validations:
+      required: true
+
+  - type: input
+    id: agent-version
+    attributes:
+      label: Agent CLI version
+      description: Output of `claude --version`, `codex --version`, or whichever provider CLI you used.
+      placeholder: e.g. Claude Code 2.5.0 or Codex 0.42.0
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: macOS / Linux / Windows + version if relevant.
+      placeholder: e.g. macOS 26.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / screenshots
+      description: |
+        Server-side logs from the terminal Redline is running in. Any error toast text. A screenshot of the affected state if visual.
+      render: text
+    validations:
+      required: false

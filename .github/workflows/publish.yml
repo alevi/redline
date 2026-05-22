@@ -1,0 +1,70 @@
+name: publish
+
+# Publishes @levistudio/redline to npm whenever a `v*` tag is pushed.
+#
+# Auth via npm Trusted Publishers (OIDC). No NPM_TOKEN secret is stored;
+# the workflow exchanges its short-lived GitHub OIDC token for an npm
+# publish credential at runtime.
+#
+# One-time setup on npmjs.com: the @levistudio/redline package must have
+# a trusted publisher configured pointing at:
+#   repository:  alevi/redline
+#   workflow:    publish.yml
+#   environment: (empty)
+# If that setup hasn't been done, the publish step will fail with a clear
+# "no trusted publisher configured" error — fix it in the npm UI rather
+# than falling back to a long-lived token.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for OIDC to mint a token npm can exchange.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 bundles npm 11.5+, which has OIDC trusted-publisher support.
+          # Node 22's npm 10.x does not, and upgrading npm in place
+          # (`npm i -g npm@latest`) hits a self-overwrite bug — npm removes its
+          # own files mid-install and dies with MODULE_NOT_FOUND.
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: bun install --frozen-lockfile
+
+      # Mirrors the no-op claude shim from test.yml so the cli's preflight
+      # check passes on a runner that doesn't have Claude Code installed.
+      - run: |
+          mkdir -p "$HOME/bin"
+          printf '#!/bin/sh\nexit 0\n' > "$HOME/bin/claude"
+          chmod +x "$HOME/bin/claude"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - run: bun test
+
+      # Sanity-check: the tag's version must match package.json. Stops a
+      # bad tag from publishing a different version than the one tagged.
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)."
+            echo "Aborting publish."
+            exit 1
+          fi
+          echo "Tag and package.json both at $PKG_VERSION."
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance

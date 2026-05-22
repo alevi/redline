@@ -15,13 +15,37 @@ marked.setOptions({ gfm: true });
 // render.ts attaches below for the syntax-tag CSS badge.
 const SANITIZE_OPTS: sanitizeHtml.IOptions = {
   allowedTags: [
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "p", "blockquote", "hr", "br",
-    "ul", "ol", "li",
-    "a", "strong", "em", "del", "ins", "code", "pre", "sup", "sub",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "blockquote",
+    "hr",
+    "br",
+    "ul",
+    "ol",
+    "li",
+    "a",
+    "strong",
+    "em",
+    "del",
+    "ins",
+    "code",
+    "pre",
+    "sup",
+    "sub",
     "img",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "div", "span",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "div",
+    "span",
   ],
   allowedAttributes: {
     a: ["href", "title", "name"],
@@ -53,8 +77,17 @@ export function renderMarkdown(content: string): string {
   // on the <pre> here so it survives the sanitize pass.
   return clean.replace(
     /<pre><code class="language-([^"]+)">/g,
-    '<pre data-language="$1"><code class="language-$1">'
+    '<pre data-language="$1"><code class="language-$1">',
   );
+}
+
+// Render a comment-thread message through the same sanitized markdown
+// pipeline as the document body. Agents reply in markdown (bold, lists,
+// inline code, occasional fenced blocks) and the chat-style rendering in
+// the sidebar previously displayed the raw `**bold**` and `1.` syntax,
+// which looked like the agent had failed to render its own output.
+export function renderMessageMarkdown(content: string): string {
+  return renderMarkdown(content);
 }
 
 /**
@@ -70,7 +103,7 @@ export function renderMarkdown(content: string): string {
 export function locateQuote(
   flat: string,
   quote: string,
-  contextBefore: string
+  contextBefore: string,
 ): number {
   if (!quote) return -1;
 

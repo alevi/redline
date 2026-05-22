@@ -7,6 +7,7 @@
 // text into the UI. The delimiter form needs no escaping:
 //
 //   REQUIRES_REVISION: <true|false>
+//   ESCALATE: <true|false>   (optional — absent means false)
 //   REASON: <one short sentence, or empty>
 //   ---MESSAGE---
 //   <free-form prose, may contain anything>
@@ -25,6 +26,10 @@ export interface ParsedReply {
   message: string;
   requires_revision: boolean;
   reason: string;
+  // True when the agent flagged the comment for the launching ("outer") agent
+  // — something it couldn't act on from inside the review. Optional in the
+  // envelope; absent means false.
+  escalate: boolean;
 }
 
 function tryDelimiterEnvelope(s: string): ParsedReply | null {
@@ -37,11 +42,13 @@ function tryDelimiterEnvelope(s: string): ParsedReply | null {
 
   const reqMatch = header.match(/REQUIRES_REVISION\s*:\s*(true|false)\b/i);
   const reasonMatch = header.match(/REASON\s*:\s*(.*?)\s*(?:\n|$)/i);
+  const escMatch = header.match(/ESCALATE\s*:\s*(true|false)\b/i);
 
   return {
     message,
     requires_revision: reqMatch ? reqMatch[1].toLowerCase() === "true" : true,
     reason: reasonMatch ? reasonMatch[1].trim() : "",
+    escalate: escMatch ? escMatch[1].toLowerCase() === "true" : false,
   };
 }
 
@@ -56,13 +63,19 @@ function findFirstObject(s: string): [number, number] | null {
   let escape = false;
   for (let i = start; i < s.length; i++) {
     const ch = s[i];
-    if (escape) { escape = false; continue; }
+    if (escape) {
+      escape = false;
+      continue;
+    }
     if (inStr) {
       if (ch === "\\") escape = true;
       else if (ch === '"') inStr = false;
       continue;
     }
-    if (ch === '"') { inStr = true; continue; }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
     if (ch === "{") depth++;
     else if (ch === "}") {
       depth--;
@@ -93,9 +106,12 @@ export function parseReply(raw: string): ParsedReply {
           message: obj.message.trim(),
           requires_revision: obj.requires_revision !== false, // default true if missing/non-bool
           reason: typeof obj.reason === "string" ? obj.reason.trim() : "",
+          escalate: obj.escalate === true,
         };
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
     return null;
   };
 
@@ -111,5 +127,10 @@ export function parseReply(raw: string): ParsedReply {
     if (obj) return obj;
   }
 
-  return { message: trimmed, requires_revision: true, reason: "" };
+  return {
+    message: trimmed,
+    requires_revision: true,
+    reason: "",
+    escalate: false,
+  };
 }

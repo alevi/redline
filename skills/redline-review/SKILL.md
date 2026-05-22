@@ -9,9 +9,9 @@ When you've produced a markdown document that the human needs to read, comment o
 
 ## How to invoke it
 
-The redline binary lives at `__REDLINE_BIN__` (substituted at install time — if you see the literal placeholder string, the skill was installed incorrectly; tell the human to re-run `scripts/install-skill.sh` from the redline repo). Always invoke it by this absolute path. Do not call bare `redline` and do not try to "fix" PATH issues by running `bun link` or guessing where the repo lives.
+The redline launcher lives at `__REDLINE_BIN__` (substituted at install time — if you see the literal placeholder string, the skill was installed incorrectly; tell the human to re-run `redline install-skill`). Always invoke it by this absolute path. Do not call bare `redline` and do not try to "fix" PATH issues by running `bun link` or guessing where the repo lives.
 
-**Always background the launcher and poll.** Never run `__REDLINE_BIN__` as a foreground/blocking Bash call: the Bash tool buffers stdout until the process exits, so you would never see the URL the human needs to click and your "I'll wait while you review" message would be a lie. Use this pattern:
+**Always detach the launcher with Node and poll.** Never run `__REDLINE_BIN__` as a foreground/blocking shell call: agent shell tools often buffer stdout until the process exits, so you would never see the URL the human needs to click and your "I'll wait while you review" message would be a lie. Also do not use `nohup` or a plain trailing `&`: in Codex-style short shell calls, the runner can clean up the shell's process group and take the Redline server with it. Use this pattern:
 
 ```bash
 FILE=/abs/path/to/file.md
@@ -20,8 +20,20 @@ STARTUP="$DIR/.review/$BASE.startup.json"
 RESULT="$DIR/.review/$BASE.result"
 LOG=/tmp/redline-$BASE.log
 
-# Kick off the review in the background.
-__REDLINE_BIN__ "$FILE" > "$LOG" 2>&1 &
+# Kick off the review in a detached process group and open it in the user's real browser.
+node - "__REDLINE_BIN__" "$FILE" "$LOG" <<'JS'
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const [launcher, file, logPath] = process.argv.slice(2);
+const out = fs.openSync(logPath, "a");
+const child = spawn(launcher, [file, "--open"], {
+  detached: true,
+  stdio: ["ignore", out, out],
+  env: process.env,
+});
+child.unref();
+console.log(child.pid);
+JS
 
 # Step 1: wait for startup, read the URL.
 for i in $(seq 1 60); do [ -f "$STARTUP" ] && break; sleep 0.5; done
@@ -34,22 +46,22 @@ PID=$(grep -o '"pid": *[0-9]*' "$STARTUP" | grep -o '[0-9]*')
 echo "REDLINE_URL: $URL"
 echo "REDLINE_PID: $PID"
 
-# Step 2: surface the URL to the human (you do this after the Bash call returns
-# — see the next section), then wait for the redline process to exit. Watching
-# the PID (essentially free) instead of polling for the result file means you
-# wake up within ~0.5s of the human clicking Done, not up to 30s later.
-while kill -0 "$PID" 2>/dev/null; do sleep 0.5; done
-cat "$RESULT"
+# Step 2: tell the human the browser opened (you do this after the first shell call returns
+# — see the next section), then wait until either author input is needed or the
+# review exits. If author input is needed, answer it with author-reply and run
+# author-wait again.
+__REDLINE_BIN__ author-wait "$FILE"
 ```
 
 The startup file at `.review/<basename>.startup.json` is written synchronously when the server begins listening; it contains `url`, `port`, `file`, `result_file`, `started_at`, `pid`. The result file at `.review/<basename>.result` is written when the session ends (approved, abandoned, or error).
 
-In practice, run the script above as **two separate Bash calls** so you can tell the human the URL between steps:
-1. First call: everything through `echo "REDLINE_PID: $PID"`. Returns in ~1s with the URL and PID on stdout.
-2. Surface the URL to the human in your reply text (see "Surfacing the URL" below).
-3. Second call: just the `while kill -0` loop waiting for the PID, then `cat "$RESULT"`. Long timeout (`timeout: 1800000` = 30 min, or longer).
+In practice, run the script above as **two separate shell calls** so you can tell the human the URL between steps:
 
-If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run the install script.
+1. First call: everything through `echo "REDLINE_PID: $PID"`. Returns in ~1s with the URL and PID on stdout.
+2. Tell the human Redline opened in their browser, and include the URL only as a fallback (see "Surfacing the URL" below).
+3. Second call: `__REDLINE_BIN__ author-wait "$FILE"`. It returns `{ "kind": "author-needed", ... }`, `{ "kind": "result", ... }`, or `{ "kind": "session-ended", ... }`. Long timeout (`timeout: 1800000` = 30 min, or longer). If it returns author-needed JSON, answer with `author-reply`, then run `author-wait` again. If it returns session-ended, inspect `$LOG` and relaunch only after explaining the failed session to the human.
+
+If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run `redline install-skill`.
 
 ### Pass context with `--context`
 
@@ -61,18 +73,21 @@ The context string is shown in the reader's header so the human knows what they'
 
 ### Surfacing the URL
 
-After the first Bash call returns with `REDLINE_URL: http://localhost:NNNN`, surface that URL in your reply text. The human has no other signal that something is waiting for them. One short sentence:
+The `--open` flag launches the review in the user's real browser via the OS opener (`open` on macOS, `xdg-open` on Linux, `start` on Windows). After the first shell call returns with `REDLINE_URL: http://localhost:NNNN`, tell the human the browser opened and include the URL only as a fallback. Do **not** make the URL the primary action; in some agent UIs, clicking localhost opens an embedded preview panel instead of the user's browser.
 
-> "Opening this in Redline for review at http://localhost:NNNN — cmd-click to open. I'll continue once you click Done."
-
-(There is an `--open` flag that auto-launches the browser, but prefer leaving it off — the human may not be at the keyboard the moment the session starts, and a stolen-focus browser tab is worse than a URL they click when ready.)
+> "I opened this in Redline in your browser. Fallback URL: http://localhost:NNNN. I'll continue once you click Done."
 
 ## How to interpret the result
 
-When the polling loop's Bash call returns, the `cat "$RESULT"` at the end of it has printed the result JSON to stdout.
+When the polling loop's shell call returns, the `cat "$RESULT"` at the end of it has printed the result JSON to stdout.
 
 ```json
-{ "status": "approved", "file": "/abs/path/to/file.md", "rounds": 2, "comments": 5 }
+{
+  "status": "approved",
+  "file": "/abs/path/to/file.md",
+  "rounds": 2,
+  "comments": 5
+}
 ```
 
 Statuses:
@@ -87,15 +102,15 @@ The full loop, when you are the outer agent producing the doc:
 
 1. Write the markdown file to disk at an absolute path.
 2. Tell the human in one sentence what's about to happen.
-3. First Bash call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>"` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
-4. Surface the URL to the human in your reply text so they can cmd-click to open.
-5. Second Bash call: wait on the redline PID (`while kill -0 "$PID" 2>/dev/null; do sleep 0.5; done`) then `cat "$RESULT"`, with a long timeout (30+ min). While the session runs, you are idle — do not start unrelated work, do not run other tools.
+3. First shell call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>" --open` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
+4. Tell the human Redline opened in their browser and include the URL only as a fallback.
+5. Second shell call: run `__REDLINE_BIN__ author-wait "$FILE"`. If it returns `kind: "author-needed"`, answer with `__REDLINE_BIN__ author-reply "$FILE" <comment-id> --message "..."`, then run `author-wait` again. If it returns `kind: "session-ended"`, inspect the log path from step 1 and tell the human the session died instead of silently relaunching. Do not start unrelated work while the session runs.
 6. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
 7. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
 
-You do not need to reply to comments — Redline spawns its own agent subprocess for that. You do not need to invoke `redline resolve` separately — revisions happen inside the session when the human accepts.
+You usually do not need to reply to comments — Redline spawns its own inline agent subprocess for that. The exception is an author-needed handoff: if `author-wait` returns `kind: "author-needed"`, you are the authoring agent and should answer only when you have the project context, tools, or authority the inline agent lacked. You do not need to invoke `redline resolve` separately — revisions happen inside the session when the human accepts.
 
-## When *not* to use this
+## When _not_ to use this
 
 - The doc doesn't need human sign-off — just commit it.
 - The human is not at the keyboard (e.g. an autonomous run). Redline requires a live browser session.

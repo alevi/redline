@@ -3,8 +3,9 @@ import {
   highlightText as _highlightText,
   preserveScroll as _preserveScroll,
   latestVerdict,
+  isEscalated,
 } from "./lib";
-import { state, apiFetch, showError } from "./state";
+import { state, apiFetch, showError, reportMutationFailure } from "./state";
 import {
   buildCommentCard,
   captureTypingState,
@@ -31,7 +32,13 @@ export function applyHighlights(): void {
     });
     prose.normalize();
     state.comments.forEach((comment) => {
-      highlightText(prose, comment.quote, comment.id, comment.resolved, comment.context_before || "");
+      highlightText(
+        prose,
+        comment.quote,
+        comment.id,
+        comment.resolved,
+        comment.context_before || "",
+      );
     });
   });
 }
@@ -61,17 +68,27 @@ function highlightText(
 }
 
 export function focusComment(id: string): void {
-  document.querySelectorAll(".comment-card").forEach((el) => el.classList.remove("active"));
-  document.querySelectorAll("mark.rl-highlight").forEach((el) => el.classList.remove("active"));
+  document
+    .querySelectorAll(".comment-card")
+    .forEach((el) => el.classList.remove("active"));
+  document
+    .querySelectorAll("mark.rl-highlight")
+    .forEach((el) => el.classList.remove("active"));
   const card = document.getElementById("card-" + id);
   if (card) card.classList.add("active");
-  document.querySelectorAll('[data-comment-id="' + id + '"]').forEach((el) => el.classList.add("active"));
+  document
+    .querySelectorAll('[data-comment-id="' + id + '"]')
+    .forEach((el) => el.classList.add("active"));
   positionCards();
 }
 
 export function clearFocus(): void {
-  document.querySelectorAll(".comment-card").forEach((el) => el.classList.remove("active"));
-  document.querySelectorAll("mark.rl-highlight").forEach((el) => el.classList.remove("active"));
+  document
+    .querySelectorAll(".comment-card")
+    .forEach((el) => el.classList.remove("active"));
+  document
+    .querySelectorAll("mark.rl-highlight")
+    .forEach((el) => el.classList.remove("active"));
   positionCards();
 }
 
@@ -123,7 +140,9 @@ export function renderComments(): void {
       const restored = document.getElementById("card-" + activeId);
       if (restored) restored.classList.add("active");
       document
-        .querySelectorAll('mark.rl-highlight[data-comment-id="' + activeId + '"]')
+        .querySelectorAll(
+          'mark.rl-highlight[data-comment-id="' + activeId + '"]',
+        )
         .forEach((el) => el.classList.add("active"));
     }
   });
@@ -166,12 +185,13 @@ export async function saveComment(
       focusComment(data.comment.id);
       updateNav();
       const newCard = document.getElementById("card-" + data.comment.id);
-      if (newCard) newCard.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (newCard)
+        newCard.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
       showError(data.error || "Failed to save comment");
     }
   } catch (err: unknown) {
-    showError("Failed to save comment: " + (err as Error).message);
+    reportMutationFailure("Failed to save comment", err);
   }
 }
 
@@ -195,13 +215,15 @@ export async function submitReply(id: string, message: string): Promise<void> {
       showError(data.error || "Failed to save reply");
     }
   } catch (err: unknown) {
-    showError("Failed to save reply: " + (err as Error).message);
+    reportMutationFailure("Failed to save reply", err);
   }
 }
 
 export async function resolveComment(id: string): Promise<void> {
   try {
-    const res = await apiFetch("/api/comment/" + id + "/resolve", { method: "POST" });
+    const res = await apiFetch("/api/comment/" + id + "/resolve", {
+      method: "POST",
+    });
     const data = await res.json();
     if (data.ok) {
       const c = state.comments.find((c) => c.id === id);
@@ -220,13 +242,15 @@ export async function resolveComment(id: string): Promise<void> {
       showError(data.error || "Failed to resolve comment");
     }
   } catch (err: unknown) {
-    showError("Failed to resolve: " + (err as Error).message);
+    reportMutationFailure("Failed to resolve", err);
   }
 }
 
 export async function reopenComment(id: string): Promise<void> {
   try {
-    const res = await apiFetch("/api/comment/" + id + "/reopen", { method: "POST" });
+    const res = await apiFetch("/api/comment/" + id + "/reopen", {
+      method: "POST",
+    });
     const data = await res.json();
     if (data.ok) {
       const idx = state.comments.findIndex((c) => c.id === id);
@@ -240,7 +264,7 @@ export async function reopenComment(id: string): Promise<void> {
       showError(data.error || "Failed to reopen comment");
     }
   } catch (err: unknown) {
-    showError("Failed to reopen: " + (err as Error).message);
+    reportMutationFailure("Failed to reopen", err);
   }
 }
 
@@ -255,7 +279,9 @@ function removePendingHighlight(): void {
 }
 
 export function applyRoundState(): void {
-  const btnAccept = document.getElementById("btn-accept") as HTMLButtonElement | null;
+  const btnAccept = document.getElementById(
+    "btn-accept",
+  ) as HTMLButtonElement | null;
   const banner = document.getElementById("sidebar-status-banner");
   if (!btnAccept) return;
 
@@ -345,6 +371,16 @@ export function applyRoundState(): void {
           bannerText = `${reviseCount} of ${total} comments imply edits.`;
         }
         banner.textContent = bannerText;
+        // Author handoff is orthogonal to the revise/accept verdict — a comment
+        // can be answered in-thread yet still need authoring-agent input. Call
+        // it out on its own line so it survives all three banner branches.
+        const escCount = state.comments.filter(isEscalated).length;
+        if (escCount > 0) {
+          const escLine = document.createElement("div");
+          escLine.className = "banner-escalation";
+          escLine.textContent = `↑ ${escCount} comment${escCount !== 1 ? "s need" : " needs"} an author reply.`;
+          banner.appendChild(escLine);
+        }
         banner.style.display = "block";
       }
 
@@ -352,33 +388,42 @@ export function applyRoundState(): void {
       // revision pass, so "revise the document anyway" would dead-end, and
       // "accept as-is without revising" can't appear because every comment
       // is treated as accept by the verdict-fallback path.
-      const sidebar = state.noAgent ? null : document.querySelector(".sidebar-col");
+      const sidebar = state.noAgent
+        ? null
+        : document.querySelector(".sidebar-col");
       if (sidebar) {
         const sec = document.createElement("div");
         sec.id = "round-secondary";
         sec.className = "round-secondary";
-        const altLabel = anyRevise ? "accept as-is without revising" : "revise the document anyway";
+        const altLabel = anyRevise
+          ? "accept as-is without revising"
+          : "revise the document anyway";
         sec.innerHTML = `or <button id="round-secondary-btn">${altLabel}</button>`;
-        banner?.insertAdjacentElement("afterend", sec) ?? sidebar.appendChild(sec);
-        sec.querySelector("#round-secondary-btn")!.addEventListener("click", () => {
-          if (anyRevise) {
-            const msg =
-              reviseCount === 1
-                ? "1 comment suggested an edit. Accept anyway?"
-                : `${reviseCount} comments suggested edits. Accept anyway?`;
-            if (!confirm(msg)) return;
-            triggerRoundAction("finish");
-          } else {
-            triggerRoundAction("accept");
-          }
-        });
+        banner?.insertAdjacentElement("afterend", sec) ??
+          sidebar.appendChild(sec);
+        sec
+          .querySelector("#round-secondary-btn")!
+          .addEventListener("click", () => {
+            if (anyRevise) {
+              const msg =
+                reviseCount === 1
+                  ? "1 comment suggested an edit. Accept anyway?"
+                  : `${reviseCount} comments suggested edits. Accept anyway?`;
+              if (!confirm(msg)) return;
+              triggerRoundAction("finish");
+            } else {
+              triggerRoundAction("accept");
+            }
+          });
       }
     }
   }
 }
 
 export async function triggerRoundAction(mode: string): Promise<void> {
-  const btnAccept = document.getElementById("btn-accept") as HTMLButtonElement | null;
+  const btnAccept = document.getElementById(
+    "btn-accept",
+  ) as HTMLButtonElement | null;
   const banner = document.getElementById("sidebar-status-banner");
   if (banner) {
     banner.classList.remove("error");

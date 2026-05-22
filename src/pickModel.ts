@@ -1,12 +1,14 @@
-// Heuristic for picking which Claude model to use based on the human's message.
-// Short / simple → Haiku. Long, question, or "involved" keyword → Sonnet.
+// Heuristic for picking how much model capacity to use based on the human's
+// message. Providers map these tiers to concrete model ids.
 //
 // Used in two places:
 //   - agent.ts picks per-reply, looking at the last human message in the thread
 //   - resolve.ts picks per-revision, scanning every human message across settled comments
 
-export const FAST_MODEL = "claude-haiku-4-5-20251001";
-export const SMART_MODEL = "claude-sonnet-4-6";
+export type ModelTier = "fast" | "smart";
+
+export const FAST_MODEL: ModelTier = "fast";
+export const SMART_MODEL: ModelTier = "smart";
 
 export const REPLY_INVOLVED_PATTERNS =
   /\b(what|why|how|which|who|suggest|suggestion|alternative|option|idea|propose|explain|think|consider|recommend|help|could|would|should)\b/i;

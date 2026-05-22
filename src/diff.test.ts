@@ -25,7 +25,9 @@ test("blockSimilarity is high for reworded paragraphs", () => {
 });
 
 test("blockSimilarity is low for unrelated text", () => {
-  expect(blockSimilarity("alpha beta gamma", "completely different stuff")).toBeLessThan(0.25);
+  expect(
+    blockSimilarity("alpha beta gamma", "completely different stuff"),
+  ).toBeLessThan(0.25);
 });
 
 test("mergeDiffOps pairs reworded paragraphs across a multi-paragraph run", () => {
@@ -64,7 +66,8 @@ test("mergeDiffOps pairs reworded paragraphs across a multi-paragraph run", () =
 
 test("mergeDiffOps leaves unrelated additions as pure inserts", () => {
   const oldText = "Paragraph about cats.\n\nUnrelated stale paragraph.";
-  const newText = "Paragraph about cats and dogs.\n\nA brand new sentence about quantum mechanics.";
+  const newText =
+    "Paragraph about cats and dogs.\n\nA brand new sentence about quantum mechanics.";
   const oldBlocks = splitBlocks(oldText);
   const newBlocks = splitBlocks(newText);
   const merged = mergeDiffOps(lcsOps(oldBlocks, newBlocks, (a, b) => a === b));
@@ -88,7 +91,9 @@ test("renderDocDiff produces word-level marks for reworded paragraphs", () => {
 });
 
 test("renderDocDiff returns no-changes sentinel when identical", () => {
-  expect(renderDocDiff("hello\n\nworld", "hello\n\nworld")).toContain("diff-no-changes");
+  expect(renderDocDiff("hello\n\nworld", "hello\n\nworld")).toContain(
+    "diff-no-changes",
+  );
 });
 
 test("wordDiffMarkdown highlights only the changed words", () => {

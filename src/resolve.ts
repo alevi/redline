@@ -1,26 +1,43 @@
 import { appendFile, copyFile, mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { loadSidecar, saveSidecar } from "./sidecar";
-import type { Round } from "./sidecar";
+import type { Round, Comment } from "./sidecar";
 import { pickRevisionModel } from "./pickModel";
 import { newEnvelope } from "./promptEnvelope";
 import { contextBlock } from "./contextBlock";
+import {
+  getAgentProvider,
+  resolveProviderId,
+  type AgentProviderId,
+} from "./agentProvider";
 
-const serverBase = () => `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
-const csrfHeader = (): Record<string, string> => ({ "X-Redline-Token": process.env.REDLINE_TOKEN ?? "" });
+const serverBase = () =>
+  `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
+const csrfHeader = (): Record<string, string> => ({
+  "X-Redline-Token": process.env.REDLINE_TOKEN ?? "",
+});
 
-export async function resolve(filePath: string, options: { model?: string } = {}) {
+export async function resolve(
+  filePath: string,
+  options: { model?: string; agentProvider?: AgentProviderId } = {},
+) {
+  const provider = getAgentProvider(
+    options.agentProvider ?? resolveProviderId(),
+  );
   const model = options.model ?? null;
   const sidecar = await loadSidecar(filePath);
 
   // Find the most recently accepted round
   const resolvedRounds = sidecar.rounds.filter((r) => r.resolved_at != null);
   if (resolvedRounds.length === 0) {
-    throw new Error("No accepted round found — human must click 'Accept & revise' first");
+    throw new Error(
+      "No accepted round found — human must click 'Accept & revise' first",
+    );
   }
   const round: Round = resolvedRounds[resolvedRounds.length - 1];
   const settled = round.comments.filter((c) => c.resolved);
-  const chosenModel = model ?? pickRevisionModel(settled);
+  const chosenModel =
+    model ?? provider.modelForTier(pickRevisionModel(settled));
 
   const docText = await readFile(filePath, "utf-8");
 
@@ -28,14 +45,24 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   const historyDir = path.join(path.dirname(filePath), ".review", "history");
   await mkdir(historyDir, { recursive: true });
   const snapTs = new Date().toISOString();
-  const snapFile = path.join(historyDir, `${path.basename(filePath)}.${snapTs}.md`);
+  const snapFile = path.join(
+    historyDir,
+    `${path.basename(filePath)}.${snapTs}.md`,
+  );
   await copyFile(filePath, snapFile);
   console.log(`Saved snapshot → .review/history/${path.basename(snapFile)}\n`);
 
   if (settled.length === 0) {
     console.log("No settled comments — no revision needed.");
     await openNextRound(sidecar, filePath);
-    try { await fetch(`${serverBase()}/api/reload`, { method: "POST", headers: csrfHeader() }); } catch { /* non-fatal */ }
+    try {
+      await fetch(`${serverBase()}/api/reload`, {
+        method: "POST",
+        headers: csrfHeader(),
+      });
+    } catch {
+      /* non-fatal */
+    }
     return;
   }
 
@@ -47,7 +74,10 @@ export async function resolve(filePath: string, options: { model?: string } = {}
   const commentsBlock = settled
     .map((c, i) => {
       const discussion = c.thread
-        .map((e) => `    ${e.role === "agent" ? "Agent" : "Reviewer"}: ${e.message}`)
+        .map(
+          (e) =>
+            `    ${e.role === "agent" ? "Agent" : "Reviewer"}: ${e.message}`,
+        )
         .join("\n");
       return `${i + 1}. Quote:\n${env.wrap(`comment-${i}-quote`, c.quote)}\n   Discussion:\n${env.wrap(`comment-${i}-discussion`, discussion)}`;
     })
@@ -61,9 +91,11 @@ export async function resolve(filePath: string, options: { model?: string } = {}
       r.comments
         .filter((c) => c.resolved)
         .map((c) => {
-          const lastAgent = [...c.thread].reverse().find((e) => e.role === "agent");
+          const lastAgent = [...c.thread]
+            .reverse()
+            .find((e) => e.role === "agent");
           return `- Round ${r.round}: ${env.wrap(`prior-${r.round}-quote`, c.quote)} → ${env.wrap(`prior-${r.round}-reply`, lastAgent?.message ?? "(resolved)")}`;
-        })
+        }),
     );
     if (lines.length > 0) {
       priorChangesBlock = `\n\n<previously-agreed-changes>\n${lines.join("\n")}\n</previously-agreed-changes>`;
@@ -89,42 +121,6 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     contextBlock(sidecar.context, env) +
     `<comments-to-apply>\n${commentsBlock}\n</comments-to-apply>${priorChangesBlock}\n\n<document>\n${env.wrap("document", docText)}\n</document>`;
 
-  // Call the claude CLI (inherits auth from the user's Claude Code session — no API key needed)
-  console.log(`Revising with ${chosenModel}...\n`);
-  console.log("─".repeat(60));
-  const revisionStartedAt = Date.now();
-
-  const cliBin = process.env.CLAUDE_CODE_EXECPATH ?? "claude";
-  const proc = Bun.spawn(
-    [cliBin, "-p", "--system-prompt", systemPrompt, "--model", chosenModel,
-     "--output-format", "stream-json", "--include-partial-messages", "--verbose"],
-    {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    }
-  );
-
-  proc.stdin.write(userMessage);
-  proc.stdin.end();
-
-  // Drain stderr concurrently so we can include it in any error report
-  let stderrText = "";
-  (async () => {
-    const r = proc.stderr.getReader();
-    const dec = new TextDecoder();
-    while (true) {
-      const { done, value } = await r.read();
-      if (done) break;
-      const chunk = dec.decode(value);
-      stderrText += chunk;
-      process.stderr.write(chunk);
-    }
-  })();
-
-  let revised = "";
-  let buffer = "";
-  const reader = proc.stdout.getReader();
   const broadcastChunk = (text: string, kind: "thinking" | "text") => {
     fetch(`${serverBase()}/api/revision-chunk`, {
       method: "POST",
@@ -132,40 +128,17 @@ export async function resolve(filePath: string, options: { model?: string } = {}
       body: JSON.stringify({ text, kind }),
     }).catch(() => {});
   };
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += new TextDecoder().decode(value);
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const obj = JSON.parse(line);
-        if (obj.type === "stream_event" && obj.event?.type === "content_block_delta") {
-          const delta = obj.event.delta;
-          if (delta?.type === "text_delta" && delta.text) {
-            revised += delta.text;
-            process.stdout.write(delta.text);
-            broadcastChunk(delta.text, "text");
-          } else if (delta?.type === "thinking_delta" && delta.thinking) {
-            broadcastChunk(delta.thinking, "thinking");
-          }
-        }
-      } catch { /* malformed JSON line, skip */ }
-    }
-  }
 
-  const exitCode = await proc.exited;
-  const revisionDurationMs = Date.now() - revisionStartedAt;
-  console.log("\n" + "─".repeat(60));
-  console.log(`Model: ${chosenModel}  ·  Duration: ${(revisionDurationMs / 1000).toFixed(1)}s  ·  Exit: ${exitCode}`);
-  console.log("─".repeat(60) + "\n");
+  // Per-attempt state, hoisted so fail() can report whatever the latest
+  // attempt produced.
+  let revised = "";
+  let exitCode = 0;
+  let stderrText = "";
 
   const fail = async (reason: string) => {
     await logRevisionFailure(filePath, {
       reason,
-      model: chosenModel,
+      model: `${provider.id}/${chosenModel}`,
       exitCode,
       stderr: stderrText.trim(),
       stdoutSample: revised.slice(0, 2000),
@@ -174,44 +147,70 @@ export async function resolve(filePath: string, options: { model?: string } = {}
     throw new Error(reason);
   };
 
-  if (exitCode !== 0) {
-    await fail(`claude CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`);
-  }
+  // A mangled revision is usually a one-off model stumble — Haiku dropping an
+  // uncommented section, streaming a preamble, etc. Retry once before giving
+  // up. A non-zero CLI exit is NOT retried: that's an environment/auth failure
+  // a re-run won't fix.
+  const MAX_ATTEMPTS = 2;
+  let trimmed = "";
 
-  // Validate output. Strip a wrapping code fence if present, a preamble before the
-  // first heading, any <document> wrapper tags, and any meta-sections the model
-  // sometimes appends (Settled comments, Previously agreed changes, Changelog).
-  let trimmed = revised.trim()
-    .replace(/^```(?:markdown)?\n([\s\S]*)\n```$/, "$1")
-    .replace(/^<document>\s*/i, "")
-    .replace(/\s*<\/document>\s*$/i, "")
-    .trim();
-  // Strip trailing meta-sections at any heading level (## or ###).
-  const metaHeading = trimmed.match(/\n#{2,3} (Settled comments|Previously agreed changes|Changelog|Revision notes)\b/i);
-  if (metaHeading) {
-    console.log(`Stripping trailing meta-section: ${metaHeading[1]}`);
-    trimmed = trimmed.slice(0, metaHeading.index).trimEnd();
-    // Strip a trailing horizontal rule that often precedes the meta-section.
-    trimmed = trimmed.replace(/\n+---\s*$/, "").trimEnd();
-  }
-  if (!trimmed) {
-    await fail("Agent returned empty output (no text deltas streamed)");
-  }
-  if (!trimmed.startsWith("#")) {
-    const firstHeadingIdx = trimmed.search(/^# /m);
-    if (firstHeadingIdx > 0) {
-      console.log("Stripping preamble before first heading.");
-      trimmed = trimmed.slice(firstHeadingIdx).trim();
-    } else {
-      await fail("Output contains no Markdown heading — model returned non-document content");
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    console.log(
+      attempt === 1
+        ? `Revising with ${provider.id}/${chosenModel}...\n`
+        : `\nRetrying revision with ${provider.id}/${chosenModel} (attempt ${attempt}/${MAX_ATTEMPTS})...\n`,
+    );
+    console.log("─".repeat(60));
+    const run = await provider.runRevision({
+      systemPrompt,
+      userMessage,
+      model: chosenModel,
+      cwd: process.cwd(),
+      onChunk: broadcastChunk,
+    });
+    revised = run.revised;
+    stderrText = run.stderr;
+    exitCode = run.exitCode;
+    console.log("\n" + "─".repeat(60));
+    console.log(
+      `Model: ${provider.id}/${chosenModel}  ·  Duration: ${(run.durationMs / 1000).toFixed(1)}s  ·  Exit: ${exitCode}`,
+    );
+    console.log("─".repeat(60) + "\n");
+
+    // A CLI crash is not retryable — fail immediately.
+    if (exitCode !== 0) {
+      await fail(
+        `${provider.id} CLI exited with code ${exitCode}${stderrText.trim() ? ` — ${stderrText.trim().split("\n").slice(-3).join(" | ")}` : ""}`,
+      );
     }
+
+    const result = validateRevision(revised, docText, settled);
+    if (result.ok) {
+      trimmed = result.doc;
+      break;
+    }
+
+    // Validation failed — the model returned mangled output. Retry once; on
+    // the last attempt, log and throw so the session surfaces the error.
+    if (attempt < MAX_ATTEMPTS) {
+      console.log(`Revision output rejected: ${result.reason}`);
+      continue;
+    }
+    await fail(result.reason);
   }
 
   // If the model made no changes, skip the write and signal the browser
   if (trimmed === docText.trim()) {
     console.log("No changes — output identical to input. Skipping file write.");
     await openNextRound(sidecar, filePath);
-    try { await fetch(`${serverBase()}/api/revision-no-changes`, { method: "POST", headers: csrfHeader() }); } catch { /* non-fatal */ }
+    try {
+      await fetch(`${serverBase()}/api/revision-no-changes`, {
+        method: "POST",
+        headers: csrfHeader(),
+      });
+    } catch {
+      /* non-fatal */
+    }
     return;
   }
 
@@ -226,13 +225,174 @@ export async function resolve(filePath: string, options: { model?: string } = {}
 
   // Notify browser to reload
   try {
-    await fetch(`${serverBase()}/api/reload`, { method: "POST", headers: csrfHeader() });
-  } catch { /* server may not be running — non-fatal */ }
+    await fetch(`${serverBase()}/api/reload`, {
+      method: "POST",
+      headers: csrfHeader(),
+    });
+  } catch {
+    /* server may not be running — non-fatal */
+  }
+}
+
+const HEADING_RE = /^#{1,6} .+$/gm;
+
+function normalizeHeadingKey(heading: string): string {
+  return (
+    heading
+      .replace(/^#{1,6}\s+/, "")
+      // Milestone/task headings often get legitimately renumbered when a nearby
+      // slice is removed. Keep the semantic title as the identity.
+      .replace(/^[A-Z]+\d+[a-z]?(?:\.\d+)*:\s+/i, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+  );
+}
+
+function termsForHeading(heading: string): string[] {
+  const key = normalizeHeadingKey(heading);
+  const words = key.split(/\s+/).filter((w) => w.length >= 4);
+  const phrases = new Set<string>();
+  const numberedPrefix = heading
+    .replace(/^#{1,6}\s+/, "")
+    .match(/^([A-Z]+\d+[a-z]?(?:\.\d+)*):\s+/i)?.[1];
+  if (numberedPrefix) phrases.add(numberedPrefix.toLowerCase());
+  if (words.length >= 2) phrases.add(key);
+  for (let size = 2; size <= 3; size++) {
+    for (let i = 0; i <= words.length - size; i++) {
+      phrases.add(words.slice(i, i + size).join(" "));
+    }
+  }
+  return [...phrases].filter((p) => p.length >= 4);
+}
+
+function settledText(settled: Comment[]): string {
+  return settled
+    .flatMap((c) => [
+      c.quote,
+      c.context_before,
+      c.context_after,
+      ...c.thread.flatMap((e) => [e.message, e.revision_reason ?? ""]),
+    ])
+    .join("\n")
+    .toLowerCase();
+}
+
+// Headings present in `inputDoc` but missing from `outputDoc` whose section the
+// reviewer never authorized touching. A comment quoting text inside a section
+// means the reviewer was working there; a thread/revision reason naming the
+// section topic also authorizes removal/reworking. Exact heading strings are
+// intentionally not the only identity because model revisions may legitimately
+// renumber implementation slices after cutting a nearby slice.
+function droppedSections(
+  inputDoc: string,
+  outputDoc: string,
+  settled: Comment[],
+): string[] {
+  const outHeadingKeys = new Set(
+    (outputDoc.match(HEADING_RE) ?? []).map(normalizeHeadingKey),
+  );
+  const inMatches = [...inputDoc.matchAll(HEADING_RE)];
+  const quotes = settled.map((c) => c.quote.trim()).filter((q) => q.length > 0);
+  const settledTopicText = settledText(settled);
+
+  const unauthorized: string[] = [];
+  for (let i = 0; i < inMatches.length; i++) {
+    const heading = inMatches[i]![0];
+    if (outHeadingKeys.has(normalizeHeadingKey(heading))) continue;
+    // This heading's section runs from the heading to the next one (or EOF).
+    const start = inMatches[i]!.index!;
+    const end =
+      i + 1 < inMatches.length ? inMatches[i + 1]!.index! : inputDoc.length;
+    const section = inputDoc.slice(start, end);
+    const commented = quotes.some((q) => section.includes(q));
+    const topicNamed = termsForHeading(heading).some((term) =>
+      settledTopicText.includes(term),
+    );
+    if (!commented && !topicNamed) unauthorized.push(heading);
+  }
+  return unauthorized;
+}
+
+// Validate (and lightly normalize) a revision pass's raw output. Pure — the
+// retry loop and tests both drive it. Returns the cleaned document on success,
+// or a human-readable reason on failure.
+export function validateRevision(
+  revised: string,
+  inputDoc: string,
+  settled: Comment[],
+): { ok: true; doc: string } | { ok: false; reason: string } {
+  // Strip a wrapping code fence and any <document> wrapper tags the model
+  // sometimes includes despite the system prompt.
+  let trimmed = revised
+    .trim()
+    .replace(/^```(?:markdown)?\n([\s\S]*)\n```$/, "$1")
+    .replace(/^<document>\s*/i, "")
+    .replace(/\s*<\/document>\s*$/i, "")
+    .trim();
+
+  // Strip a trailing meta-section the model sometimes appends (Settled
+  // comments, Changelog, …), plus a horizontal rule that often precedes it.
+  const metaHeading = trimmed.match(
+    /\n#{2,3} (Settled comments|Previously agreed changes|Changelog|Revision notes)\b/i,
+  );
+  if (metaHeading) {
+    trimmed = trimmed
+      .slice(0, metaHeading.index)
+      .trimEnd()
+      .replace(/\n+---\s*$/, "")
+      .trimEnd();
+  }
+
+  if (!trimmed) {
+    return {
+      ok: false,
+      reason: "Revision produced empty output — no text was streamed back",
+    };
+  }
+
+  // If the input had headings, the output should too. Strip a preamble before
+  // the first heading; if there's no heading at all, the model returned prose
+  // (an apology, a summary) instead of the document. A genuinely heading-less
+  // input is left alone — headings can't be the structural anchor there.
+  if (/^#{1,6} /m.test(inputDoc) && !/^#{1,6} /.test(trimmed)) {
+    const firstHeadingIdx = trimmed.search(/^#{1,6} /m);
+    if (firstHeadingIdx > 0) {
+      trimmed = trimmed.slice(firstHeadingIdx).trim();
+    } else {
+      return {
+        ok: false,
+        reason:
+          "Revision output has no Markdown headings — the model returned non-document content, not a revised document",
+      };
+    }
+  }
+
+  // Structural integrity: the revision must not silently drop a section the
+  // reviewer never commented on.
+  const dropped = droppedSections(inputDoc, trimmed, settled);
+  if (dropped.length > 0) {
+    const list = dropped.map((h) => `"${h}"`).join(", ");
+    return {
+      ok: false,
+      reason: `Revision dropped section${dropped.length > 1 ? "s" : ""} the reviewer never commented on: ${list} — the model mangled the document instead of editing it`,
+    };
+  }
+
+  return { ok: true, doc: trimmed };
 }
 
 async function logRevisionFailure(
   filePath: string,
-  details: { reason: string; model: string; exitCode: number; stderr: string; stdoutSample: string; stdoutLength: number }
+  details: {
+    reason: string;
+    model: string;
+    exitCode: number;
+    stderr: string;
+    stdoutSample: string;
+    stdoutLength: number;
+  },
 ) {
   const logDir = path.join(path.dirname(filePath), ".review");
   await mkdir(logDir, { recursive: true });
@@ -244,7 +404,9 @@ async function logRevisionFailure(
     `exitCode:     ${details.exitCode}\n` +
     `stdoutLength: ${details.stdoutLength}\n` +
     (details.stderr ? `stderr:\n${details.stderr}\n` : "") +
-    (details.stdoutSample ? `stdoutSample (first 2000 chars):\n${details.stdoutSample}\n` : "") +
+    (details.stdoutSample
+      ? `stdoutSample (first 2000 chars):\n${details.stdoutSample}\n`
+      : "") +
     `===\n`;
   try {
     await appendFile(logPath, entry, "utf-8");
@@ -254,7 +416,11 @@ async function logRevisionFailure(
   }
 }
 
-function printChangeSummary(oldText: string, newText: string, filePath: string) {
+function printChangeSummary(
+  oldText: string,
+  newText: string,
+  filePath: string,
+) {
   const heading = (text: string) => text.match(/^#{1,3} .+$/gm) ?? [];
   const oldH = heading(oldText);
   const newH = heading(newText);
@@ -270,7 +436,10 @@ function printChangeSummary(oldText: string, newText: string, filePath: string) 
   }
 }
 
-async function openNextRound(sidecar: ReturnType<typeof loadSidecar> extends Promise<infer T> ? T : never, filePath: string) {
+async function openNextRound(
+  sidecar: ReturnType<typeof loadSidecar> extends Promise<infer T> ? T : never,
+  filePath: string,
+) {
   const hasOpenRound = sidecar.rounds.some((r) => r.resolved_at === null);
   if (!hasOpenRound) {
     const nextNum = sidecar.rounds.length + 1;

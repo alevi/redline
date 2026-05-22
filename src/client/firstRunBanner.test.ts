@@ -1,19 +1,30 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { initFirstRunBanner } from "./firstRunBanner";
 
 beforeAll(() => GlobalRegistrator.register());
-afterAll(async () => { await GlobalRegistrator.unregister(); });
+afterAll(async () => {
+  await GlobalRegistrator.unregister();
+});
 
 beforeEach(() => {
   document.body.innerHTML = "";
-  try { localStorage.clear(); } catch {}
+  try {
+    localStorage.clear();
+  } catch {}
 });
 
 function makeBanner(): HTMLElement {
   document.body.innerHTML = `
     <div class="first-run-banner" id="first-run-banner" hidden>
-      <span>Redline sends document and comment text to your local Claude Code agent. Use trusted docs.</span>
+      <span>Redline sends document and comment text to your selected local agent. Use trusted docs.</span>
       <button class="first-run-dismiss" id="first-run-dismiss">Got it</button>
     </div>
   `;
@@ -40,7 +51,9 @@ describe("initFirstRunBanner", () => {
     initFirstRunBanner(document, window);
     expect(banner.hasAttribute("hidden")).toBe(false);
 
-    const dismiss = document.getElementById("first-run-dismiss") as HTMLButtonElement;
+    const dismiss = document.getElementById(
+      "first-run-dismiss",
+    ) as HTMLButtonElement;
     dismiss.click();
 
     expect(banner.hasAttribute("hidden")).toBe(true);
