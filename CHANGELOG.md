@@ -4,6 +4,13 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-05-22
+
+### Changed
+
+- Security documentation now describes the prompt-injection data flow in terms of the selected local provider CLI subprocess instead of the vaguer "agent" wording.
+- Contributor guidance now scopes copy-style scanning to the public copy paths touched by a change, while preserving full-project scans for intentional audits.
+
 ## [0.5.3] - 2026-05-17
 
 ### Fixed
@@ -103,7 +110,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/alevi/redline/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/alevi/redline/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/alevi/redline/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/alevi/redline/compare/v0.5.0...v0.5.1
