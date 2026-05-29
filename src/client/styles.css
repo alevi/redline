@@ -373,7 +373,9 @@ body {
   padding: 1em 1.6em 1em 1.2em;
   border-radius: var(--radius);
   border: 1px solid #e1e4e8;
-  overflow-x: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   margin: 1.2em 0;
   position: relative;
 }
@@ -394,6 +396,8 @@ body {
   padding: 0;
   font-size: 0.85em;
   color: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
 }
 .prose a {
   color: #1d4ed8;
@@ -705,7 +709,9 @@ mark.rl-highlight.rl-img.active {
   background: rgba(0, 0, 0, 0.05);
   padding: 8px 10px;
   border-radius: 4px;
-  overflow-x: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 12.5px;
   line-height: 1.45;
   margin: 4px 0 8px;
@@ -713,6 +719,8 @@ mark.rl-highlight.rl-img.active {
 .thread-message pre code {
   background: transparent;
   padding: 0;
+  white-space: inherit;
+  overflow-wrap: inherit;
 }
 .thread-message blockquote {
   margin: 4px 0 8px;
@@ -1196,7 +1204,9 @@ mark.rl-highlight.rl-img.active {
   background: #f6f8fa;
   border-radius: 6px;
   padding: 14px 16px;
-  overflow-x: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 13px;
 }
 .diff-prose code {
@@ -1209,6 +1219,8 @@ mark.rl-highlight.rl-img.active {
 .diff-prose pre code {
   background: none;
   padding: 0;
+  white-space: inherit;
+  overflow-wrap: inherit;
 }
 .diff-prose a {
   color: #1d4ed8;

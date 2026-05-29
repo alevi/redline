@@ -4,6 +4,10 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- Long lines inside fenced code blocks now wrap in the reader, diff view, and comment threads instead of forcing horizontal scrolling.
+
 ## [0.5.4] - 2026-05-22
 
 ### Changed
