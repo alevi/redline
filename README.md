@@ -37,9 +37,9 @@ That installs the bundled `redline-review` skill into your agent environment (`~
 
 ## Why Redline exists
 
-A lot of recent docs start as an AI-agent draft. Reviewing those drafts in a chat window is awkward. Comments scroll out from under the text. "Fix paragraph 3" loses its anchor as soon as the doc is rewritten. Google-Docs-style tools don't speak the file on disk.
+More and more project docs start as agent drafts. Chat is the wrong place to review them: the text moves, comments lose their anchor, and "fix this section" turns vague as soon as the file is rewritten. Traditional doc tools solve anchoring, but they move the work away from the Markdown file your repo actually uses.
 
-Redline puts an inline-comment layer on top of a local Markdown file, with a local agent participating in the review thread. Comments are anchored to the text they're about. The conversation is real-time. Accepted changes are applied back to the file you started with, no copy-paste.
+Redline gives that local Markdown file an inline review layer. You comment on exact passages, discuss changes with a local Claude or Codex agent, and accept the agreed edits back into the same file on disk. The review stays anchored; the source of truth stays in your workspace.
 
 ## Who it's for
 
