@@ -4,9 +4,12 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-06-09
+
 ### Fixed
 
 - Long lines inside fenced code blocks now wrap in the reader, diff view, and comment threads instead of forcing horizontal scrolling.
+- Bumped `sanitize-html` to `2.17.4` so new installs require the release that fixes CVE-2026-44990.
 
 ## [0.5.4] - 2026-05-22
 
@@ -114,7 +117,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/alevi/redline/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/alevi/redline/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/alevi/redline/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/alevi/redline/compare/v0.5.1...v0.5.2
