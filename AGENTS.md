@@ -224,6 +224,17 @@ These are post-publish hardenings (M5/M8). They're load-bearing — don't regres
 - **Zombie SSE recovery.** [src/client/sse.ts](src/client/sse.ts) listens for `visibilitychange`/`focus` and runs a 30s heartbeat watchdog while the `.revising` banner is up, so a tab backgrounded across the whole revision recovers when refocused.
 - **Capped agent restart.** [src/cli.ts](src/cli.ts) auto-restarts the agent on unexpected exit but caps at 5 in 60s. If you see "gave up" in the log, something structural is wrong — fix root cause, don't raise the cap.
 
+## Dependency security
+
+When adding or evaluating third-party dependencies, use Socket when available:
+
+- Use Socket MCP `depscore` to check packages before adding them, especially npm, PyPI, auth, payment, AI, scraping, browser, build-tool, and transitive-heavy dependencies.
+- Check direct dependencies named in manifests and any important packages imported in code.
+- Prefer established packages with strong maintenance, quality, supply-chain, vulnerability, and license scores.
+- If Socket reports low scores, risky capabilities, serious alerts, or suspicious package behavior, stop and explain the tradeoff before proceeding.
+- When dependency changes are material, run the local Socket CLI scan before review handoff if the project has Socket configured: `socket scan create . --report`.
+- Do not treat Socket as the only dependency review. Use normal engineering judgment too: API fit, project size, maintainer credibility, license, dependency weight, and whether the dependency is necessary at all.
+
 ## Tests
 
 `bun test` runs the suite. Server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, and happy-dom client tests all live in `tests/` and `src/`.
