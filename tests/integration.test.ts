@@ -56,6 +56,30 @@ async function spawnTracked(
   return result;
 }
 
+async function openBrowserEvents(port: number): Promise<() => Promise<void>> {
+  const ac = new AbortController();
+  const response = await fetch(
+    `http://localhost:${port}/api/events?client=browser`,
+    { signal: ac.signal },
+  );
+  expect(response.ok).toBe(true);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("SSE response has no body");
+
+  // Consume the server's initial `: connected` frame. This proves the stream
+  // was registered before a test disconnects it or starts a grace-period clock.
+  await reader.read();
+
+  return async () => {
+    ac.abort();
+    try {
+      await reader.cancel();
+    } catch {
+      // Aborting the request may close the reader before cancel() observes it.
+    }
+  };
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 test("server starts on a free port, not 3000", async () => {
@@ -193,12 +217,8 @@ test("startup file is removed on abandon so a stale one can't fool the next run"
   expect(existsSync(startupPath)).toBe(true);
 
   // Trip the abandon timer the same way the tab-close test does.
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   await waitForExit(proc, 5000);
   expect(existsSync(startupPath)).toBe(false);
@@ -217,13 +237,8 @@ test("tab-close triggers abandon after grace period", async () => {
   await waitForServer(port);
 
   // Connect as a browser client, then disconnect
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-
-  await Bun.sleep(200); // let connection register
-  ac.abort(); // disconnect — triggers hadBrowser timer
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents(); // disconnect — triggers hadBrowser timer
 
   const code = await waitForExit(proc, 5000);
 
@@ -248,12 +263,8 @@ test("revision crash → abandon writes error result, not abandoned", async () =
   expect(errRes.status).toBe(200);
 
   // Connect a browser then drop it, tripping the abandon timer.
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(3);
@@ -293,12 +304,8 @@ test("abandon path carries escalations into the result file", async () => {
   });
 
   // Connect a browser then drop it, tripping the abandon timer.
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(2);
@@ -329,12 +336,8 @@ test("revision crash → recovered → abandon writes abandoned, not error", asy
     headers: CSRF_HEADERS,
   });
 
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(2);
@@ -351,22 +354,14 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
   await waitForServer(port);
 
   // First connection
-  const ac1 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac1.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
+  const closeEvents1 = await openBrowserEvents(port);
 
   // Drop it briefly — starts the abandon timer (2s)
-  ac1.abort();
+  await closeEvents1();
   await Bun.sleep(500);
 
   // Reconnect well within the grace — should cancel the timer
-  const ac2 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac2.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
+  const closeEvents2 = await openBrowserEvents(port);
 
   // Wait past the original 2s grace window. If the timer wasn't cancelled, the server would have exited.
   await Bun.sleep(2500);
@@ -376,7 +371,7 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
   expect(res.ok).toBe(true);
 
   // Cleanup
-  ac2.abort();
+  await closeEvents2();
 }, 15_000);
 
 test("tab-closed beacon abandons on the short grace even when the backstop is long", async () => {
@@ -389,18 +384,14 @@ test("tab-closed beacon abandons on the short grace even when the backstop is lo
   });
   await waitForServer(port);
 
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200); // let connection register so hadBrowser is set
+  const closeEvents = await openBrowserEvents(port);
 
   // Tab fires its close beacon, then the SSE drops — the order a real close hits.
   await fetch(`http://localhost:${port}/api/tab-closed`, {
     method: "POST",
     headers: CSRF_HEADERS,
   });
-  ac.abort();
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(2);
@@ -416,30 +407,23 @@ test("tab-closed beacon followed by a reconnect (reload) does NOT abandon", asyn
   });
   await waitForServer(port);
 
-  const ac1 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac1.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
+  const closeEvents1 = await openBrowserEvents(port);
 
   // Reload: beacon fires, old SSE drops, new SSE reconnects within the short grace.
   await fetch(`http://localhost:${port}/api/tab-closed`, {
     method: "POST",
     headers: CSRF_HEADERS,
   });
-  ac1.abort();
+  await closeEvents1();
   await Bun.sleep(300);
-  const ac2 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac2.signal,
-  }).catch(() => {});
+  const closeEvents2 = await openBrowserEvents(port);
 
   // Outlast the short grace; the reconnect should have cancelled the timer.
   await Bun.sleep(2000);
   const res = await fetch(`http://localhost:${port}/api/comments`);
   expect(res.ok).toBe(true);
 
-  ac2.abort();
+  await closeEvents2();
 }, 15_000);
 
 test("--context flag persists to sidecar.context on first run", async () => {
