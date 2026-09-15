@@ -52,10 +52,19 @@ People shipping docs with the help of AI agents:
 
 ## How it works
 
-Two long-lived processes:
+Standalone reviews use two long-lived processes:
 
 - **Server** ([src/server.ts](src/server.ts)) — renders Markdown, serves the review UI, accepts comment / reply / resolve POSTs, broadcasts SSE events.
 - **Agent** ([src/agent.ts](src/agent.ts)) — child process listening to the SSE stream. Calls the selected local provider (`claude` or `codex`) to compose replies and post them back. When you accept a round, the agent runs the document revision pass and writes the result to disk.
+
+Reviews launched through the bundled skill are caller-backed instead: the agent that authored the document receives and answers ordinary review comments with its existing task context, then applies accepted revisions through a Redline-managed staging file. Redline validates and commits the staged document before reloading the browser.
+
+The caller checks in while it waits. If it disappears, the reader shows **Caller offline** and keeps the review state intact. Redline never substitutes another agent silently. To continue explicitly with the configured local agent or in manual mode, run:
+
+```sh
+bunx @levistudio/redline responder ./spec.md --mode local
+bunx @levistudio/redline responder ./spec.md --mode manual
+```
 
 Review state lives in a sidecar JSON file at `.review/<filename>.json` next to the doc. History snapshots of every revision land in `.review/history/<filename>.<iso>.md` _before_ the revision is written, so you can roll back from disk if a revision goes sideways. Both should be gitignored unless you want them in the repo.
 
@@ -68,7 +77,7 @@ After each revision, the new round opens with the document rendered inline as a 
 - **Reviewing AI-generated PRDs.** Hand your coding agent a one-line brief, let it draft the PRD, then redline it line by line before passing it on.
 - **Reviewing architecture specs.** Mark assumptions you want challenged, ask the agent to expand sections, ship the revised spec.
 - **Reviewing README drafts.** Your agent wrote your README — read through, leave inline comments where the framing is off, accept the revision in one click.
-- **Approving agent output before merge.** Use the bundled [redline-review skill](skills/redline-review/SKILL.md) so your outer agent automatically hands you the doc to sign off on.
+- **Approving agent output before merge.** Use the bundled [redline-review skill](skills/redline-review/SKILL.md) so the agent that authored the document hands it to you, answers your inline comments, and continues after sign-off.
 - **Human approval loops for agent-written docs.** Anywhere an agent needs your sign-off on prose before continuing, run it through Redline.
 
 ## Reviewing for a specific lens

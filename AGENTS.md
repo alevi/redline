@@ -9,7 +9,7 @@ When changing public-facing copy, UI text, README prose, or docs, run `scripts/s
 Redline is a single-player, local Markdown review tool. The user points it at a `.md` file; it opens a browser-based reader; the user leaves inline comments; an agent process replies in real time; the user resolves and accepts; the document is revised. The two pieces are:
 
 1. **The Review Reader** — local Bun + Hono server, renders Markdown, serves a small client-side JS app, handles select-to-comment, persists comments to a sidecar.
-2. **The conversational agent** — a child process spawned alongside the server that listens to comment events and replies via the selected local agent provider (`claude` or `codex`).
+2. **The conversational responder** — either a child process that uses the selected local agent provider (`claude` or `codex`), or the authoring agent that launched the review through the caller bridge.
 
 The product is real-time conversation, not turn-based submit/respond. Reviews can span multiple rounds (comment → reply → resolve → revise → next round) until the user signs off.
 
@@ -35,14 +35,17 @@ ThreadEntry { role: human|agent, name?, message, at, requires_revision?, revisio
 redline <file>                 # opens the review reader; URL is printed and written to .review/<file>.startup.json
 redline <file> --context "..." # opens with a reviewer-supplied focus statement (see "Context-aware prompts" below)
 redline <file> --agent codex   # use Codex instead of the auto-detected/default provider
+redline <file> --responder caller # launching agent handles discussion and staged revisions
 redline <file> --no-agent      # manual annotation mode — no agent spawn, no provider CLI required on PATH
 redline resolve <file>         # one-shot: read the sidecar, run the revision pass, write back
 redline author-needed <file>   # list comments where the inline agent requested author input
 redline author-reply <file> <comment-id> --message "..." # post an author-marked reply into the thread
 redline author-wait <file>     # block until author input is needed or the review result is written
+redline author-revise <file> --round <n> # validate and commit a staged caller revision
+redline responder <file> --mode local|manual # explicitly recover a caller-backed session
 ```
 
-The bare-arg path also spawns a dedicated agent subprocess alongside the server — see "The dedicated agent process" below.
+The default bare-arg path spawns a dedicated local-agent subprocess alongside the server. `--responder caller` skips that subprocess and routes both discussion and accepted revision work through the caller bridge. See "The dedicated agent process" below.
 
 ### Context-aware prompts
 
@@ -79,13 +82,23 @@ After a revision pass, the new round opens with the document rendered **as the d
 
 ## The dedicated agent process
 
-`redline <file>` spawns [src/agent.ts](src/agent.ts) as a child process alongside the server. The agent opens its own SSE connection to `/api/events` and reacts to comment events directly, with no harness-level task-notification overhead.
+`redline <file>` spawns [src/agent.ts](src/agent.ts) as a child process alongside the server. In the default `local` responder mode, the agent opens its own SSE connection to `/api/events` and reacts to comment events directly, with no harness-level task-notification overhead.
 
 - Reply latency is bounded by the selected provider's inference time instead of by task scheduling.
 - The agent's read loop **does not await** event handlers — it fires them and continues reading. This lets multiple comments process in parallel and prevents a slow response from blocking the SSE stream.
 - An `inProgress` Set deduplicates so the same comment isn't replied to twice if `comment-reply` fires multiply.
 - `agent-replied` is fired only when `inProgress` drains to zero, so the UI sees one "agent done" event per batch rather than per reply.
 - The CLI installs `exit`/`SIGINT`/`SIGTERM` handlers to kill the agent when the server dies, and auto-restarts the agent on unexpected exit (capped to 5 restarts per 60s window — see [src/cli.ts](src/cli.ts)).
+
+### Caller-backed discussion
+
+`--responder caller` records the responder mode in the sidecar and startup metadata and does not spawn the local agent. `author-wait` returns every unresolved comment whose latest thread entry is human-authored as `kind: "caller-turn"`; it posts thinking state before returning. The launching agent replies through `author-reply` with `--requires-revision true|false` and an optional `--revision-reason`.
+
+When the reviewer accepts a round, `author-wait` returns `kind: "revision-request"` with the settled threads and a staged `revision_file` under `.review/pending/`. The caller edits only that staging file, then runs `author-revise <file> --round <n>`. Redline verifies the source hash, validates the proposed Markdown with the existing structural checks, snapshots the live document, commits the change, opens the next round, and sends `reload` or `revision-no-changes`. Validation failure leaves the live document untouched and follows the existing `revision-error` recovery path.
+
+`author-wait` also maintains the caller lease. If it stops checking in, the browser shows **Caller offline** but Redline does not change responders automatically. `redline responder <file> --mode local|manual` is the explicit recovery path. Local takeover starts the configured provider and scans the durable sidecar for unanswered turns. Manual takeover reloads the session with manual-mode behavior.
+
+Leaving caller mode unwinds an interrupted caller revision: Redline unresolves the accepted round, clears the pending transaction, and removes the exact managed staging file. Relaunching a stale caller sidecar with an explicit different mode performs the same migration before serving review state. Sidecars created before `responder_mode` remain readable and default to local behavior.
 
 ### `--no-agent` (manual mode)
 
@@ -120,17 +133,20 @@ The Revise button is intentionally **not** styled green. It triggers a non-trivi
 
 ## SSE event vocabulary
 
-| Event               | Fired when                                                                                           | Client behavior                                                                                       |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `comment-added`     | Human posts a new comment                                                                            | Soft refresh + `applyHighlights()` (new highlight needed)                                             |
-| `comment-reply`     | Human or agent posts to existing thread                                                              | Soft refresh; remove that comment from `thinkingCommentIds`                                           |
-| `comment-resolved`  | Human resolves a comment                                                                             | Soft refresh + `applyHighlights()` (color change)                                                     |
-| `comment-thinking`  | Agent POSTs `/api/comment/:id/thinking`                                                              | Add to `thinkingCommentIds`, show dots in that thread (multiple threads can be active simultaneously) |
-| `agent-replied`     | Agent POSTs `/api/agent-replied` after all in-flight replies finish                                  | Clear `thinkingCommentIds`, soft refresh                                                              |
-| `accepted`          | Human clicks "Revise document"                                                                       | Agent's cue to run the resolve flow                                                                   |
-| `finished`          | Human clicks "Done" on a round with no comments, or "Looks good — close session" in the diff overlay | Replace body with a "Review complete — close this tab" splash                                         |
-| `reload`            | The resolve flow finishes writing the revised document                                               | Full `window.location.reload()`                                                                       |
-| `agent-unavailable` | CLI hits the agent restart cap (5 in 60s)                                                            | Show persistent "Agent offline" pill in header; sticky until page reload                              |
+| Event                   | Fired when                                                                                           | Client behavior                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `comment-added`         | Human posts a new comment                                                                            | Soft refresh + `applyHighlights()` (new highlight needed)                                             |
+| `comment-reply`         | Human or agent posts to existing thread                                                              | Soft refresh; remove that comment from `thinkingCommentIds`                                           |
+| `comment-resolved`      | Human resolves a comment                                                                             | Soft refresh + `applyHighlights()` (color change)                                                     |
+| `comment-thinking`      | Agent POSTs `/api/comment/:id/thinking`                                                              | Add to `thinkingCommentIds`, show dots in that thread (multiple threads can be active simultaneously) |
+| `agent-replied`         | Agent POSTs `/api/agent-replied` after all in-flight replies finish                                  | Clear `thinkingCommentIds`, soft refresh                                                              |
+| `accepted`              | Human clicks "Revise document"                                                                       | Agent's cue to run the resolve flow                                                                   |
+| `finished`              | Human clicks "Done" on a round with no comments, or "Looks good — close session" in the diff overlay | Replace body with a "Review complete — close this tab" splash                                         |
+| `reload`                | The resolve flow finishes writing the revised document                                               | Full `window.location.reload()`                                                                       |
+| `agent-unavailable`     | CLI hits the local-agent restart cap (5 in 60s)                                                      | Show persistent "Agent offline" pill in header; sticky until page reload                              |
+| `responder-unavailable` | Caller lease expires                                                                                 | Show "Caller offline" without changing responder identity                                             |
+| `responder-available`   | Caller heartbeat resumes                                                                             | Clear the offline indicator                                                                           |
+| `responder-changed`     | User explicitly switches to local or manual mode                                                     | Reload so mode-specific controls and labels are rebuilt                                               |
 
 Soft refresh = `GET /api/comments` then re-render the sidebar. Full reload = `window.location.reload()`. **Use soft refresh for everything except `reload`.** Full reloads scroll to top and feel jarring.
 
@@ -203,10 +219,10 @@ The verdict is **agent-owned**. The human cannot flip it directly. Disagreement 
 
 ## Author handoff
 
-The inline review agent and the agent that _authored/launched_ `redline` are separate processes. The sidecar is the persisted artifact, and `.startup.json` gives the authoring agent a local API bridge while the session is live. Two mechanisms carry feedback back to it:
+In local responder mode, the inline review agent and the agent that _authored/launched_ `redline` are separate processes. The sidecar is the persisted artifact, and `.startup.json` gives the authoring agent a local API bridge while the session is live. The same bridge now carries all discussion in caller responder mode.
 
 - **`ESCALATE` verdict.** The storage/envelope name is still `ESCALATE` for compatibility, but product language is **author reply needed**. The inline agent sets `ESCALATE: true` when a comment needs author-level input: information, tools, authority, or project context it cannot access from the document and comment thread (an external style guide, a spec to check against, a wider-project decision). It does **not** set it for ordinary requested edits, reframes, emphasis changes, rewrites, or approvals; those are handled by `requires_revision`. It's stored as `escalate?: boolean` on the agent's `ThreadEntry` and rendered as an "↑ Author reply needed" badge on the comment. The author handoff signal is independent of `requires_revision` — the agent judges each on its own.
-- **Live author replies.** The authoring agent can run `redline author-wait <file>` while a session is open; it returns JSON when either a pending author-needed comment appears or the final `.result` is written. For pending comments, it can run `redline author-reply <file> <comment-id> --message "..."` to post back into the same thread, then wait again. When the server is live, the reply command uses `.review/<file>.startup.json` and the local API so the browser soft-refreshes; if the server is gone, it falls back to a locked sidecar write.
+- **Live author replies.** The authoring agent can run `redline author-wait <file>` while a session is open. Local mode returns pending author-needed comments; caller mode returns every unanswered human turn and refreshes the caller lease. Caller mode does not use escalation classification as a second work queue. `redline author-reply` posts back into the same thread with an optional revision verdict, then the author waits again. When the server is live, the reply command uses `.review/<file>.startup.json` and the local API so the browser soft-refreshes; if the server is gone, it falls back to a locked sidecar write.
 - **Closeout transcript.** On `finished`, the CLI loads the sidecar and prints every comment thread verbatim via [src/reviewSummary.ts](src/reviewSummary.ts) (`formatReviewSummary`), with a dedicated callout listing comments that need author input (`collectEscalations`). The count is also written to `.review/<file>.result` and appended to the `REDLINE_RESULT:` line. This remains the fallback read point for abandoned or unfinished sessions.
 
 ## Security & resilience as built

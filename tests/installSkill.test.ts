@@ -49,7 +49,8 @@ test("install-skill.sh substitutes the launcher path into the installed SKILL.md
   expect(text).toContain('const { spawn } = require("node:child_process")');
   expect(text).toContain("detached: true");
   expect(text).toContain("child.unref()");
-  expect(text).toContain('[file, "--open"]');
+  expect(text).toContain('[file, "--responder", "caller", "--open"]');
+  expect(text).toContain("author-revise");
 
   // Substituted path must be the launcher next to SKILL.md, absolute.
   const expectedLauncher = path.join(tmp, "skills/redline-review/redline");

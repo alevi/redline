@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { readFile, realpath } from "fs/promises";
+import { readFile, realpath, rm } from "fs/promises";
 import path from "path";
 import { renderMarkdown, renderMessageMarkdown } from "./render";
 import { renderDocDiff } from "./diff";
@@ -11,6 +11,7 @@ import {
   getOrCreateActiveRound,
   activeRound,
   type Comment,
+  type ResponderMode,
 } from "./sidecar";
 
 // Attach a sanitized HTML rendering of each thread message so the client
@@ -59,10 +60,13 @@ export function createServer(
     csrfToken?: string;
     noAgent?: boolean;
     agentName?: string;
+    responderMode?: ResponderMode;
   } = {},
 ) {
   const app = new Hono();
   const fileName = path.basename(filePath);
+  let currentResponderMode = opts.responderMode ?? "local";
+  let currentAgentName = opts.agentName ?? "selected local";
 
   // CSRF token. Issued at server start, embedded in the rendered page, passed
   // to the agent subprocess via env, required as `X-Redline-Token` on every
@@ -114,9 +118,47 @@ export function createServer(
   });
 
   // On startup, ensure there is always an open round to receive comments
-  (async () => {
+  function managedPendingCandidate(
+    candidate: string | undefined,
+    round: number | undefined,
+  ): string | undefined {
+    if (!candidate || !round) return undefined;
+    const expected = path.join(
+      path.dirname(filePath),
+      ".review",
+      "pending",
+      `${path.basename(filePath)}.round-${round}.md`,
+    );
+    return path.resolve(candidate) === path.resolve(expected)
+      ? expected
+      : undefined;
+  }
+
+  const sidecarReady = (async () => {
+    let abandonedCandidate: string | undefined;
     await withSidecar(filePath, (sidecar) => {
       let changed = false;
+      const previousMode = sidecar.responder_mode;
+      if (previousMode === "caller" && currentResponderMode !== "caller") {
+        abandonedCandidate = managedPendingCandidate(
+          sidecar.pending_revision?.candidate_file,
+          sidecar.pending_revision?.round,
+        );
+        const pendingRound = sidecar.pending_revision?.round;
+        const interrupted = [...sidecar.rounds]
+          .reverse()
+          .find(
+            (round) =>
+              round.round === pendingRound ||
+              round.caller_revision_requested_at != null,
+          );
+        if (interrupted) {
+          interrupted.resolved_at = null;
+          delete interrupted.caller_revision_requested_at;
+        }
+        delete sidecar.pending_revision;
+        changed = true;
+      }
       const hasOpen = sidecar.rounds.some((r: any) => r.resolved_at === null);
       if (!hasOpen) {
         sidecar.rounds.push({
@@ -133,10 +175,19 @@ export function createServer(
         sidecar.context = opts.context;
         changed = true;
       }
+      if (sidecar.responder_mode !== currentResponderMode) {
+        sidecar.responder_mode = currentResponderMode;
+        changed = true;
+      }
       // Skip the save if there's nothing to write.
       if (!changed) return false as const;
     });
+    if (abandonedCandidate) await rm(abandonedCandidate, { force: true });
   })();
+  app.use("*", async (_c, next) => {
+    await sidecarReady;
+    return next();
+  });
 
   // ── SSE broadcast ────────────────────────────────────────────────────
   const sseClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
@@ -170,6 +221,28 @@ export function createServer(
     | undefined;
   let onRevisionErrorCallback: ((message: string) => void) | undefined;
   let onRevisionRecoveredCallback: (() => void) | undefined;
+  let onResponderChangeCallback:
+    | ((mode: Exclude<ResponderMode, "caller">) => Promise<{
+        agentName?: string;
+        activate?: () => Promise<void> | void;
+      } | void>)
+    | undefined;
+
+  const CALLER_LEASE_MS = process.env.REDLINE_CALLER_LEASE_MS
+    ? parseInt(process.env.REDLINE_CALLER_LEASE_MS, 10)
+    : 90_000;
+  let callerLastSeenAt =
+    currentResponderMode === "caller" ? Date.now() : Number.POSITIVE_INFINITY;
+  let callerUnavailable = false;
+
+  function markCallerSeen() {
+    if (currentResponderMode !== "caller") return;
+    callerLastSeenAt = Date.now();
+    if (callerUnavailable) {
+      callerUnavailable = false;
+      broadcast("responder-available", { mode: "caller" });
+    }
+  }
 
   // Revision watchdog: when /api/accept fires we start a timer. If no terminal
   // event (/api/reload, /api/revision-no-changes, /api/revision-error) arrives
@@ -216,6 +289,10 @@ export function createServer(
             .find((r) => r.resolved_at !== null);
           if (!lastResolved) return false as const;
           lastResolved.resolved_at = null;
+          delete lastResolved.caller_revision_requested_at;
+          if (sidecar.pending_revision?.round === lastResolved.round) {
+            delete sidecar.pending_revision;
+          }
         });
       } catch (e) {
         console.error("[redline] watchdog: failed to un-resolve round:", e);
@@ -270,6 +347,26 @@ export function createServer(
     }
   }
 
+  const callerLeaseTimer = setInterval(
+    () => {
+      if (
+        currentResponderMode !== "caller" ||
+        callerUnavailable ||
+        Date.now() - callerLastSeenAt <= CALLER_LEASE_MS
+      ) {
+        return;
+      }
+      callerUnavailable = true;
+      broadcast("responder-unavailable", {
+        mode: "caller",
+        reason:
+          "The launching agent stopped checking in. Run redline responder <file> --mode local or --mode manual to continue explicitly.",
+      });
+    },
+    Math.max(50, Math.min(5_000, Math.floor(CALLER_LEASE_MS / 3))),
+  );
+  callerLeaseTimer.unref?.();
+
   app.get("/api/events", (c) => {
     const isBrowser =
       new URL(c.req.url).searchParams.get("client") === "browser";
@@ -284,6 +381,17 @@ export function createServer(
           checkBrowserPresence();
         }
         controller.enqueue(enc.encode(": connected\n\n"));
+        if (isBrowser && callerUnavailable) {
+          controller.enqueue(
+            enc.encode(
+              `event: responder-unavailable\ndata: ${JSON.stringify({
+                mode: "caller",
+                reason:
+                  "The launching agent stopped checking in. Choose an explicit responder mode to continue.",
+              })}\n\n`,
+            ),
+          );
+        }
         keepaliveTimer = setInterval(() => {
           try {
             controller.enqueue(enc.encode(": ping\n\n"));
@@ -311,6 +419,80 @@ export function createServer(
     });
   });
 
+  app.post("/api/caller-heartbeat", (c) => {
+    if (currentResponderMode !== "caller") {
+      return c.json(
+        { ok: false, error: "Review is not using the caller responder" },
+        409,
+      );
+    }
+    markCallerSeen();
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/responder", async (c) => {
+    const body = await c.req.json<{ mode?: string }>();
+    if (body.mode !== "local" && body.mode !== "manual") {
+      return c.json({ ok: false, error: "mode must be local or manual" }, 400);
+    }
+    if (body.mode === currentResponderMode) {
+      return c.json({ ok: true, mode: currentResponderMode });
+    }
+
+    let callbackResult:
+      | {
+          agentName?: string;
+          activate?: () => Promise<void> | void;
+        }
+      | undefined;
+    try {
+      callbackResult =
+        (await onResponderChangeCallback?.(body.mode)) ?? undefined;
+    } catch (error) {
+      return c.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        409,
+      );
+    }
+
+    clearRevisionWatchdog();
+    let abandonedCandidate: string | undefined;
+    await withSidecar(filePath, (sidecar) => {
+      abandonedCandidate = managedPendingCandidate(
+        sidecar.pending_revision?.candidate_file,
+        sidecar.pending_revision?.round,
+      );
+      const pendingRound = sidecar.pending_revision?.round;
+      const interrupted = [...sidecar.rounds]
+        .reverse()
+        .find(
+          (round) =>
+            round.round === pendingRound ||
+            round.caller_revision_requested_at != null,
+        );
+      if (interrupted) {
+        interrupted.resolved_at = null;
+        delete interrupted.caller_revision_requested_at;
+      }
+      delete sidecar.pending_revision;
+      sidecar.responder_mode = body.mode;
+    });
+    if (abandonedCandidate) await rm(abandonedCandidate, { force: true });
+
+    currentResponderMode = body.mode;
+    currentAgentName =
+      callbackResult?.agentName ??
+      (body.mode === "manual" ? "manual" : currentAgentName);
+    callerUnavailable = false;
+    await callbackResult?.activate?.();
+    onRevisionRecoveredCallback?.();
+    broadcast("responder-changed", { mode: body.mode });
+    return c.json({ ok: true, mode: body.mode });
+  });
+
   app.get("/", async (c) => {
     const content = await readFile(filePath, "utf-8");
     const html = renderMarkdown(content);
@@ -334,8 +516,9 @@ export function createServer(
         sidecar.context,
         false,
         csrfToken,
-        opts.noAgent ?? false,
-        opts.agentName,
+        currentResponderMode === "manual",
+        currentAgentName,
+        currentResponderMode,
       ),
     );
   });
@@ -464,6 +647,9 @@ export function createServer(
       const round = activeRound(sidecar);
       if (!round) return { skip: true as const };
       round.resolved_at = new Date().toISOString();
+      if (currentResponderMode === "caller") {
+        round.caller_revision_requested_at = new Date().toISOString();
+      }
       return { skip: false as const, roundNumber: round.round };
     });
     if (out.skip) return c.json({ ok: false, error: "No active round" }, 400);
@@ -541,6 +727,10 @@ export function createServer(
         .find((r) => r.resolved_at !== null);
       if (!lastResolved) return false as const;
       lastResolved.resolved_at = null;
+      delete lastResolved.caller_revision_requested_at;
+      if (sidecar.pending_revision?.round === lastResolved.round) {
+        delete sidecar.pending_revision;
+      }
     });
     broadcast("revision-error", { message });
     onRevisionErrorCallback?.(message);
@@ -629,6 +819,7 @@ export function createServer(
     });
     if (out.skip)
       return c.json({ ok: false, error: out.error }, out.status as 400 | 404);
+    if (role === "agent" && body.author === true) markCallerSeen();
     if (role === "human" || (role === "agent" && body.author === true)) {
       broadcast("comment-reply", { round: out.roundNumber, commentId: id });
     }
@@ -731,8 +922,9 @@ export function createServer(
         sidecar.context,
         true, // readOnly
         csrfToken,
-        opts.noAgent ?? false,
-        opts.agentName,
+        currentResponderMode === "manual",
+        currentAgentName,
+        currentResponderMode,
       ),
     );
   });
@@ -850,6 +1042,14 @@ export function createServer(
     },
     onRevisionRecovered(cb: () => void) {
       onRevisionRecoveredCallback = cb;
+    },
+    onResponderChange(
+      cb: (mode: Exclude<ResponderMode, "caller">) => Promise<{
+        agentName?: string;
+        activate?: () => Promise<void> | void;
+      } | void>,
+    ) {
+      onResponderChangeCallback = cb;
     },
   };
 }

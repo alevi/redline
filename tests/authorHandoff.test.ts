@@ -3,12 +3,14 @@ import { spawnSync } from "child_process";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import {
+  collectCallerTurns,
   collectAuthorNeeded,
   formatAuthorNeeded,
+  prepareCallerRevision,
   postAuthorReply,
   waitForAuthorEvent,
 } from "../src/authorHandoff";
-import { saveSidecar, type Sidecar } from "../src/sidecar";
+import { loadSidecar, saveSidecar, type Sidecar } from "../src/sidecar";
 import {
   BUN,
   CLI,
@@ -115,6 +117,45 @@ test("collectAuthorNeeded reopens a handoff if a later escalation follows an aut
   expect(items[1]!.request).toBe("What about the migration appendix?");
 });
 
+test("collectCallerTurns returns unanswered human turns from the active round", () => {
+  const s = sidecar();
+  s.responder_mode = "caller";
+  s.rounds[0]!.comments[0]!.thread.push({
+    role: "human",
+    message: "The guide requires sentence case. Can you update your answer?",
+    at: "",
+  });
+
+  const items = collectCallerTurns(s);
+
+  expect(items).toHaveLength(1);
+  expect(items[0]).toMatchObject({
+    round: 1,
+    commentId: "c1",
+    quote: "the style note",
+    request: "The guide requires sentence case. Can you update your answer?",
+    resolved: false,
+  });
+  expect(items[0]!.thread).toHaveLength(3);
+});
+
+test("collectCallerTurns ignores answered, resolved, and historical comments", () => {
+  const s = sidecar();
+  s.responder_mode = "caller";
+  expect(collectCallerTurns(s)).toEqual([]);
+
+  s.rounds[0]!.resolved_at = "done";
+  s.rounds.push({
+    round: 2,
+    started_at: "",
+    submitted_at: null,
+    agent_replied_at: null,
+    resolved_at: null,
+    comments: [],
+  });
+  expect(collectCallerTurns(s)).toEqual([]);
+});
+
 test("postAuthorReply falls back to a locked sidecar write when no server is running", async () => {
   const { filePath, dir } = createTestFile();
   await saveSidecar(filePath, sidecar());
@@ -138,6 +179,26 @@ test("postAuthorReply falls back to a locked sidecar write when no server is run
     author: true,
   });
   expect(collectAuthorNeeded(saved)).toHaveLength(0);
+});
+
+test("postAuthorReply persists the caller's revision verdict", async () => {
+  const { filePath, dir } = createTestFile();
+  await saveSidecar(filePath, sidecar());
+
+  await postAuthorReply(filePath, "c1", "I’ll change this to sentence case.", {
+    name: "Codex",
+    requiresRevision: true,
+    revisionReason: "Change the style note to sentence case",
+  });
+
+  const saved = JSON.parse(
+    await readFile(path.join(dir, ".review", "test.md.json"), "utf-8"),
+  ) as Sidecar;
+  expect(saved.rounds[0]!.comments[0]!.thread.at(-1)).toMatchObject({
+    author: true,
+    requires_revision: true,
+    revision_reason: "Change the style note to sentence case",
+  });
 });
 
 test("formatAuthorNeeded gives a compact command-line summary", () => {
@@ -266,6 +327,142 @@ test("waitForAuthorEvent returns pending author-needed comments before result", 
     expect(result.author_needed).toHaveLength(1);
     expect(result.author_needed[0]!.commentId).toBe("c1");
   }
+});
+
+test("waitForAuthorEvent returns ordinary pending turns in caller-backed mode", async () => {
+  const { filePath } = createTestFile();
+  const s = sidecar();
+  s.responder_mode = "caller";
+  s.rounds[0]!.comments[0]!.thread.push({
+    role: "human",
+    message: "Please use sentence case.",
+    at: "",
+  });
+  await saveSidecar(filePath, s);
+
+  const result = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 500,
+  });
+
+  expect(result.kind).toBe("caller-turn");
+  if (result.kind === "caller-turn") {
+    expect(result.caller_turns).toHaveLength(1);
+    expect(result.caller_turns[0]!.commentId).toBe("c1");
+    expect(result.caller_turns[0]!.request).toBe("Please use sentence case.");
+  }
+});
+
+test("caller-backed waiting does not use legacy escalation as a work queue", async () => {
+  const { filePath, dir } = createTestFile();
+  const s = sidecar();
+  s.responder_mode = "caller";
+  await saveSidecar(filePath, s);
+  const resultPath = path.join(dir, ".review", "test.md.result");
+  await writeFile(
+    resultPath,
+    JSON.stringify({ status: "approved", file: filePath }),
+    "utf-8",
+  );
+
+  const result = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 500,
+  });
+  expect(result.kind).toBe("result");
+});
+
+test("waitForAuthorEvent prepares an idempotent staged caller revision", async () => {
+  const { filePath } = createTestFile();
+  const s = sidecar();
+  s.responder_mode = "caller";
+  s.rounds[0]!.comments[0]!.resolved = true;
+  s.rounds[0]!.resolved_at = "accepted";
+  s.rounds[0]!.caller_revision_requested_at = "requested";
+  await saveSidecar(filePath, s);
+
+  const first = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 500,
+  });
+  expect(first.kind).toBe("revision-request");
+  if (first.kind !== "revision-request") {
+    throw new Error("revision request missing");
+  }
+  expect(first.revision.round).toBe(1);
+  expect(first.revision.comments).toHaveLength(2);
+  await writeFile(first.revision.revision_file, "# Candidate\n", "utf-8");
+
+  const second = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 500,
+  });
+  expect(second.kind).toBe("revision-request");
+  if (second.kind !== "revision-request") {
+    throw new Error("second revision request missing");
+  }
+  expect(second.revision.revision_file).toBe(first.revision.revision_file);
+  expect(await readFile(second.revision.revision_file, "utf-8")).toBe(
+    "# Candidate\n",
+  );
+});
+
+test("caller revision rejects a staging path outside Redline's pending directory", async () => {
+  const { filePath, dir } = createTestFile();
+  const s = sidecar();
+  s.responder_mode = "caller";
+  s.rounds[0]!.comments[0]!.resolved = true;
+  s.rounds[0]!.resolved_at = "accepted";
+  s.rounds[0]!.caller_revision_requested_at = "requested";
+  await saveSidecar(filePath, s);
+  await prepareCallerRevision(filePath);
+
+  const outside = path.join(dir, "do-not-touch.md");
+  await writeFile(outside, "keep me", "utf-8");
+  const tampered = await loadSidecar(filePath);
+  tampered.pending_revision!.candidate_file = outside;
+  await saveSidecar(filePath, tampered);
+
+  await expect(prepareCallerRevision(filePath)).rejects.toThrow(
+    /outside Redline's staging path/,
+  );
+  expect(await readFile(outside, "utf-8")).toBe("keep me");
+});
+
+test("CLI author-revise commits the prepared staging file", async () => {
+  const source = "# Test Document\n\nThis is a test.\n";
+  const { filePath } = createTestFile(source);
+  const s = sidecar();
+  s.responder_mode = "caller";
+  s.rounds[0]!.comments = [s.rounds[0]!.comments[0]!];
+  s.rounds[0]!.comments[0]!.resolved = true;
+  s.rounds[0]!.resolved_at = "accepted";
+  s.rounds[0]!.caller_revision_requested_at = "requested";
+  await saveSidecar(filePath, s);
+  const pending = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 500,
+  });
+  if (pending.kind !== "revision-request") {
+    throw new Error("revision request missing");
+  }
+  await writeFile(
+    pending.revision.revision_file,
+    source.replace("This is a test.", "This is the revised document."),
+    "utf-8",
+  );
+
+  const revise = spawnSync(
+    BUN,
+    ["run", CLI, "author-revise", filePath, "--round", "1"],
+    { env: TEST_ENV, encoding: "utf-8" },
+  );
+
+  expect(revise.status).toBe(0);
+  expect(revise.stdout).toContain("Committed caller revision for round 1");
+  expect(await readFile(filePath, "utf-8")).toContain(
+    "This is the revised document.",
+  );
 });
 
 test("waitForAuthorEvent returns the review result when no author input is pending", async () => {

@@ -241,7 +241,10 @@ test("watchdog broadcasts revision-stalled and un-resolves the round on timeout"
   const { createServer } = await import("../src/server");
   const { filePath, dir } = createTestFile(SAMPLE);
   process.env.REDLINE_REVISION_TIMEOUT_MS = "500";
-  const app = createServer(filePath, { csrfToken: TEST_CSRF_TOKEN });
+  const app = createServer(filePath, {
+    csrfToken: TEST_CSRF_TOKEN,
+    responderMode: "caller",
+  });
   const server = Bun.serve({ port: 0, fetch: app.fetch, idleTimeout: 0 });
   delete process.env.REDLINE_REVISION_TIMEOUT_MS;
   stops.push(() => {
@@ -262,6 +265,8 @@ test("watchdog broadcasts revision-stalled and un-resolves the round on timeout"
     method: "POST",
     headers: CSRF_HEADERS,
   });
+  const { prepareCallerRevision } = await import("../src/authorHandoff");
+  await prepareCallerRevision(filePath);
 
   // Watchdog fires after ~500ms with no terminal event arriving.
   const ev = await stall;
@@ -271,6 +276,8 @@ test("watchdog broadcasts revision-stalled and un-resolves the round on timeout"
   const sidecarRaw = await Bun.file(`${dir}/.review/test.md.json`).text();
   const sidecar = JSON.parse(sidecarRaw);
   expect(sidecar.rounds[0].resolved_at).toBeNull();
+  expect(sidecar.rounds[0].caller_revision_requested_at).toBeUndefined();
+  expect(sidecar.pending_revision).toBeUndefined();
 }, 10_000);
 
 test("watchdog is cleared by /api/reload", async () => {

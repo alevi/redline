@@ -1,5 +1,11 @@
 import { test, expect, afterEach } from "bun:test";
-import { writeFileSync, existsSync, readFileSync } from "fs";
+import {
+  writeFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  mkdirSync,
+} from "fs";
 import path from "path";
 import os from "os";
 import {
@@ -12,7 +18,16 @@ import {
   waitForEvent,
   postComment,
   TEST_CSRF_TOKEN,
+  TEST_ENV,
+  BUN,
+  CLI,
+  installClaudeShim,
 } from "./helpers";
+import {
+  completeCallerRevision,
+  postAuthorReply,
+  waitForAuthorEvent,
+} from "../src/authorHandoff";
 
 const CSRF_HEADERS = { "X-Redline-Token": TEST_CSRF_TOKEN };
 const CSRF_JSON_HEADERS = {
@@ -39,6 +54,30 @@ async function spawnTracked(
   const result = await spawnCLI(filePath, extraEnv, extraArgs);
   procs.push(result.proc);
   return result;
+}
+
+async function openBrowserEvents(port: number): Promise<() => Promise<void>> {
+  const ac = new AbortController();
+  const response = await fetch(
+    `http://localhost:${port}/api/events?client=browser`,
+    { signal: ac.signal },
+  );
+  expect(response.ok).toBe(true);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("SSE response has no body");
+
+  // Consume the server's initial `: connected` frame. This proves the stream
+  // was registered before a test disconnects it or starts a grace-period clock.
+  await reader.read();
+
+  return async () => {
+    ac.abort();
+    try {
+      await reader.cancel();
+    } catch {
+      // Aborting the request may close the reader before cancel() observes it.
+    }
+  };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -178,12 +217,8 @@ test("startup file is removed on abandon so a stale one can't fool the next run"
   expect(existsSync(startupPath)).toBe(true);
 
   // Trip the abandon timer the same way the tab-close test does.
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   await waitForExit(proc, 5000);
   expect(existsSync(startupPath)).toBe(false);
@@ -202,13 +237,8 @@ test("tab-close triggers abandon after grace period", async () => {
   await waitForServer(port);
 
   // Connect as a browser client, then disconnect
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-
-  await Bun.sleep(200); // let connection register
-  ac.abort(); // disconnect — triggers hadBrowser timer
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents(); // disconnect — triggers hadBrowser timer
 
   const code = await waitForExit(proc, 5000);
 
@@ -233,12 +263,8 @@ test("revision crash → abandon writes error result, not abandoned", async () =
   expect(errRes.status).toBe(200);
 
   // Connect a browser then drop it, tripping the abandon timer.
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(3);
@@ -278,12 +304,8 @@ test("abandon path carries escalations into the result file", async () => {
   });
 
   // Connect a browser then drop it, tripping the abandon timer.
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(2);
@@ -314,12 +336,8 @@ test("revision crash → recovered → abandon writes abandoned, not error", asy
     headers: CSRF_HEADERS,
   });
 
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
-  ac.abort();
+  const closeEvents = await openBrowserEvents(port);
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(2);
@@ -336,22 +354,14 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
   await waitForServer(port);
 
   // First connection
-  const ac1 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac1.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
+  const closeEvents1 = await openBrowserEvents(port);
 
   // Drop it briefly — starts the abandon timer (2s)
-  ac1.abort();
+  await closeEvents1();
   await Bun.sleep(500);
 
   // Reconnect well within the grace — should cancel the timer
-  const ac2 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac2.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
+  const closeEvents2 = await openBrowserEvents(port);
 
   // Wait past the original 2s grace window. If the timer wasn't cancelled, the server would have exited.
   await Bun.sleep(2500);
@@ -361,7 +371,7 @@ test("brief disconnect-reconnect within grace does NOT trip abandon", async () =
   expect(res.ok).toBe(true);
 
   // Cleanup
-  ac2.abort();
+  await closeEvents2();
 }, 15_000);
 
 test("tab-closed beacon abandons on the short grace even when the backstop is long", async () => {
@@ -374,18 +384,14 @@ test("tab-closed beacon abandons on the short grace even when the backstop is lo
   });
   await waitForServer(port);
 
-  const ac = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac.signal,
-  }).catch(() => {});
-  await Bun.sleep(200); // let connection register so hadBrowser is set
+  const closeEvents = await openBrowserEvents(port);
 
   // Tab fires its close beacon, then the SSE drops — the order a real close hits.
   await fetch(`http://localhost:${port}/api/tab-closed`, {
     method: "POST",
     headers: CSRF_HEADERS,
   });
-  ac.abort();
+  await closeEvents();
 
   const code = await waitForExit(proc, 5000);
   expect(code).toBe(2);
@@ -401,30 +407,23 @@ test("tab-closed beacon followed by a reconnect (reload) does NOT abandon", asyn
   });
   await waitForServer(port);
 
-  const ac1 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac1.signal,
-  }).catch(() => {});
-  await Bun.sleep(200);
+  const closeEvents1 = await openBrowserEvents(port);
 
   // Reload: beacon fires, old SSE drops, new SSE reconnects within the short grace.
   await fetch(`http://localhost:${port}/api/tab-closed`, {
     method: "POST",
     headers: CSRF_HEADERS,
   });
-  ac1.abort();
+  await closeEvents1();
   await Bun.sleep(300);
-  const ac2 = new AbortController();
-  fetch(`http://localhost:${port}/api/events?client=browser`, {
-    signal: ac2.signal,
-  }).catch(() => {});
+  const closeEvents2 = await openBrowserEvents(port);
 
   // Outlast the short grace; the reconnect should have cancelled the timer.
   await Bun.sleep(2000);
   const res = await fetch(`http://localhost:${port}/api/comments`);
   expect(res.ok).toBe(true);
 
-  ac2.abort();
+  await closeEvents2();
 }, 15_000);
 
 test("--context flag persists to sidecar.context on first run", async () => {
@@ -498,6 +497,305 @@ test("--no-agent skips agent spawn, server stays usable, page reports manual mod
   const html = await fetch(`http://localhost:${port}/`).then((r) => r.text());
   expect(html).toContain("noAgent: true");
   expect(html).toContain("Manual mode");
+}, 15_000);
+
+test("caller responder routes ordinary comments to the launching agent", async () => {
+  const { filePath, dir } = createTestFile();
+  const { port, agentReady } = await spawnTracked(filePath, {}, [
+    "--responder",
+    "caller",
+  ]);
+
+  let agentConnected = false;
+  agentReady.then(() => {
+    agentConnected = true;
+  });
+  await Bun.sleep(250);
+  expect(agentConnected).toBe(false);
+
+  const startupPath = path.join(dir, ".review", "test.md.startup.json");
+  const startup = JSON.parse(readFileSync(startupPath, "utf-8"));
+  expect(startup.responder_mode).toBe("caller");
+
+  const comment = await postComment(
+    port,
+    { quote: "test" },
+    "Why did we choose this architecture?",
+  );
+  const pending = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 1_000,
+  });
+  expect(pending.kind).toBe("caller-turn");
+  if (pending.kind !== "caller-turn") throw new Error("caller turn missing");
+  expect(pending.caller_turns[0]!.commentId).toBe(comment.id);
+
+  await Bun.sleep(250);
+  let saved = JSON.parse(
+    readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+  );
+  expect(saved.responder_mode).toBe("caller");
+  expect(saved.rounds[0].comments[0].thread).toHaveLength(1);
+
+  const reply = await postAuthorReply(
+    filePath,
+    comment.id,
+    "The process boundary kept the real-time event loop independent.",
+    { name: "Codex", requiresRevision: false },
+  );
+  expect(reply.via).toBe("server");
+
+  saved = JSON.parse(
+    readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+  );
+  expect(saved.rounds[0].comments[0].thread.at(-1)).toMatchObject({
+    author: true,
+    name: "Codex",
+    requires_revision: false,
+  });
+}, 15_000);
+
+test("caller lease loss is explicit and a heartbeat clears it", async () => {
+  const { filePath } = createTestFile();
+  const { port } = await spawnTracked(
+    filePath,
+    { REDLINE_CALLER_LEASE_MS: "500" },
+    ["--responder", "caller"],
+  );
+
+  const unavailable = waitForEvent(port, "responder-unavailable", {
+    timeoutMs: 2_000,
+  });
+  await unavailable.ready;
+  const lost = await unavailable;
+  expect(lost.data.mode).toBe("caller");
+  expect(lost.data.reason).toContain("stopped checking in");
+
+  const available = waitForEvent(port, "responder-available", {
+    timeoutMs: 1_000,
+  });
+  await available.ready;
+  const heartbeat = await fetch(
+    `http://localhost:${port}/api/caller-heartbeat`,
+    { method: "POST", headers: CSRF_HEADERS },
+  );
+  expect(heartbeat.status).toBe(200);
+  expect((await available).data.mode).toBe("caller");
+}, 15_000);
+
+test("explicit caller-to-local takeover recovers an unanswered turn", async () => {
+  const { filePath, dir } = createTestFile();
+  const claude = installClaudeShim(dir);
+  const session = await spawnTracked(
+    filePath,
+    {
+      REDLINE_AGENT: "claude",
+      CLAUDE_CODE_EXECPATH: claude,
+      REDLINE_SHIM_REPLY:
+        "REQUIRES_REVISION: false\nESCALATE: false\nREASON:\n---MESSAGE---\nRecovered locally.\n---END---",
+    },
+    ["--responder", "caller"],
+  );
+  const comment = await postComment(
+    session.port,
+    { quote: "test" },
+    "Please answer after takeover.",
+  );
+
+  const changed = waitForEvent(session.port, "responder-changed", {
+    timeoutMs: 2_000,
+  });
+  await changed.ready;
+  const command = Bun.spawn(
+    [BUN, "run", CLI, "responder", filePath, "--mode", "local"],
+    { stdout: "pipe", stderr: "pipe", env: TEST_ENV },
+  );
+  expect(await command.exited).toBe(0);
+  expect(await new Response(command.stdout).text()).toContain(
+    "Responder switched to local",
+  );
+  expect((await changed).data.mode).toBe("local");
+  await session.waitForAgentConnects(1);
+
+  const deadline = Date.now() + 3_000;
+  let saved: any;
+  do {
+    saved = JSON.parse(
+      readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+    );
+    if (saved.rounds[0].comments[0].thread.length > 1) break;
+    await Bun.sleep(50);
+  } while (Date.now() < deadline);
+
+  expect(saved.responder_mode).toBe("local");
+  expect(saved.rounds[0].comments[0].id).toBe(comment.id);
+  expect(saved.rounds[0].comments[0].thread.at(-1)).toMatchObject({
+    role: "agent",
+    message: "Recovered locally.",
+    requires_revision: false,
+  });
+}, 15_000);
+
+test("relaunching a stale caller revision in manual mode restores the round", async () => {
+  const { filePath, dir } = createTestFile();
+  const reviewDir = path.join(dir, ".review");
+  const pendingDir = path.join(reviewDir, "pending");
+  mkdirSync(pendingDir, { recursive: true });
+  const candidate = path.join(pendingDir, "test.md.round-1.md");
+  writeFileSync(candidate, "# staged\n");
+  writeFileSync(
+    path.join(reviewDir, "test.md.json"),
+    JSON.stringify({
+      file: "test.md",
+      responder_mode: "caller",
+      pending_revision: {
+        round: 1,
+        candidate_file: candidate,
+        source_hash: "stale",
+        prepared_at: "prepared",
+      },
+      rounds: [
+        {
+          round: 1,
+          started_at: "started",
+          submitted_at: null,
+          agent_replied_at: null,
+          resolved_at: "accepted",
+          caller_revision_requested_at: "requested",
+          comments: [],
+        },
+      ],
+    }),
+  );
+
+  const { port } = await spawnTracked(filePath, {}, ["--responder", "manual"]);
+  await waitForServer(port);
+  const saved = JSON.parse(
+    readFileSync(path.join(reviewDir, "test.md.json"), "utf-8"),
+  );
+  expect(saved.responder_mode).toBe("manual");
+  expect(saved.pending_revision).toBeUndefined();
+  expect(saved.rounds).toHaveLength(1);
+  expect(saved.rounds[0].resolved_at).toBeNull();
+  expect(saved.rounds[0].caller_revision_requested_at).toBeUndefined();
+  expect(existsSync(candidate)).toBe(false);
+}, 15_000);
+
+test("caller responder validates and commits a staged revision", async () => {
+  const source =
+    "# Test Document\n\nThis is a test.\n\n## Untouched\n\nKeep this section.\n";
+  const { filePath, dir } = createTestFile(source);
+  const { port } = await spawnTracked(filePath, {}, ["--responder", "caller"]);
+  const comment = await postComment(
+    port,
+    { quote: "This is a test." },
+    "Make this claim more concrete.",
+  );
+  await waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 1_000 });
+  await postAuthorReply(
+    filePath,
+    comment.id,
+    "I’ll name the behavior directly.",
+    {
+      requiresRevision: true,
+      revisionReason: "Replace the generic test sentence with concrete copy",
+    },
+  );
+  await fetch(`http://localhost:${port}/api/comment/${comment.id}/resolve`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
+
+  await fetch(`http://localhost:${port}/api/accept`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
+  const request = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 1_000,
+  });
+  expect(request.kind).toBe("revision-request");
+  if (request.kind !== "revision-request") {
+    throw new Error("revision request missing");
+  }
+  expect(request.revision.round).toBe(1);
+  expect(readFileSync(request.revision.revision_file, "utf-8")).toBe(source);
+  writeFileSync(
+    request.revision.revision_file,
+    source.replace(
+      "This is a test.",
+      "This review keeps the author in context.",
+    ),
+  );
+
+  const reload = waitForEvent(port, "reload", { timeoutMs: 2_000 });
+  await reload.ready;
+  const completed = await completeCallerRevision(filePath, 1);
+  await reload;
+
+  expect(completed).toEqual({ changed: true, round: 1 });
+  expect(readFileSync(filePath, "utf-8")).toContain(
+    "This review keeps the author in context.",
+  );
+  const saved = JSON.parse(
+    readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+  );
+  expect(saved.pending_revision).toBeUndefined();
+  expect(saved.rounds).toHaveLength(2);
+  expect(saved.rounds[1].resolved_at).toBeNull();
+  expect(readdirSync(path.join(dir, ".review", "history"))).toHaveLength(1);
+}, 15_000);
+
+test("caller revision rejection leaves the live document untouched", async () => {
+  const source =
+    "# Test Document\n\n## Editable\n\nChange this.\n\n## Untouched\n\nKeep this section.\n";
+  const { filePath, dir } = createTestFile(source);
+  const { port } = await spawnTracked(filePath, {}, ["--responder", "caller"]);
+  const comment = await postComment(
+    port,
+    { quote: "Change this." },
+    "Rewrite this sentence.",
+  );
+  await waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 1_000 });
+  await postAuthorReply(filePath, comment.id, "I’ll rewrite it.", {
+    requiresRevision: true,
+    revisionReason: "Rewrite the editable sentence",
+  });
+  await fetch(`http://localhost:${port}/api/comment/${comment.id}/resolve`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
+  await fetch(`http://localhost:${port}/api/accept`, {
+    method: "POST",
+    headers: CSRF_HEADERS,
+  });
+  const request = await waitForAuthorEvent(filePath, {
+    intervalMs: 50,
+    timeoutMs: 1_000,
+  });
+  if (request.kind !== "revision-request") {
+    throw new Error("revision request missing");
+  }
+  writeFileSync(
+    request.revision.revision_file,
+    "# Test Document\n\n## Editable\n\nChanged.\n",
+  );
+
+  const revisionError = waitForEvent(port, "revision-error", {
+    timeoutMs: 2_000,
+  });
+  await revisionError.ready;
+  await expect(completeCallerRevision(filePath, 1)).rejects.toThrow(
+    /dropped section/,
+  );
+  await revisionError;
+
+  expect(readFileSync(filePath, "utf-8")).toBe(source);
+  const saved = JSON.parse(
+    readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+  );
+  expect(saved.pending_revision).toBeUndefined();
+  expect(saved.rounds[0].resolved_at).toBeNull();
 }, 15_000);
 
 test("agent restart cap → cli broadcasts agent-unavailable end-to-end", async () => {

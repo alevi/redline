@@ -9,6 +9,7 @@ declare global {
       contextTitle: string;
       csrfToken: string;
       noAgent?: boolean;
+      responderMode?: "local" | "caller" | "manual";
     };
     hljs?: { highlightElement(el: HTMLElement): void };
     dismissContextBanner?: () => void;
@@ -21,6 +22,7 @@ export const state = {
   totalRounds: window.__REDLINE__.totalRounds,
   csrfToken: window.__REDLINE__.csrfToken || "",
   noAgent: window.__REDLINE__.noAgent === true,
+  responderMode: window.__REDLINE__.responderMode ?? "local",
   thinkingCommentIds: new Set<string>(),
   pendingSelection: null as PendingSelection | null,
   navIdx: 0,
