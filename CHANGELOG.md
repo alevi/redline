@@ -4,6 +4,8 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-15
+
 ### Added
 
 - Reviews launched through the bundled skill now keep the authoring agent in the discussion and revision loop instead of spawning a second responder. Caller-backed revisions use a validated staging file, preserve history snapshots, and recover safely after failures.
@@ -126,7 +128,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/alevi/redline/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/alevi/redline/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/alevi/redline/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/alevi/redline/compare/v0.5.2...v0.5.3
