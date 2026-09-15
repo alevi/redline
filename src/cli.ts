@@ -67,6 +67,7 @@ const { createServer } = await import("./server");
 const { resolve } = await import("./resolve");
 const {
   formatAuthorNeeded,
+  completeCallerRevision,
   listAuthorNeeded,
   postAuthorReply,
   waitForAuthorEvent,
@@ -81,6 +82,15 @@ const {
 function argValue(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
   return idx !== -1 ? args[idx + 1] : undefined;
+}
+
+function booleanArg(args: string[], flag: string): boolean | undefined {
+  const raw = argValue(args, flag);
+  if (raw == null) return undefined;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  console.error(`${flag} must be true or false`);
+  process.exit(1);
 }
 
 function selectProvider(args: string[]) {
@@ -196,7 +206,7 @@ if (args[0] === "author-reply") {
   const message = argValue(args, "--message");
   if (!filePath || !commentId || !message) {
     console.error(
-      'Usage: redline author-reply <file.md> <comment-id> --message "..." [--name "Author"]',
+      'Usage: redline author-reply <file.md> <comment-id> --message "..." [--name "Author"] [--requires-revision true|false] [--revision-reason "..."]',
     );
     process.exit(1);
   }
@@ -208,6 +218,8 @@ if (args[0] === "author-reply") {
   try {
     const result = await postAuthorReply(resolved, commentId, message, {
       name: argValue(args, "--name"),
+      requiresRevision: booleanArg(args, "--requires-revision"),
+      revisionReason: argValue(args, "--revision-reason"),
     });
     console.log(
       `Posted author reply to ${result.commentId} via ${result.via}.`,
@@ -257,6 +269,78 @@ if (args[0] === "author-wait") {
   process.exit(0);
 }
 
+// redline author-revise <file> --round <n>
+if (args[0] === "author-revise") {
+  const filePath = args[1];
+  const roundRaw = argValue(args, "--round");
+  if (!filePath || !roundRaw) {
+    console.error("Usage: redline author-revise <file.md> --round <n>");
+    process.exit(1);
+  }
+  const resolved = path.resolve(filePath);
+  if (!existsSync(resolved)) {
+    console.error(`File not found: ${resolved}`);
+    process.exit(1);
+  }
+  const round = Number(roundRaw);
+  if (!Number.isInteger(round) || round < 1) {
+    console.error("--round must be a positive integer");
+    process.exit(1);
+  }
+  try {
+    const result = await completeCallerRevision(resolved, round);
+    console.log(
+      result.changed
+        ? `Committed caller revision for round ${round}.`
+        : `Caller revision for round ${round} made no changes.`,
+    );
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+// redline responder <file> --mode local|manual
+if (args[0] === "responder") {
+  const filePath = args[1];
+  const mode = argValue(args, "--mode");
+  if (!filePath || (mode !== "local" && mode !== "manual")) {
+    console.error("Usage: redline responder <file.md> --mode local|manual");
+    process.exit(1);
+  }
+  const resolved = path.resolve(filePath);
+  const startupFile = path.join(
+    path.dirname(resolved),
+    ".review",
+    path.basename(resolved) + ".startup.json",
+  );
+  try {
+    const startup = JSON.parse(readFileSync(startupFile, "utf-8")) as {
+      url?: string;
+      csrf_token?: string;
+    };
+    if (!startup.url || !startup.csrf_token) {
+      throw new Error("Live Redline startup metadata is incomplete");
+    }
+    const response = await fetch(`${startup.url}/api/responder`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Redline-Token": startup.csrf_token,
+      },
+      body: JSON.stringify({ mode }),
+    });
+    const body = (await response.json()) as { error?: string };
+    if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+    console.log(`Responder switched to ${mode}.`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 // redline resolve <file> [--model <id>]
 if (args[0] === "resolve") {
   const filePath = args[1];
@@ -285,7 +369,7 @@ if (args[0] === "resolve") {
   const filePath = args[0];
   if (!filePath) {
     console.error(
-      'Usage: redline <file.md>\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline author-needed <file.md> [--json]\n       redline author-reply <file.md> <comment-id> --message "..." [--name "Author"]\n       redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]\n       redline install-skill [--agent claude|codex|both]',
+      'Usage: redline <file.md> [--responder local|caller|manual]\n       redline resolve <file.md> [--model <model-id>] [--agent claude|codex]\n       redline author-needed <file.md> [--json]\n       redline author-reply <file.md> <comment-id> --message "..." [--name "Author"] [--requires-revision true|false] [--revision-reason "..."]\n       redline author-wait <file.md> [--timeout-ms <ms>] [--interval-ms <ms>]\n       redline author-revise <file.md> --round <n>\n       redline responder <file.md> --mode local|manual\n       redline install-skill [--agent claude|codex|both]',
     );
     process.exit(1);
   }
@@ -294,13 +378,37 @@ if (args[0] === "resolve") {
     console.error(`File not found: ${resolved}`);
     process.exit(1);
   }
-  const noAgent = args.includes("--no-agent");
+  const responderFlag = argValue(args, "--responder");
+  if (
+    responderFlag &&
+    responderFlag !== "local" &&
+    responderFlag !== "caller" &&
+    responderFlag !== "manual"
+  ) {
+    console.error(
+      `[redline] Unknown responder mode "${responderFlag}". Supported modes: local, caller, manual.`,
+    );
+    process.exit(1);
+  }
+  if (
+    args.includes("--no-agent") &&
+    responderFlag &&
+    responderFlag !== "manual"
+  ) {
+    console.error(
+      "[redline] --no-agent cannot be combined with a non-manual --responder mode.",
+    );
+    process.exit(1);
+  }
+  let responderMode: "local" | "caller" | "manual" = args.includes("--no-agent")
+    ? "manual"
+    : ((responderFlag as "local" | "caller" | "manual" | undefined) ?? "local");
+  const noAgent = responderMode === "manual";
   const provider = selectProvider(args);
 
-  // Manual annotation mode skips both the preflight and the agent spawn —
-  // the user just wants inline comments without an agent conversation, so
-  // requiring a provider CLI on PATH would be a hostile gate.
-  if (!noAgent) {
+  // Only local responder mode shells out to a provider. Caller mode uses the
+  // launching task for both discussion and revision; manual mode uses none.
+  if (responderMode === "local") {
     try {
       provider.preflight();
     } catch (e) {
@@ -357,7 +465,8 @@ if (args[0] === "resolve") {
     context,
     csrfToken,
     noAgent,
-    agentName: provider.displayName,
+    agentName: responderMode === "caller" ? "authoring" : provider.displayName,
+    responderMode,
   });
   const server = Bun.serve({
     port: 0,
@@ -384,7 +493,8 @@ if (args[0] === "resolve") {
           started_at: new Date().toISOString(),
           pid: process.pid,
           csrf_token: csrfToken,
-          agent_provider: provider.id,
+          agent_provider: responderMode === "local" ? provider.id : undefined,
+          responder_mode: responderMode,
         },
         null,
         2,
@@ -404,6 +514,10 @@ if (args[0] === "resolve") {
   if (noAgent)
     console.log(
       `  Mode: manual annotation (--no-agent — no ${provider.displayName} replies, no revision pass)`,
+    );
+  else if (responderMode === "caller")
+    console.log(
+      `  Mode: caller-backed (the launching agent handles replies and revisions)`,
     );
   if (!autoOpen)
     console.log(`\n  → cmd-click the URL when you're ready to review\n`);
@@ -439,12 +553,14 @@ if (args[0] === "resolve") {
           REDLINE_PORT: String(server.port),
           REDLINE_TOKEN: csrfToken,
           REDLINE_AGENT: provider.id,
+          REDLINE_RESPONDER_MODE: responderMode,
         },
       },
     );
     agentProc = proc;
     proc.exited.then((code) => {
       if (serverExiting) return;
+      if (responderMode !== "local") return;
       if (code === 0) return;
       const now = Date.now();
       while (restartTimes.length && now - restartTimes[0] > RESTART_WINDOW_MS)
@@ -475,7 +591,7 @@ if (args[0] === "resolve") {
       spawnAgent();
     });
   }
-  if (!noAgent) spawnAgent();
+  if (responderMode === "local") spawnAgent();
 
   // Graceful shutdown: SIGTERM first so agent.ts can flush in-flight HTTP
   // posts and close its SSE connection cleanly, then SIGKILL after 2s if
@@ -509,6 +625,34 @@ if (args[0] === "resolve") {
       /* already dead */
     }
   }
+
+  function updateStartupResponderMode(mode: "local" | "manual") {
+    try {
+      const startup = JSON.parse(readFileSync(startupFile, "utf-8")) as Record<
+        string,
+        unknown
+      >;
+      startup.responder_mode = mode;
+      if (mode === "local") startup.agent_provider = provider.id;
+      else delete startup.agent_provider;
+      writeFileSync(startupFile, JSON.stringify(startup, null, 2));
+    } catch (error) {
+      console.error("[redline] Failed to update responder metadata:", error);
+    }
+  }
+
+  app.onResponderChange(async (mode) => {
+    if (mode === "local") provider.preflight();
+    return {
+      agentName: mode === "local" ? provider.displayName : "manual",
+      activate: async () => {
+        responderMode = mode;
+        updateStartupResponderMode(mode);
+        if (mode === "local") spawnAgent();
+        else await killAgent();
+      },
+    };
+  });
   // Tracks the last unrecovered revision failure. If the session abandons while
   // this is set, the result file reports "error" instead of "abandoned" so a
   // calling agent can distinguish "user walked away" from "revision broke."

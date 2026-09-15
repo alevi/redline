@@ -4,6 +4,15 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Added
+
+- Reviews launched through the bundled skill now keep the authoring agent in the discussion and revision loop instead of spawning a second responder. Caller-backed revisions use a validated staging file, preserve history snapshots, and recover safely after failures.
+- Added explicit responder recovery with `redline responder <file> --mode local|manual`. A lost caller is shown as offline and is never replaced silently.
+
+### Changed
+
+- Local responder processes now recover unanswered comments after reconnecting, while caller-backed sessions no longer depend on author-escalation classification for ordinary review turns.
+
 ## [0.5.5] - 2026-06-09
 
 ### Fixed

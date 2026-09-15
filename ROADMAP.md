@@ -2,6 +2,10 @@
 
 This roadmap captures where Redline is heading. It's directional, not a commitment — items may move, drop, or arrive in a different shape based on what users actually hit. File an [issue](https://github.com/alevi/redline/issues) if any of this matters to you and you want to nudge the order.
 
+## Recently completed
+
+- **Caller-backed review agent.** Reviews launched through the bundled skill keep the authoring agent in the discussion and revision loop. Caller loss is visible, takeover is explicit, and standalone local-agent and manual modes remain available. See the [completed milestone](docs/milestones/caller-backed-review-agent.md).
+
 ## Now
 
 - **Polished launch.** Scoped npm publish (`@levistudio/redline`), `npx` / `bunx` parity, GitHub Release, demo GIF that captures the magic moment, landing page.

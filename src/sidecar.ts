@@ -54,12 +54,28 @@ export interface Round {
   submitted_at: string | null; // human clicked "Submit for review" — agent should respond
   agent_replied_at: string | null; // agent posted replies — human should review
   resolved_at: string | null; // human accepted — agent should revise the document
+  // Set when a caller-backed session accepts this round. Cleared when the
+  // staged revision commits or the revision is cancelled/recovered.
+  caller_revision_requested_at?: string;
   comments: Comment[];
+}
+
+export type ResponderMode = "local" | "caller" | "manual";
+
+export interface PendingRevision {
+  round: number;
+  candidate_file: string;
+  source_hash: string;
+  prepared_at: string;
 }
 
 export interface Sidecar {
   file: string;
   context?: string;
+  // How this live review expects human turns to be answered. Optional for
+  // sidecars created before responder modes existed; those default to local.
+  responder_mode?: ResponderMode;
+  pending_revision?: PendingRevision;
   rounds: Round[];
 }
 

@@ -19,6 +19,7 @@ function pageTemplate(
   csrfToken = "",
   noAgent = false,
   agentName = "selected local",
+  responderMode: "local" | "caller" | "manual" = noAgent ? "manual" : "local",
 ): string {
   const commentsJson = JSON.stringify(comments);
 
@@ -129,6 +130,7 @@ function pageTemplate(
       contextTitle: ${JSON.stringify(title)},
       csrfToken: ${JSON.stringify(csrfToken)},
       noAgent: ${JSON.stringify(noAgent)},
+      responderMode: ${JSON.stringify(responderMode)},
     };
   </script>
   <script src="/client.js" defer></script>

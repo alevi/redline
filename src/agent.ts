@@ -48,6 +48,7 @@ if (process.env.REDLINE_AGENT_CRASH_ALWAYS === "1") {
 const BASE_URL = `http://localhost:${process.env.REDLINE_PORT ?? "3000"}`;
 const CSRF_TOKEN = process.env.REDLINE_TOKEN ?? "";
 const provider = getAgentProvider(resolveProviderId());
+const responderMode = process.env.REDLINE_RESPONDER_MODE ?? "local";
 
 // Inject `X-Redline-Token` on every mutating call back to the server. The
 // server rejects unauthenticated POST/DELETE/PUT/PATCH on /api/*; without
@@ -106,6 +107,7 @@ const REPLY_SYSTEM_PROMPT_BODY =
   "---END---";
 
 const inProgress = new Set<string>();
+let revisionInProgress = false;
 
 async function fetchComments() {
   const res = await fetch(`${BASE_URL}/api/comments`);
@@ -225,6 +227,8 @@ async function handleComment(commentId: string) {
 }
 
 async function handleAccepted() {
+  if (revisionInProgress) return;
+  revisionInProgress = true;
   console.log("[agent] accepted — running revision...");
   try {
     await resolve(path.resolve(filePath));
@@ -240,15 +244,52 @@ async function handleAccepted() {
     } catch {
       /* server may be down — non-fatal */
     }
+  } finally {
+    revisionInProgress = false;
+  }
+}
+
+async function recoverPendingWork() {
+  if (responderMode === "caller") return;
+  const res = await fetch(`${BASE_URL}/api/sidecar`);
+  if (!res.ok) return;
+  const sidecar = (await res.json()) as {
+    rounds?: Array<{
+      resolved_at: string | null;
+      comments?: Array<{
+        id: string;
+        resolved: boolean;
+        thread: Array<{ role: "human" | "agent" }>;
+      }>;
+    }>;
+  };
+  const rounds = sidecar.rounds ?? [];
+  const active = rounds.find((round) => round.resolved_at === null);
+  if (active) {
+    for (const comment of active.comments ?? []) {
+      if (!comment.resolved && comment.thread.at(-1)?.role === "human") {
+        handleComment(comment.id).catch((error) =>
+          console.error("[agent] recovery reply failed:", error),
+        );
+      }
+    }
+    return;
+  }
+  if (rounds.some((round) => round.resolved_at !== null)) {
+    handleAccepted().catch((error) =>
+      console.error("[agent] recovery revision failed:", error),
+    );
   }
 }
 
 async function handleEvent(type: string, payload: any) {
   if (type === "comment-added" || type === "comment-reply") {
+    if (responderMode === "caller") return;
     handleComment(payload.commentId).catch((e) =>
       console.error("[agent] error handling comment:", e),
     );
   } else if (type === "accepted") {
+    if (responderMode === "caller") return;
     handleAccepted().catch((e) =>
       console.error("[agent] error handling accepted:", e),
     );
@@ -265,8 +306,13 @@ async function connect() {
       const res = await fetch(`${BASE_URL}/api/events`);
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-      console.log("[agent] connected — listening for comments");
+      console.log(
+        responderMode === "caller"
+          ? "[agent] connected — caller handles discussion; listening for accepted rounds"
+          : "[agent] connected — listening for comments",
+      );
       retryDelay = 1000;
+      await recoverPendingWork();
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();

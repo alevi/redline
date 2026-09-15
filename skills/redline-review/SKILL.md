@@ -5,7 +5,7 @@ description: Hand a markdown file you produced (spec, RFC, brief, plan) to the h
 
 # Handing off a markdown doc for human review
 
-When you've produced a markdown document that the human needs to read, comment on, and approve before you continue, use Redline. It opens a browser-based reader where the human leaves inline comments, an agent subprocess Redline spawns replies to them, the human signs off, and the document on disk is left in its final approved state.
+When you've produced a markdown document that the human needs to read, comment on, and approve before you continue, use Redline. It opens a browser-based reader where the human leaves inline comments. You remain the authoring agent, reply with your existing task context, and revise a Redline-managed staging file when the human accepts a round. The human signs off, and the document on disk is left in its final approved state.
 
 ## How to invoke it
 
@@ -26,7 +26,7 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const [launcher, file, logPath] = process.argv.slice(2);
 const out = fs.openSync(logPath, "a");
-const child = spawn(launcher, [file, "--open"], {
+const child = spawn(launcher, [file, "--responder", "caller", "--open"], {
   detached: true,
   stdio: ["ignore", out, out],
   env: process.env,
@@ -47,9 +47,8 @@ echo "REDLINE_URL: $URL"
 echo "REDLINE_PID: $PID"
 
 # Step 2: tell the human the browser opened (you do this after the first shell call returns
-# — see the next section), then wait until either author input is needed or the
-# review exits. If author input is needed, answer it with author-reply and run
-# author-wait again.
+# — see the next section), then wait until the reviewer sends you a turn or the
+# review exits. Reply to caller turns with author-reply, then run author-wait again.
 __REDLINE_BIN__ author-wait "$FILE"
 ```
 
@@ -59,7 +58,36 @@ In practice, run the script above as **two separate shell calls** so you can tel
 
 1. First call: everything through `echo "REDLINE_PID: $PID"`. Returns in ~1s with the URL and PID on stdout.
 2. Tell the human Redline opened in their browser, and include the URL only as a fallback (see "Surfacing the URL" below).
-3. Second call: `__REDLINE_BIN__ author-wait "$FILE"`. It returns `{ "kind": "author-needed", ... }`, `{ "kind": "result", ... }`, or `{ "kind": "session-ended", ... }`. Long timeout (`timeout: 1800000` = 30 min, or longer). If it returns author-needed JSON, answer with `author-reply`, then run `author-wait` again. If it returns session-ended, inspect `$LOG` and relaunch only after explaining the failed session to the human.
+3. Second call: `__REDLINE_BIN__ author-wait "$FILE"`. It returns `{ "kind": "caller-turn", ... }`, `{ "kind": "revision-request", ... }`, `{ "kind": "result", ... }`, or `{ "kind": "session-ended", ... }`. Long timeout (`timeout: 1800000` = 30 min, or longer). Handle caller turns and revision requests as described below, then run `author-wait` again. If it returns session-ended, inspect `$LOG` and relaunch only after explaining the failed session to the human.
+
+`author-wait` is also the caller's liveness signal. Keep the wait loop active for the whole review. If you cannot continue serving the review, tell the human instead of silently switching it to another responder. Recovery is an explicit user choice through `redline responder "$FILE" --mode local` or `--mode manual`.
+
+### Reply to reviewer turns
+
+`caller-turn` contains `caller_turns`, with the comment id, selected quote, surrounding context, latest reviewer request, and full thread. `author-wait` posts the thinking indicator before returning the turn. Answer from the context of the task in which you authored the document, using repository tools when the review question requires them.
+
+Post each reply with a verdict:
+
+```bash
+__REDLINE_BIN__ author-reply "$FILE" <comment-id> \
+  --message "<concise reply>" \
+  --requires-revision <true|false> \
+  --revision-reason "<short edit description when true>"
+```
+
+Set `--requires-revision true` when fully addressing the comment implies a document edit. Set it to `false` when the thread itself answers the comment. Omit `--revision-reason` when no edit is needed. After replying to every returned turn, run `author-wait` again. Do not leave the review loop to start unrelated work.
+
+### Apply an accepted revision
+
+`revision-request` contains the accepted round, its settled comment threads, and `revision_file`, an absolute path to a Redline-managed staging copy. Read the current document and the settled threads, then edit only `revision_file` to apply what was agreed. Preserve the complete Markdown document and untouched sections. Do not edit the live document path directly.
+
+When the staging file is ready, hand it back to Redline:
+
+```bash
+__REDLINE_BIN__ author-revise "$FILE" --round <round-number>
+```
+
+Redline verifies that the live source hasn't changed, validates the staged document, snapshots the live file, commits the revision, opens the next round, and reloads the browser. If the command fails, surface the error and return to `author-wait`; do not copy the staging file over the live document or bypass validation.
 
 If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run `redline install-skill`.
 
@@ -102,13 +130,13 @@ The full loop, when you are the outer agent producing the doc:
 
 1. Write the markdown file to disk at an absolute path.
 2. Tell the human in one sentence what's about to happen.
-3. First shell call: launch `__REDLINE_BIN__ <abs-path> --context "<one-liner>" --open` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
+3. First shell call: launch `__REDLINE_BIN__ <abs-path> --responder caller --context "<one-liner>" --open` in the background and poll for `.startup.json`. Returns in ~1s with the URL.
 4. Tell the human Redline opened in their browser and include the URL only as a fallback.
-5. Second shell call: run `__REDLINE_BIN__ author-wait "$FILE"`. If it returns `kind: "author-needed"`, answer with `__REDLINE_BIN__ author-reply "$FILE" <comment-id> --message "..."`, then run `author-wait` again. If it returns `kind: "session-ended"`, inspect the log path from step 1 and tell the human the session died instead of silently relaunching. Do not start unrelated work while the session runs.
+5. Second shell call: run `__REDLINE_BIN__ author-wait "$FILE"`. Answer every `caller-turn` with `author-reply`, including the revision verdict. Apply every `revision-request` through its staging file and `author-revise`. Then run `author-wait` again. If it returns `kind: "session-ended"`, inspect the log path from step 1 and tell the human the session died instead of silently relaunching. Do not start unrelated work while the session runs.
 6. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
 7. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
 
-You usually do not need to reply to comments — Redline spawns its own inline agent subprocess for that. The exception is an author-needed handoff: if `author-wait` returns `kind: "author-needed"`, you are the authoring agent and should answer only when you have the project context, tools, or authority the inline agent lacked. You do not need to invoke `redline resolve` separately — revisions happen inside the session when the human accepts.
+You reply to comments and apply accepted revisions because you are the agent that authored and launched the review. Use `author-revise` for the staged handback; do not invoke `redline resolve` separately.
 
 ## When _not_ to use this
 
