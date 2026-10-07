@@ -161,6 +161,36 @@ test("validateRevision: thread text can authorize dropping a named section topic
   expect(r.ok).toBe(true);
 });
 
+test("validateRevision: discussion can authorize renaming a one-word section from a summary quote", () => {
+  const input =
+    "# Plan\n\n## Summary\n\nStart with stock updates.\n\n### Inputs\n\nA structured form.\n\n### Reports\n\nKeep reports.\n";
+  const output = input.replace("### Inputs", "### Upload experiment");
+  const settled = [
+    commentWithDiscussion(
+      "Start with stock updates",
+      "Make Inputs an experiment with one upload and an optional note.",
+    ),
+  ];
+  expect(validateRevision(output, input, settled).ok).toBe(true);
+  expect(
+    validateRevision(
+      output.replace("### Reports\n\nKeep reports.\n", ""),
+      input,
+      settled,
+    ).ok,
+  ).toBe(false);
+});
+
+test("validateRevision: one-word topics must match whole words", () => {
+  const input = "# Plan\n\n## Input\n\nKeep this.\n\n## Work\n\nEdit here.\n";
+  const output = "# Plan\n\n## Work\n\nEdit here.\n";
+  expect(
+    validateRevision(output, input, [
+      commentWithDiscussion("Edit here.", "Check the inputs elsewhere."),
+    ]).ok,
+  ).toBe(false);
+});
+
 test("validateRevision: Quip Rescue M9a-style preview cut keeps email and verification slices", () => {
   const input =
     "# M9a: Async Completion and Preview Policy\n\n" +

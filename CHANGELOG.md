@@ -4,6 +4,14 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-07
+
+### Fixed
+
+- Revision validation now recognizes discussion of single-word section names, allowing authorized heading changes such as renaming an Inputs section.
+- Caller-backed revisions allow one correction after a validation rejection without requiring the reviewer to resubmit. Failed drafts are preserved when a later retry starts a new staging copy.
+- Review skill instructions distinguish recoverable submission failures from completed sessions with an error result, avoiding unnecessary restart requests.
+
 ## [0.6.0] - 2026-09-15
 
 ### Added
@@ -128,7 +136,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/alevi/redline/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/alevi/redline/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/alevi/redline/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/alevi/redline/compare/v0.5.3...v0.5.4

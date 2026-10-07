@@ -87,7 +87,11 @@ When the staging file is ready, hand it back to Redline:
 __REDLINE_BIN__ author-revise "$FILE" --round <round-number>
 ```
 
-Redline verifies that the live source hasn't changed, validates the staged document, snapshots the live file, commits the revision, opens the next round, and reloads the browser. If the command fails, surface the error and return to `author-wait`; do not copy the staging file over the live document or bypass validation.
+Redline verifies that the live source hasn't changed, validates the staged document, snapshots the live file, commits the revision, opens the next round, and reloads the browser.
+
+On the first validation rejection, Redline keeps the accepted round and staging file pending and tells you to correct the draft and retry `author-revise` once. Surface the error, correct the staging file, and resubmit without asking for another approval. `author-wait` also returns this pending request with `validation_error` if you resume through the wait loop. This is a recoverable submission rejection, not a terminal review result.
+
+If the correction also fails, or a different error cancels the transaction, surface the error and return to `author-wait`. The reviewer can click Revise again. Do not resubmit against a cancelled transaction, restart the session, copy the staging file over the live document, or bypass validation. A new request may include `previous_revision_file`, a preserved draft from the failed attempt. Read it alongside the new staging copy and current settled threads to recover edits that still apply. A new `revision-request` means the reviewer has already authorized another attempt; handle it immediately without asking for restart approval.
 
 If invocation fails (binary missing, startup file never appears, etc.), surface the error verbatim and stop — do not try to recover. The human will re-run `redline install-skill`.
 
@@ -122,7 +126,7 @@ Statuses:
 
 - **`approved`** — Human signed off. Re-read the file from disk and continue. Note: the file may be byte-identical to what you handed off — if every comment was Q&A the agent answered with `accept-as-is`, no revision pass ran. That's still a valid approval, not a no-op.
 - **`abandoned`** — Human closed the tab or Ctrl+C'd without clicking Done. The doc is in whatever state it was last revised to, but has not been signed off. Ask the human what they want to do.
-- **`error`** — A revision pass failed. The result file includes a `reason` field with the failure message; `.review/errors.log` next to the file has more detail. Surface both to the human.
+- **`error`** — The session ended with an error. The result file includes a `reason` field with the failure message; `.review/errors.log` next to the file has more detail. Surface both to the human. A failed `author-revise` command while the session is still running is handled by the recovery steps above.
 
 ## Outer-agent handoff pattern
 
@@ -134,7 +138,7 @@ The full loop, when you are the outer agent producing the doc:
 4. Tell the human Redline opened in their browser and include the URL only as a fallback.
 5. Second shell call: run `__REDLINE_BIN__ author-wait "$FILE"`. Answer every `caller-turn` with `author-reply`, including the revision verdict. Apply every `revision-request` through its staging file and `author-revise`. Then run `author-wait` again. If it returns `kind: "session-ended"`, inspect the log path from step 1 and tell the human the session died instead of silently relaunching. Do not start unrelated work while the session runs.
 6. On `approved`: re-read the file from disk (it may have been revised) and continue with whatever required sign-off.
-7. On `abandoned` or `error`: stop and ask the human how to proceed; do not retry automatically.
+7. When `author-wait` returns `kind: "result"` with status `abandoned` or `error`, the session has ended: stop and ask the human how to proceed. This does not apply to a rejected submission in a live session or a new `revision-request`.
 
 You reply to comments and apply accepted revisions because you are the agent that authored and launched the review. Use `author-revise` for the staged handback; do not invoke `redline resolve` separately.
 

@@ -67,6 +67,10 @@ export interface PendingRevision {
   candidate_file: string;
   source_hash: string;
   prepared_at: string;
+  // A validation rejection gets one correction within the accepted round.
+  validation_error?: string;
+  // Prior failed work is retained when a new transaction replaces staging.
+  previous_revision_file?: string;
 }
 
 export interface Sidecar {
