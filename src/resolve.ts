@@ -258,7 +258,7 @@ function termsForHeading(heading: string): string[] {
     .replace(/^#{1,6}\s+/, "")
     .match(/^([A-Z]+\d+[a-z]?(?:\.\d+)*):\s+/i)?.[1];
   if (numberedPrefix) phrases.add(numberedPrefix.toLowerCase());
-  if (words.length >= 2) phrases.add(key);
+  if (words.length >= 1) phrases.add(key);
   for (let size = 2; size <= 3; size++) {
     for (let i = 0; i <= words.length - size; i++) {
       phrases.add(words.slice(i, i + size).join(" "));
@@ -295,7 +295,7 @@ function droppedSections(
   );
   const inMatches = [...inputDoc.matchAll(HEADING_RE)];
   const quotes = settled.map((c) => c.quote.trim()).filter((q) => q.length > 0);
-  const settledTopicText = settledText(settled);
+  const settledTopicText = ` ${settledText(settled).replace(/[^\p{L}\p{N}]+/gu, " ")} `;
 
   const unauthorized: string[] = [];
   for (let i = 0; i < inMatches.length; i++) {
@@ -308,7 +308,7 @@ function droppedSections(
     const section = inputDoc.slice(start, end);
     const commented = quotes.some((q) => section.includes(q));
     const topicNamed = termsForHeading(heading).some((term) =>
-      settledTopicText.includes(term),
+      settledTopicText.includes(` ${term.replace(/[^\p{L}\p{N}]+/gu, " ")} `),
     );
     if (!commented && !topicNamed) unauthorized.push(heading);
   }

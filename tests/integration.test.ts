@@ -746,57 +746,119 @@ test("caller responder validates and commits a staged revision", async () => {
   expect(readdirSync(path.join(dir, ".review", "history"))).toHaveLength(1);
 }, 15_000);
 
-test("caller revision rejection leaves the live document untouched", async () => {
-  const source =
-    "# Test Document\n\n## Editable\n\nChange this.\n\n## Untouched\n\nKeep this section.\n";
-  const { filePath, dir } = createTestFile(source);
-  const { port } = await spawnTracked(filePath, {}, ["--responder", "caller"]);
-  const comment = await postComment(
-    port,
-    { quote: "Change this." },
-    "Rewrite this sentence.",
-  );
-  await waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 1_000 });
-  await postAuthorReply(filePath, comment.id, "I’ll rewrite it.", {
-    requiresRevision: true,
-    revisionReason: "Rewrite the editable sentence",
-  });
-  await fetch(`http://localhost:${port}/api/comment/${comment.id}/resolve`, {
-    method: "POST",
-    headers: CSRF_HEADERS,
-  });
-  await fetch(`http://localhost:${port}/api/accept`, {
-    method: "POST",
-    headers: CSRF_HEADERS,
-  });
-  const request = await waitForAuthorEvent(filePath, {
-    intervalMs: 50,
-    timeoutMs: 1_000,
-  });
-  if (request.kind !== "revision-request") {
-    throw new Error("revision request missing");
-  }
-  writeFileSync(
-    request.revision.revision_file,
-    "# Test Document\n\n## Editable\n\nChanged.\n",
-  );
+test.each([true, false])(
+  "caller revision preserves rejected work and bounds correction retries (corrected=%s)",
+  async (corrected) => {
+    const source =
+      "# Test Document\n\n## Editable\n\nChange this.\n\n## Untouched\n\nKeep this section.\n";
+    const { filePath, dir } = createTestFile(source);
+    const { port } = await spawnTracked(filePath, {}, [
+      "--responder",
+      "caller",
+    ]);
+    const comment = await postComment(
+      port,
+      { quote: "Change this." },
+      "Rewrite this sentence.",
+    );
+    await waitForAuthorEvent(filePath, { intervalMs: 50, timeoutMs: 1_000 });
+    await postAuthorReply(filePath, comment.id, "I’ll rewrite it.", {
+      requiresRevision: true,
+      revisionReason: "Rewrite the editable sentence",
+    });
+    await fetch(`http://localhost:${port}/api/comment/${comment.id}/resolve`, {
+      method: "POST",
+      headers: CSRF_HEADERS,
+    });
+    await fetch(`http://localhost:${port}/api/accept`, {
+      method: "POST",
+      headers: CSRF_HEADERS,
+    });
+    const request = await waitForAuthorEvent(filePath, {
+      intervalMs: 50,
+      timeoutMs: 1_000,
+    });
+    if (request.kind !== "revision-request") {
+      throw new Error("revision request missing");
+    }
+    writeFileSync(
+      request.revision.revision_file,
+      "# Test Document\n\n## Editable\n\nChanged.\n",
+    );
 
-  const revisionError = waitForEvent(port, "revision-error", {
-    timeoutMs: 2_000,
-  });
-  await revisionError.ready;
-  await expect(completeCallerRevision(filePath, 1)).rejects.toThrow(
-    /dropped section/,
-  );
-  await revisionError;
+    const progress = waitForEvent(port, "revision-chunk", { timeoutMs: 2_000 });
+    await progress.ready;
+    await expect(completeCallerRevision(filePath, 1)).rejects.toThrow(
+      /Correct the staging file and retry author-revise once/,
+    );
+    expect((await progress).data.text).toContain("needs a correction");
+    expect(readFileSync(filePath, "utf-8")).toBe(source);
+    const retry = await waitForAuthorEvent(filePath, {
+      intervalMs: 50,
+      timeoutMs: 1_000,
+    });
+    if (retry.kind !== "revision-request") throw new Error("retry missing");
+    expect(retry.revision.validation_error).toContain("Untouched");
+    expect(readFileSync(retry.revision.revision_file, "utf-8")).toContain(
+      "Changed.",
+    );
+    const pending = JSON.parse(
+      readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+    );
+    expect(pending.rounds[0].resolved_at).not.toBeNull();
 
-  expect(readFileSync(filePath, "utf-8")).toBe(source);
-  const saved = JSON.parse(
-    readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
-  );
-  expect(saved.pending_revision).toBeUndefined();
-  expect(saved.rounds[0].resolved_at).toBeNull();
-}, 15_000);
+    if (corrected) {
+      writeFileSync(
+        retry.revision.revision_file,
+        source.replace("Change this.", "Changed."),
+      );
+      const reload = waitForEvent(port, "reload", { timeoutMs: 2_000 });
+      await reload.ready;
+      await completeCallerRevision(filePath, 1);
+      await reload;
+      expect(readFileSync(filePath, "utf-8")).toContain("Changed.");
+      const saved = JSON.parse(
+        readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+      );
+      expect(saved.rounds).toHaveLength(2);
+      expect(saved.pending_revision).toBeUndefined();
+      return;
+    }
+
+    const revisionError = waitForEvent(port, "revision-error", {
+      timeoutMs: 2_000,
+    });
+    await revisionError.ready;
+    await expect(completeCallerRevision(filePath, 1)).rejects.toThrow(
+      /dropped section/,
+    );
+    await revisionError;
+    expect(readFileSync(filePath, "utf-8")).toBe(source);
+    const saved = JSON.parse(
+      readFileSync(path.join(dir, ".review", "test.md.json"), "utf-8"),
+    );
+    expect(saved.pending_revision).toBeUndefined();
+    expect(saved.rounds[0].resolved_at).toBeNull();
+
+    // A fresh acceptance starts from current source but preserves failed edits.
+    await fetch(`http://localhost:${port}/api/accept`, {
+      method: "POST",
+      headers: CSRF_HEADERS,
+    });
+    const fresh = await waitForAuthorEvent(filePath, {
+      intervalMs: 50,
+      timeoutMs: 1_000,
+    });
+    if (fresh.kind !== "revision-request")
+      throw new Error("new request missing");
+    expect(readFileSync(fresh.revision.revision_file, "utf-8")).toBe(source);
+    expect(fresh.revision.validation_error).toBeUndefined();
+    expect(
+      readFileSync(fresh.revision.previous_revision_file!, "utf-8"),
+    ).toContain("Changed.");
+  },
+  15_000,
+);
 
 test("agent restart cap → cli broadcasts agent-unavailable end-to-end", async () => {
   // End-to-end coverage of the dead-agent indicator: the agent's

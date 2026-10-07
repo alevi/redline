@@ -5,6 +5,7 @@ import path from "path";
 import {
   collectCallerTurns,
   collectAuthorNeeded,
+  completeCallerRevision,
   formatAuthorNeeded,
   prepareCallerRevision,
   postAuthorReply,
@@ -462,6 +463,48 @@ test("CLI author-revise commits the prepared staging file", async () => {
   expect(revise.stdout).toContain("Committed caller revision for round 1");
   expect(await readFile(filePath, "utf-8")).toContain(
     "This is the revised document.",
+  );
+});
+
+test("caller correction still rejects source changes and preserves the rejected draft on reacceptance", async () => {
+  const source = "# Test Document\n\n## Keep\n\nOriginal content.\n";
+  const { filePath } = createTestFile(source);
+  const s = sidecar();
+  s.responder_mode = "caller";
+  s.rounds[0]!.resolved_at = "accepted";
+  s.rounds[0]!.caller_revision_requested_at = "requested";
+  await saveSidecar(filePath, s);
+  const request = (await prepareCallerRevision(filePath))!;
+  await writeFile(
+    request.revision_file,
+    "# Test Document\n\nMissing a section.\n",
+  );
+  await expect(completeCallerRevision(filePath, 1)).rejects.toThrow(
+    /retry author-revise once/,
+  );
+  const externallyEdited = source.replace(
+    "Original content.",
+    "External edit.",
+  );
+  await writeFile(filePath, externallyEdited);
+  await writeFile(
+    request.revision_file,
+    source.replace("Original content.", "Caller edit."),
+  );
+  await expect(completeCallerRevision(filePath, 1)).rejects.toThrow(
+    /document changed/,
+  );
+  expect(await readFile(filePath, "utf-8")).toBe(externallyEdited);
+  const failed = await loadSidecar(filePath);
+  expect(failed.pending_revision).toBeUndefined();
+  expect(failed.rounds[0]!.resolved_at).toBeNull();
+  failed.rounds[0]!.resolved_at = "accepted again";
+  failed.rounds[0]!.caller_revision_requested_at = "requested again";
+  await saveSidecar(filePath, failed);
+  const fresh = (await prepareCallerRevision(filePath))!;
+  expect(await readFile(fresh.revision_file, "utf-8")).toBe(externallyEdited);
+  expect(await readFile(fresh.previous_revision_file!, "utf-8")).toContain(
+    "Caller edit.",
   );
 });
 

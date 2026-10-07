@@ -7,7 +7,7 @@ import {
   rm,
   writeFile,
 } from "fs/promises";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import path from "path";
 import {
   loadSidecar,
@@ -43,6 +43,8 @@ export interface CallerRevisionRequest {
   revision_file: string;
   context?: string;
   comments: Comment[];
+  validation_error?: string;
+  previous_revision_file?: string;
 }
 
 function flatten(s: string, n: number): string {
@@ -344,12 +346,20 @@ export async function prepareCallerRevision(
       if (!existing || existing.round !== round.round) {
         const source = await readFile(filePath, "utf-8");
         await mkdir(path.dirname(revisionFile), { recursive: true });
+        // A failed transaction may have left useful edits here. Never replace
+        // those bytes without preserving a copy, even after a watchdog reset.
+        let previousRevisionFile: string | undefined;
+        if (existsSync(revisionFile)) {
+          previousRevisionFile = `${revisionFile}.${randomUUID()}.rejected.md`;
+          await copyFile(revisionFile, previousRevisionFile);
+        }
         await writeFile(revisionFile, source, "utf-8");
         sidecar.pending_revision = {
           round: round.round,
           candidate_file: revisionFile,
           source_hash: hashText(source),
           prepared_at: new Date().toISOString(),
+          previous_revision_file: previousRevisionFile,
         };
       } else if (
         path.resolve(existing.candidate_file) !== path.resolve(revisionFile)
@@ -374,6 +384,8 @@ export async function prepareCallerRevision(
         revision_file: pending.candidate_file,
         context: sidecar.context,
         comments: round.comments.filter((comment) => comment.resolved),
+        validation_error: pending.validation_error,
+        previous_revision_file: pending.previous_revision_file,
       };
     },
   );
@@ -483,7 +495,13 @@ export async function completeCallerRevision(
 
       const settled = round.comments.filter((comment) => comment.resolved);
       const validation = validateRevision(proposed, source, settled);
-      if (!validation.ok) throw new Error(validation.reason);
+      if (!validation.ok) {
+        if (pending.validation_error) throw new Error(validation.reason);
+        pending.validation_error = validation.reason;
+        // Return so withSidecar persists the rejection. Throwing inside its
+        // callback would discard the retry marker and allow unlimited retries.
+        return { validationError: validation.reason };
+      }
 
       const historyDir = path.join(
         path.dirname(filePath),
@@ -515,6 +533,26 @@ export async function completeCallerRevision(
       return { changed, round: roundNumber };
     });
 
+    if ("validationError" in result) {
+      const message = `Revision validation failed: ${result.validationError}. The accepted round and staging file are still pending. Correct the staging file and retry author-revise once; no reviewer resubmission is needed.`;
+      await logCallerRevisionFailure(filePath, message);
+      const startup = readStartup(filePath);
+      if (startup?.url && startup.csrf_token) {
+        await fetch(`${startup.url}/api/revision-chunk`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Redline-Token": startup.csrf_token,
+          },
+          body: JSON.stringify({
+            kind: "thinking",
+            text: `\nRevision needs a correction: ${result.validationError}. Waiting for the author to correct the draft.\n`,
+          }),
+        }).catch(() => {});
+      }
+      throw new RetryableCallerRevisionError(message);
+    }
+
     await rm(candidateFile, { force: true }).catch(() => {});
     await postRevisionTerminalEvent(
       filePath,
@@ -522,11 +560,14 @@ export async function completeCallerRevision(
     );
     return result;
   } catch (error) {
+    if (error instanceof RetryableCallerRevisionError) throw error;
     const reason = error instanceof Error ? error.message : String(error);
     await failCallerRevision(filePath, reason);
     throw error;
   }
 }
+
+class RetryableCallerRevisionError extends Error {}
 
 export function formatAuthorNeeded(items: AuthorNeededItem[]): string {
   if (items.length === 0) return "No author replies needed.";
