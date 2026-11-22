@@ -52,17 +52,17 @@
     "test": "bun test"
   },
   "dependencies": {
-    "hono": "^4.7.0",
-    "marked": "^15.0.0",
+    "hono": "^4.13.20",
+    "marked": "^15.0.12",
     "proper-lockfile": "^4.1.2",
-    "sanitize-html": "^2.17.4"
+    "sanitize-html": "^2.18.2"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.9.0",
+    "@happy-dom/global-registrator": "^21.0.4",
     "@types/bun": "latest",
     "@types/proper-lockfile": "^4.1.4",
-    "@types/sanitize-html": "^2.16.1",
-    "happy-dom": "^20.9.0",
-    "prettier": "^3.6.2"
+    "@types/sanitize-html": "^2.16.2",
+    "happy-dom": "^21.0.4",
+    "prettier": "^3.10.1"
   }
 }

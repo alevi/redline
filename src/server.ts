@@ -787,8 +787,7 @@ export function createServer(
     if (!body.message?.trim())
       return c.json({ ok: false, error: "message is required" }, 400);
     const role = (body.role === "human" ? "human" : "agent") as
-      | "human"
-      | "agent";
+      "human" | "agent";
     const name = body.name?.trim() || undefined;
 
     const out = await withSidecar(filePath, (sidecar) => {
