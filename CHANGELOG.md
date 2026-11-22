@@ -4,6 +4,12 @@ All notable changes to Redline are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-22
+
+### Security
+
+- Updated Hono to 4.13.20 and raised the minimum supported version, picking up fixes for `serveStatic` path decoding, `hono/jsx` escaping, `parseBody` nesting limits, and other published Hono advisories. Also updated `marked` and `sanitize-html` to their latest patch releases.
+
 ## [0.6.1] - 2026-10-07
 
 ### Fixed
@@ -136,7 +142,8 @@ Initial public release on npm as `@levistudio/redline`.
 - Auto-installs missing dependencies on first CLI run.
 - Initial test suite: server, sidecar, parsing, model-picking, rendering, diff, SSE, integration, happy-dom client.
 
-[Unreleased]: https://github.com/alevi/redline/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/alevi/redline/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/alevi/redline/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/alevi/redline/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/alevi/redline/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/alevi/redline/compare/v0.5.4...v0.5.5
